@@ -1,0 +1,70 @@
+{
+    "log": {
+        "level": "info",
+        "timestamp": true
+    },
+    "dns": {
+        "servers": [
+            {
+                "tag": "dns_hosts",
+                "type": "hosts",
+                "predefined": {
+                    "open.staging.rcrai.com": "123.58.224.53"
+                }
+            },
+            {
+                "tag": "dns_direct",
+                "type": "udp",
+                "server": "223.5.5.5"
+            },
+            {
+                "tag": "dns_remote",
+                "type": "udp",
+                "server": "8.8.8.8"
+            }
+        ],
+        "rules": [
+            {
+                "domain": [
+                    "open.staging.rcrai.com"
+                ],
+                "server": "dns_hosts"
+            }
+        ],
+        "final": "dns_remote",
+        "independent_cache": false
+    },
+    "inbounds": [
+        {
+            "type": "tun",
+            "tag": "tun-in",
+            "address": [
+                "172.31.0.1/30",
+                "fdfe:dcba:9876::1/126"
+            ],
+            "auto_route": true,
+            "strict_route": true,
+            "stack": "system",
+            "sniff": true,
+            "sniff_override_destination": true
+        }
+    ],
+    "outbounds": [
+        {
+            "tag": "DIRECT",
+            "type": "direct"
+        }
+    ],
+    "route": {
+        "rules": [
+            {
+                "domain": [
+                    "open.staging.rcrai.com"
+                ],
+                "outbound": "DIRECT"
+            }
+        ],
+        "final": "DIRECT",
+        "auto_detect_interface": true
+    }
+}

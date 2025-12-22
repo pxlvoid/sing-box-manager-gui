@@ -23,7 +23,10 @@
       "Bash(go get:*)",
       "Bash(go mod tidy:*)",
       "Bash(./sbm config:*)",
-      "Bash(tree:*)"
+      "Bash(tree:*)",
+      "WebFetch(domain:github.com)",
+      "Bash(find:*)",
+      "Bash(./sbm:*)"
     ],
     "deny": [],
     "ask": []

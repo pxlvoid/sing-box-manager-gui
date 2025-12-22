@@ -217,6 +217,12 @@ func (s *Server) addSubscription(c *gin.Context) {
 		return
 	}
 
+	// 自动应用配置
+	if err := s.autoApplyConfig(); err != nil {
+		c.JSON(http.StatusOK, gin.H{"data": sub, "warning": "添加成功，但自动应用配置失败: " + err.Error()})
+		return
+	}
+
 	c.JSON(http.StatusOK, gin.H{"data": sub})
 }
 
@@ -235,6 +241,12 @@ func (s *Server) updateSubscription(c *gin.Context) {
 		return
 	}
 
+	// 自动应用配置
+	if err := s.autoApplyConfig(); err != nil {
+		c.JSON(http.StatusOK, gin.H{"message": "更新成功，但自动应用配置失败: " + err.Error()})
+		return
+	}
+
 	c.JSON(http.StatusOK, gin.H{"message": "更新成功"})
 }
 
@@ -243,6 +255,12 @@ func (s *Server) deleteSubscription(c *gin.Context) {
 
 	if err := s.subService.Delete(id); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	// 自动应用配置
+	if err := s.autoApplyConfig(); err != nil {
+		c.JSON(http.StatusOK, gin.H{"message": "删除成功，但自动应用配置失败: " + err.Error()})
 		return
 	}
 
@@ -303,6 +321,12 @@ func (s *Server) addFilter(c *gin.Context) {
 		return
 	}
 
+	// 自动应用配置
+	if err := s.autoApplyConfig(); err != nil {
+		c.JSON(http.StatusOK, gin.H{"data": filter, "warning": "添加成功，但自动应用配置失败: " + err.Error()})
+		return
+	}
+
 	c.JSON(http.StatusOK, gin.H{"data": filter})
 }
 
@@ -321,6 +345,12 @@ func (s *Server) updateFilter(c *gin.Context) {
 		return
 	}
 
+	// 自动应用配置
+	if err := s.autoApplyConfig(); err != nil {
+		c.JSON(http.StatusOK, gin.H{"message": "更新成功，但自动应用配置失败: " + err.Error()})
+		return
+	}
+
 	c.JSON(http.StatusOK, gin.H{"message": "更新成功"})
 }
 
@@ -329,6 +359,12 @@ func (s *Server) deleteFilter(c *gin.Context) {
 
 	if err := s.store.DeleteFilter(id); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	// 自动应用配置
+	if err := s.autoApplyConfig(); err != nil {
+		c.JSON(http.StatusOK, gin.H{"message": "删除成功，但自动应用配置失败: " + err.Error()})
 		return
 	}
 
@@ -530,6 +566,12 @@ func (s *Server) updateSettings(c *gin.Context) {
 
 	// 重启调度器（可能更新了定时间隔）
 	s.scheduler.Restart()
+
+	// 自动应用配置
+	if err := s.autoApplyConfig(); err != nil {
+		c.JSON(http.StatusOK, gin.H{"message": "更新成功，但自动应用配置失败: " + err.Error()})
+		return
+	}
 
 	c.JSON(http.StatusOK, gin.H{"message": "更新成功"})
 }
