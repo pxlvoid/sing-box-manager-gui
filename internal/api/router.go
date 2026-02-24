@@ -197,6 +197,7 @@ func (s *Server) setupRoutes() {
 		api.POST("/manual-nodes/bulk", s.addManualNodesBulk)
 		api.PUT("/manual-nodes/:id", s.updateManualNode)
 		api.DELETE("/manual-nodes/:id", s.deleteManualNode)
+		api.POST("/manual-nodes/export", s.exportManualNodes)
 
 		// Kernel management
 		api.GET("/kernel/info", s.getKernelInfo)
@@ -1647,6 +1648,41 @@ func (s *Server) deleteManualNode(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{"message": "Deleted successfully"})
+}
+
+func (s *Server) exportManualNodes(c *gin.Context) {
+	var req struct {
+		IDs []string `json:"ids"`
+	}
+	_ = c.ShouldBindJSON(&req)
+
+	nodes := s.store.GetManualNodes()
+
+	// If specific IDs provided, filter
+	if len(req.IDs) > 0 {
+		idSet := make(map[string]bool, len(req.IDs))
+		for _, id := range req.IDs {
+			idSet[id] = true
+		}
+		filtered := make([]storage.ManualNode, 0, len(req.IDs))
+		for _, mn := range nodes {
+			if idSet[mn.ID] {
+				filtered = append(filtered, mn)
+			}
+		}
+		nodes = filtered
+	}
+
+	urls := make([]string, 0, len(nodes))
+	for _, mn := range nodes {
+		u, err := parser.SerializeNode(&mn.Node)
+		if err != nil {
+			continue
+		}
+		urls = append(urls, u)
+	}
+
+	c.JSON(http.StatusOK, gin.H{"data": urls})
 }
 
 // ==================== Kernel Management API ====================
