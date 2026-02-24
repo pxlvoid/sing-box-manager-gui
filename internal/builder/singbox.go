@@ -643,6 +643,11 @@ func NodeToOutbound(node storage.Node) Outbound {
 		outbound[k] = v
 	}
 
+	// Remove fields from transport that sing-box doesn't support
+	if transport, ok := outbound["transport"].(map[string]interface{}); ok {
+		delete(transport, "mode")
+	}
+
 	return outbound
 }
 
