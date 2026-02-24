@@ -88,6 +88,24 @@ curl "http://<host>:9090/api/debug/logs/app?lines=1000" | jq .
 
 ---
 
+### `GET /api/debug/logs/probe`
+
+Логи probe sing-box (отдельный процесс для healthcheck/site-check).
+
+**Параметры:**
+
+| Параметр | Тип | По умолчанию | Макс | Описание |
+|----------|-----|-------------|------|----------|
+| `lines` | int | 500 | 5000 | Количество строк |
+
+**Пример:**
+
+```bash
+curl "http://<host>:9090/api/debug/logs/probe?lines=1000" | jq .
+```
+
+---
+
 ## Probe API
 
 Probe API управляет отдельным sing-box процессом, который используется для healthcheck и site-check. Эти эндпоинты **не требуют** включения Debug API — работают всегда.

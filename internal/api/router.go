@@ -199,6 +199,7 @@ func (s *Server) setupRoutes() {
 		api.GET("/monitor/logs", s.getLogs)
 		api.GET("/monitor/logs/sbm", s.getAppLogs)
 		api.GET("/monitor/logs/singbox", s.getSingboxLogs)
+		api.GET("/monitor/logs/probe", s.getProbeLogs)
 
 		// Nodes
 		api.GET("/nodes", s.getAllNodes)
@@ -238,6 +239,7 @@ func (s *Server) setupRoutes() {
 		api.GET("/debug/dump", s.debugDump)
 		api.GET("/debug/logs/singbox", s.debugSingboxLogs)
 		api.GET("/debug/logs/app", s.debugAppLogs)
+		api.GET("/debug/logs/probe", s.debugProbeLogs)
 
 		// Probe management
 		api.GET("/probe/status", s.getProbeStatus)
@@ -1596,6 +1598,18 @@ func (s *Server) getSingboxLogs(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"data": logs})
 }
 
+// getProbeLogs gets probe sing-box logs
+func (s *Server) getProbeLogs(c *gin.Context) {
+	lines := parseMonitorLogLines(c)
+
+	logs, err := logger.ReadProbeLogs(lines)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"data": logs})
+}
+
 // ==================== Node API ====================
 
 func (s *Server) getAllNodes(c *gin.Context) {
@@ -2541,6 +2555,31 @@ func (s *Server) debugAppLogs(c *gin.Context) {
 	}
 
 	logs, err := logger.ReadAppLogs(lines)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"data": logs})
+}
+
+func (s *Server) debugProbeLogs(c *gin.Context) {
+	settings := s.store.GetSettings()
+	if !settings.DebugAPIEnabled {
+		c.JSON(http.StatusForbidden, gin.H{"error": "Debug API is disabled. Enable it in Settings."})
+		return
+	}
+
+	lines := 500
+	if linesParam := c.Query("lines"); linesParam != "" {
+		if n, err := strconv.Atoi(linesParam); err == nil && n > 0 {
+			if n > 5000 {
+				n = 5000
+			}
+			lines = n
+		}
+	}
+
+	logs, err := logger.ReadProbeLogs(lines)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
