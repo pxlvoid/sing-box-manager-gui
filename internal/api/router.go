@@ -3,6 +3,7 @@ package api
 import (
 	"crypto/rand"
 	"encoding/hex"
+	"fmt"
 	"io/fs"
 	"net/http"
 	"os"
@@ -10,6 +11,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/gin-contrib/cors"
@@ -181,10 +183,12 @@ func (s *Server) setupRoutes() {
 		api.GET("/nodes/countries", s.getCountryGroups)
 		api.GET("/nodes/country/:code", s.getNodesByCountry)
 		api.POST("/nodes/parse", s.parseNodeURL)
+		api.POST("/nodes/parse-bulk", s.parseNodeURLsBulk)
 
 		// Manual nodes
 		api.GET("/manual-nodes", s.getManualNodes)
 		api.POST("/manual-nodes", s.addManualNode)
+		api.POST("/manual-nodes/bulk", s.addManualNodesBulk)
 		api.PUT("/manual-nodes/:id", s.updateManualNode)
 		api.DELETE("/manual-nodes/:id", s.deleteManualNode)
 
@@ -1287,6 +1291,39 @@ func (s *Server) parseNodeURL(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"data": node})
 }
 
+func (s *Server) parseNodeURLsBulk(c *gin.Context) {
+	var req struct {
+		URLs []string `json:"urls" binding:"required"`
+	}
+
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	type parseResult struct {
+		URL   string        `json:"url"`
+		Node  *storage.Node `json:"node,omitempty"`
+		Error string        `json:"error,omitempty"`
+	}
+
+	results := make([]parseResult, 0, len(req.URLs))
+	for _, rawURL := range req.URLs {
+		trimmed := strings.TrimSpace(rawURL)
+		if trimmed == "" {
+			continue
+		}
+		node, err := parser.ParseURL(trimmed)
+		if err != nil {
+			results = append(results, parseResult{URL: trimmed, Error: err.Error()})
+		} else {
+			results = append(results, parseResult{URL: trimmed, Node: node})
+		}
+	}
+
+	c.JSON(http.StatusOK, gin.H{"data": results})
+}
+
 // ==================== Manual Node API ====================
 
 func (s *Server) getManualNodes(c *gin.Context) {
@@ -1316,6 +1353,33 @@ func (s *Server) addManualNode(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{"data": node})
+}
+
+func (s *Server) addManualNodesBulk(c *gin.Context) {
+	var req struct {
+		Nodes []storage.ManualNode `json:"nodes" binding:"required"`
+	}
+
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	for i := range req.Nodes {
+		req.Nodes[i].ID = uuid.New().String()
+		if err := s.store.AddManualNode(req.Nodes[i]); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+	}
+
+	// Auto-apply config
+	if err := s.autoApplyConfig(); err != nil {
+		c.JSON(http.StatusOK, gin.H{"data": req.Nodes, "warning": fmt.Sprintf("Added %d nodes, but auto-apply config failed: %s", len(req.Nodes), err.Error())})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"data": req.Nodes})
 }
 
 func (s *Server) updateManualNode(c *gin.Context) {
