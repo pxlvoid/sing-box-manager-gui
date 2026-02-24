@@ -1,12 +1,14 @@
 import { useEffect, useState } from 'react';
 import { Card, CardBody, CardHeader, Button, Chip, Modal, ModalContent, ModalHeader, ModalBody, ModalFooter, Tooltip } from '@nextui-org/react';
-import { Play, Square, RefreshCw, Cpu, HardDrive, Wifi, Info, Activity } from 'lucide-react';
+import { Play, Square, RefreshCw, Cpu, HardDrive, Wifi, Info, Activity, Copy, ClipboardCheck, Link } from 'lucide-react';
 import { useStore } from '../store';
 import { serviceApi, configApi } from '../api';
 import { toast } from '../components/Toast';
 
 export default function Dashboard() {
-  const { serviceStatus, subscriptions, manualNodes, systemInfo, fetchServiceStatus, fetchSubscriptions, fetchManualNodes, fetchSystemInfo } = useStore();
+  const { serviceStatus, subscriptions, manualNodes, systemInfo, settings, fetchServiceStatus, fetchSubscriptions, fetchManualNodes, fetchSystemInfo, fetchSettings } = useStore();
+
+  const [copiedLink, setCopiedLink] = useState<string | null>(null);
 
   // Error modal state
   const [errorModal, setErrorModal] = useState<{
@@ -34,6 +36,7 @@ export default function Dashboard() {
     fetchSubscriptions();
     fetchManualNodes();
     fetchSystemInfo();
+    fetchSettings();
 
     // Refresh status and system info every 5 seconds
     const interval = setInterval(() => {
@@ -82,6 +85,60 @@ export default function Dashboard() {
       showError('Failed to apply configuration', error);
     }
   };
+
+  const handleCopyLink = async (key: string, link: string) => {
+    try {
+      await navigator.clipboard.writeText(link);
+      setCopiedLink(key);
+      setTimeout(() => setCopiedLink(null), 2000);
+    } catch (error) {
+      console.error('Failed to copy:', error);
+    }
+  };
+
+  const proxyLinks: { key: string; label: string; link: string }[] = [];
+  if (settings) {
+    if (settings.mixed_port > 0 && settings.mixed_address) {
+      proxyLinks.push({
+        key: 'mixed-socks',
+        label: 'Mixed SOCKS5',
+        link: `socks5://${settings.mixed_address}:${settings.mixed_port}`,
+      });
+      proxyLinks.push({
+        key: 'mixed-http',
+        label: 'Mixed HTTP',
+        link: `http://${settings.mixed_address}:${settings.mixed_port}`,
+      });
+    }
+    if (settings.socks_port > 0 && settings.socks_address) {
+      const auth = settings.socks_auth && settings.socks_username
+        ? `${settings.socks_username}:${settings.socks_password}@`
+        : '';
+      proxyLinks.push({
+        key: 'socks',
+        label: 'SOCKS5',
+        link: `socks5://${auth}${settings.socks_address}:${settings.socks_port}`,
+      });
+    }
+    if (settings.http_port > 0 && settings.http_address) {
+      const auth = settings.http_auth && settings.http_username
+        ? `${settings.http_username}:${settings.http_password}@`
+        : '';
+      proxyLinks.push({
+        key: 'http',
+        label: 'HTTP',
+        link: `http://${auth}${settings.http_address}:${settings.http_port}`,
+      });
+    }
+    if (settings.shadowsocks_port > 0 && settings.shadowsocks_address && settings.shadowsocks_password) {
+      const encoded = btoa(`${settings.shadowsocks_method}:${settings.shadowsocks_password}`);
+      proxyLinks.push({
+        key: 'ss',
+        label: 'Shadowsocks',
+        link: `ss://${encoded}@${settings.shadowsocks_address}:${settings.shadowsocks_port}#SBM`,
+      });
+    }
+  }
 
   const totalNodes = subscriptions.reduce((sum, sub) => sum + sub.node_count, 0) + manualNodes.length;
   const enabledSubs = subscriptions.filter(sub => sub.enabled).length;
@@ -178,6 +235,47 @@ export default function Dashboard() {
               </p>
             </div>
           </div>
+        </CardBody>
+      </Card>
+
+      {/* Proxy Links */}
+      <Card>
+        <CardHeader>
+          <div className="flex items-center gap-2">
+            <Link className="w-5 h-5" />
+            <h2 className="text-lg font-semibold">Proxy Links</h2>
+          </div>
+        </CardHeader>
+        <CardBody>
+          {proxyLinks.length === 0 ? (
+            <p className="text-gray-500 text-center py-4">Set proxy addresses in Settings to generate links.</p>
+          ) : (
+            <div className="space-y-2">
+              {proxyLinks.map((item) => (
+                <div
+                  key={item.key}
+                  className="flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-800 rounded-lg"
+                >
+                  <div className="flex items-center gap-3 min-w-0">
+                    <Chip size="sm" variant="flat" color="primary">{item.label}</Chip>
+                    <code className="text-sm text-gray-600 dark:text-gray-300 truncate">{item.link}</code>
+                  </div>
+                  <Button
+                    size="sm"
+                    variant="light"
+                    isIconOnly
+                    onPress={() => handleCopyLink(item.key, item.link)}
+                  >
+                    {copiedLink === item.key ? (
+                      <ClipboardCheck className="w-4 h-4 text-success" />
+                    ) : (
+                      <Copy className="w-4 h-4" />
+                    )}
+                  </Button>
+                </div>
+              ))}
+            </div>
+          )}
         </CardBody>
       </Card>
 

@@ -107,24 +107,28 @@ type Settings struct {
 	ConfigPath  string `json:"config_path"`
 
 	// inbound configuration
-	MixedPort  int  `json:"mixed_port"`  // HTTP/SOCKS5 mixed port
-	TunEnabled bool `json:"tun_enabled"` // TUN mode
-	AllowLAN   bool `json:"allow_lan"`   // allow LAN access
+	MixedPort    int    `json:"mixed_port"`    // HTTP/SOCKS5 mixed port
+	MixedAddress string `json:"mixed_address"` // external address for proxy link
+	TunEnabled   bool   `json:"tun_enabled"`   // TUN mode
+	AllowLAN     bool   `json:"allow_lan"`     // allow LAN access
 
 	// SOCKS5 inbound
 	SocksPort     int    `json:"socks_port"`
+	SocksAddress  string `json:"socks_address"` // external address for proxy link
 	SocksAuth     bool   `json:"socks_auth"`
 	SocksUsername string `json:"socks_username,omitempty"`
 	SocksPassword string `json:"socks_password,omitempty"`
 
 	// HTTP inbound
 	HttpPort     int    `json:"http_port"`
+	HttpAddress  string `json:"http_address"` // external address for proxy link
 	HttpAuth     bool   `json:"http_auth"`
 	HttpUsername string `json:"http_username,omitempty"`
 	HttpPassword string `json:"http_password,omitempty"`
 
 	// Shadowsocks inbound
 	ShadowsocksPort     int    `json:"shadowsocks_port"`
+	ShadowsocksAddress  string `json:"shadowsocks_address"` // external address for proxy link
 	ShadowsocksMethod   string `json:"shadowsocks_method"`
 	ShadowsocksPassword string `json:"shadowsocks_password"`
 
