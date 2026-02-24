@@ -14,6 +14,7 @@ import (
 	"os/user"
 	"path/filepath"
 	"runtime"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -194,6 +195,7 @@ func (s *Server) setupRoutes() {
 
 		// Manual nodes
 		api.GET("/manual-nodes", s.getManualNodes)
+		api.GET("/manual-nodes/tags", s.getManualNodeTags)
 		api.POST("/manual-nodes", s.addManualNode)
 		api.POST("/manual-nodes/bulk", s.addManualNodesBulk)
 		api.PUT("/manual-nodes/:id", s.updateManualNode)
@@ -1763,7 +1765,8 @@ func (s *Server) addManualNode(c *gin.Context) {
 
 func (s *Server) addManualNodesBulk(c *gin.Context) {
 	var req struct {
-		Nodes []storage.ManualNode `json:"nodes" binding:"required"`
+		Nodes    []storage.ManualNode `json:"nodes" binding:"required"`
+		GroupTag string               `json:"group_tag"`
 	}
 
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -1773,6 +1776,9 @@ func (s *Server) addManualNodesBulk(c *gin.Context) {
 
 	for i := range req.Nodes {
 		req.Nodes[i].ID = uuid.New().String()
+		if req.GroupTag != "" && req.Nodes[i].GroupTag == "" {
+			req.Nodes[i].GroupTag = req.GroupTag
+		}
 		if err := s.store.AddManualNode(req.Nodes[i]); err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 			return
@@ -1786,6 +1792,22 @@ func (s *Server) addManualNodesBulk(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{"data": req.Nodes})
+}
+
+func (s *Server) getManualNodeTags(c *gin.Context) {
+	nodes := s.store.GetManualNodes()
+	tagSet := make(map[string]bool)
+	for _, mn := range nodes {
+		if mn.GroupTag != "" {
+			tagSet[mn.GroupTag] = true
+		}
+	}
+	tags := make([]string, 0, len(tagSet))
+	for t := range tagSet {
+		tags = append(tags, t)
+	}
+	sort.Strings(tags)
+	c.JSON(http.StatusOK, gin.H{"data": tags})
 }
 
 func (s *Server) updateManualNode(c *gin.Context) {

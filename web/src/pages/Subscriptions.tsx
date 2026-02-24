@@ -78,10 +78,14 @@ export default function Subscriptions() {
     countryGroups,
     filters,
     loading,
+    manualNodeTags,
+    selectedGroupTag,
     fetchSubscriptions,
     fetchManualNodes,
     fetchCountryGroups,
     fetchFilters,
+    fetchManualNodeTags,
+    setSelectedGroupTag,
     addSubscription,
     updateSubscription,
     deleteSubscription,
@@ -122,6 +126,7 @@ export default function Subscriptions() {
 
   // Bulk add form
   const [bulkUrls, setBulkUrls] = useState('');
+  const [bulkGroupTag, setBulkGroupTag] = useState('');
   const [bulkParsing, setBulkParsing] = useState(false);
   const [bulkAdding, setBulkAdding] = useState(false);
   const [bulkResults, setBulkResults] = useState<Array<{ url: string; node?: Node; error?: string }>>([]);
@@ -155,6 +160,7 @@ export default function Subscriptions() {
     fetchManualNodes();
     fetchCountryGroups();
     fetchFilters();
+    fetchManualNodeTags();
   }, []);
 
   const handleOpenAddSubscription = () => {
@@ -309,6 +315,7 @@ export default function Subscriptions() {
   // Bulk add operations
   const handleOpenBulkAdd = () => {
     setBulkUrls('');
+    setBulkGroupTag('');
     setBulkResults([]);
     setBulkParsing(false);
     setBulkAdding(false);
@@ -340,7 +347,7 @@ export default function Subscriptions() {
         node: r.node!,
         enabled: true,
       }));
-      await addManualNodesBulk(nodes);
+      await addManualNodesBulk(nodes, bulkGroupTag.trim() || undefined);
       onBulkClose();
     } catch (error: any) {
       console.error('Failed to add nodes:', error);
@@ -464,7 +471,37 @@ export default function Subscriptions() {
             </Card>
           ) : (
             <div className="space-y-3 mt-4">
-              <div className="flex justify-end">
+              <div className="flex justify-between items-center">
+                {manualNodeTags.length > 0 && (
+                  <div className="flex flex-wrap gap-2">
+                    <Chip
+                      variant={selectedGroupTag === null ? 'solid' : 'flat'}
+                      color="primary"
+                      className="cursor-pointer"
+                      onClick={() => setSelectedGroupTag(null)}
+                    >
+                      All ({manualNodes.length})
+                    </Chip>
+                    <Chip
+                      variant={selectedGroupTag === '' ? 'solid' : 'flat'}
+                      className="cursor-pointer"
+                      onClick={() => setSelectedGroupTag('')}
+                    >
+                      No tag ({manualNodes.filter(n => !n.group_tag).length})
+                    </Chip>
+                    {manualNodeTags.map(tag => (
+                      <Chip
+                        key={tag}
+                        variant={selectedGroupTag === tag ? 'solid' : 'flat'}
+                        color="secondary"
+                        className="cursor-pointer"
+                        onClick={() => setSelectedGroupTag(tag)}
+                      >
+                        {tag} ({manualNodes.filter(n => n.group_tag === tag).length})
+                      </Chip>
+                    ))}
+                  </div>
+                )}
                 <Button
                   size="sm"
                   variant="flat"
@@ -475,13 +512,23 @@ export default function Subscriptions() {
                   {copiedAll ? 'Copied!' : 'Copy All'}
                 </Button>
               </div>
-              {manualNodes.map((mn) => (
+              {(selectedGroupTag === null
+                ? manualNodes
+                : selectedGroupTag === ''
+                  ? manualNodes.filter(n => !n.group_tag)
+                  : manualNodes.filter(n => n.group_tag === selectedGroupTag)
+              ).map((mn) => (
                 <Card key={mn.id}>
                   <CardBody className="flex flex-row items-center justify-between">
                     <div className="flex items-center gap-3">
                       <span className="text-xl">{mn.node.country_emoji || '🌐'}</span>
                       <div>
-                        <h3 className="font-medium">{mn.node.tag}</h3>
+                        <div className="flex items-center gap-2">
+                          <h3 className="font-medium">{mn.node.tag}</h3>
+                          {mn.group_tag && (
+                            <Chip size="sm" variant="flat" color="secondary">{mn.group_tag}</Chip>
+                          )}
+                        </div>
                         <p className="text-xs text-gray-500">{mn.node.type} • {mn.node.server}:{mn.node.server_port}</p>
                       </div>
                     </div>
@@ -857,6 +904,13 @@ export default function Subscriptions() {
                 onChange={(e) => setBulkUrls(e.target.value)}
                 minRows={5}
                 maxRows={10}
+              />
+              <Input
+                label="Group Tag (optional)"
+                placeholder="e.g.: work, gaming, streaming"
+                value={bulkGroupTag}
+                onChange={(e) => setBulkGroupTag(e.target.value)}
+                description="Tag for filtering these nodes later"
               />
               <div className="flex justify-between items-center">
                 <p className="text-xs text-gray-400">
