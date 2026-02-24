@@ -609,8 +609,10 @@ func (b *ConfigBuilder) buildOutboundsWithMap() ([]Outbound, map[int]string) {
 		})
 	}
 
-	// Create main selector (compact: only groups, no individual nodes)
+	// Create main selector:
+	// include individual nodes so dashboard can switch to a specific node directly.
 	proxyOutbounds := []string{"Auto"}
+	proxyOutbounds = append(proxyOutbounds, allNodeTags...)
 	proxyOutbounds = append(proxyOutbounds, countryGroupTags...) // Add country groups
 	proxyOutbounds = append(proxyOutbounds, filterGroupTags...)
 
