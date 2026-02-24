@@ -272,8 +272,11 @@ func (pm *ProcessManager) Start() error {
 		return fmt.Errorf("failed to start sing-box: %w", err)
 	}
 
+	startedCmd := pm.cmd
+	startedPID := pm.cmd.Process.Pid
+
 	pm.running = true
-	pm.pid = pm.cmd.Process.Pid
+	pm.pid = startedPID
 
 	// Write PID file
 	if err := os.WriteFile(pm.pidFile, []byte(strconv.Itoa(pm.pid)), 0644); err != nil {
@@ -314,15 +317,27 @@ func (pm *ProcessManager) Start() error {
 	}()
 
 	// Monitor process exit
-	go func() {
-		pm.cmd.Wait()
+	go func(cmd *exec.Cmd, pid int) {
+		err := cmd.Wait()
+
 		pm.mu.Lock()
+		// Ignore stale wait callbacks from old processes.
+		if pm.cmd != cmd || pm.pid != pid {
+			pm.mu.Unlock()
+			return
+		}
 		pm.running = false
 		pm.pid = 0
+		pm.cmd = nil
 		pm.mu.Unlock()
+
 		os.Remove(pm.pidFile)
-		logger.Printf("sing-box process exited")
-	}()
+		if err != nil {
+			logger.Printf("sing-box process exited, PID: %d, err: %v", pid, err)
+		} else {
+			logger.Printf("sing-box process exited, PID: %d", pid)
+		}
+	}(startedCmd, startedPID)
 
 	return nil
 }
@@ -361,6 +376,7 @@ func (pm *ProcessManager) Stop() error {
 
 	pm.running = false
 	pm.pid = 0
+	pm.cmd = nil
 	os.Remove(pm.pidFile)
 	logger.Printf("sing-box stopped, PID: %d", pid)
 	return nil
