@@ -155,7 +155,7 @@ export default function Dashboard() {
 
       {/* Service status card */}
       <Card>
-        <CardHeader className="flex justify-between items-center">
+        <CardHeader className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
           <div className="flex items-center gap-3">
             <h2 className="text-lg font-semibold">sing-box Service</h2>
             <Chip
@@ -166,7 +166,7 @@ export default function Dashboard() {
               {serviceStatus?.running ? 'Running' : 'Stopped'}
             </Chip>
           </div>
-          <div className="flex gap-2">
+          <div className="flex flex-wrap gap-2">
             {serviceStatus?.running ? (
               <>
                 <Button
@@ -208,7 +208,7 @@ export default function Dashboard() {
           </div>
         </CardHeader>
         <CardBody>
-          <div className="grid grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
             <div>
               <p className="text-sm text-gray-500">Version</p>
               <div className="flex items-center gap-1">
@@ -259,9 +259,9 @@ export default function Dashboard() {
               {proxyLinks.map((item) => (
                 <div
                   key={item.key}
-                  className="flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-800 rounded-lg"
+                  className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 p-3 bg-gray-50 dark:bg-gray-800 rounded-lg"
                 >
-                  <div className="flex items-center gap-3 min-w-0">
+                  <div className="flex items-center gap-3 min-w-0 w-full sm:w-auto">
                     <Chip size="sm" variant="flat" color="primary">{item.label}</Chip>
                     <code className="text-sm text-gray-600 dark:text-gray-300 truncate">{item.link}</code>
                   </div>
@@ -380,7 +380,7 @@ export default function Dashboard() {
               {subscriptions.map((sub) => (
                 <div
                   key={sub.id}
-                  className="flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-800 rounded-lg"
+                  className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 p-3 bg-gray-50 dark:bg-gray-800 rounded-lg"
                 >
                   <div className="flex items-center gap-3">
                     <Chip
@@ -417,7 +417,7 @@ export default function Dashboard() {
               {manualNodes.map((mn) => (
                 <div
                   key={mn.id}
-                  className="flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-800 rounded-lg"
+                  className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 p-3 bg-gray-50 dark:bg-gray-800 rounded-lg"
                 >
                   <div className="flex items-center gap-3">
                     <Chip
@@ -431,7 +431,7 @@ export default function Dashboard() {
                       {mn.node.type}
                     </span>
                   </div>
-                  <span className="text-sm text-gray-400">
+                  <span className="text-sm text-gray-400 truncate max-w-full">
                     {mn.node.server}:{mn.node.server_port}
                   </span>
                 </div>
