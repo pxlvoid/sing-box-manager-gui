@@ -29,8 +29,9 @@ import {
   TableCell,
   Pagination,
   Tooltip,
+  Checkbox,
 } from '@nextui-org/react';
-import { Plus, RefreshCw, Trash2, Globe, Server, Pencil, Link, Filter as FilterIcon, ChevronDown, ChevronUp, List, Activity, Copy, ClipboardCheck, Download, ClipboardPaste, AlertTriangle, Search, ArrowUp, ArrowDown, FolderInput } from 'lucide-react';
+import { Plus, RefreshCw, Trash2, Globe, Server, Pencil, Link, Filter as FilterIcon, ChevronDown, ChevronUp, List, Activity, Copy, ClipboardCheck, Download, ClipboardPaste, AlertTriangle, Search, ArrowUp, ArrowDown, FolderInput, X, ToggleLeft, ToggleRight } from 'lucide-react';
 import { useStore } from '../store';
 import { nodeApi, manualNodeApi, subscriptionApi } from '../api';
 import { toast } from '../components/Toast';
@@ -320,9 +321,83 @@ export default function Subscriptions() {
     unifiedPage * UNIFIED_PAGE_SIZE
   );
 
-  // Reset page when filters change
+  // Selection state
+  const [selectedNodes, setSelectedNodes] = useState<Set<string>>(new Set());
+
+  const selectedUnified = useMemo(() =>
+    paginatedNodes.filter(n => selectedNodes.has(n.key)),
+    [paginatedNodes, selectedNodes]
+  );
+  const selectedManualNodes = useMemo(() =>
+    selectedUnified.filter(n => n.source === 'manual'),
+    [selectedUnified]
+  );
+  const selectedSubNodes = useMemo(() =>
+    selectedUnified.filter(n => n.source === 'subscription'),
+    [selectedUnified]
+  );
+
+  const allPageSelected = paginatedNodes.length > 0 && paginatedNodes.every(n => selectedNodes.has(n.key));
+  const somePageSelected = paginatedNodes.some(n => selectedNodes.has(n.key));
+
+  const handleToggleSelectAll = () => {
+    setSelectedNodes(prev => {
+      const next = new Set(prev);
+      if (allPageSelected) {
+        paginatedNodes.forEach(n => next.delete(n.key));
+      } else {
+        paginatedNodes.forEach(n => next.add(n.key));
+      }
+      return next;
+    });
+  };
+
+  const handleToggleSelect = (key: string) => {
+    setSelectedNodes(prev => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  };
+
+  const handleBulkHealthCheck = async () => {
+    for (const un of selectedUnified) {
+      checkSingleNodeHealth(un.node.tag);
+    }
+  };
+
+  const handleBulkDelete = async () => {
+    if (selectedManualNodes.length === 0) return;
+    if (!confirm(`Delete ${selectedManualNodes.length} manual node(s)?`)) return;
+    for (const un of selectedManualNodes) {
+      if (un.manualNodeId) await deleteManualNode(un.manualNodeId);
+    }
+    setSelectedNodes(new Set());
+  };
+
+  const handleBulkToggle = async (enabled: boolean) => {
+    for (const un of selectedManualNodes) {
+      const mn = manualNodes.find(m => m.id === un.manualNodeId);
+      if (mn) await updateManualNode(mn.id, { ...mn, enabled });
+    }
+  };
+
+  const handleBulkCopyToManual = async () => {
+    for (const un of selectedSubNodes) {
+      try {
+        await addManualNode({ node: un.node, enabled: true });
+      } catch (error) {
+        console.error('Failed to copy node:', error);
+      }
+    }
+    setSelectedNodes(new Set());
+  };
+
+  // Reset selection and page when filters change
   useEffect(() => {
     setUnifiedPage(1);
+    setSelectedNodes(new Set());
   }, [sourceFilter, searchQuery, healthFilter, sortConfig]);
 
   useEffect(() => {
@@ -858,6 +933,57 @@ export default function Subscriptions() {
               </span>
             </div>
 
+            {/* Bulk action bar */}
+            {selectedNodes.size > 0 && (
+              <div className="flex items-center gap-2 p-2 bg-primary-50 dark:bg-primary-900/20 rounded-lg">
+                <span className="text-sm font-medium ml-1">{selectedNodes.size} selected</span>
+                <Button size="sm" variant="flat" color="warning" startContent={<Activity className="w-3.5 h-3.5" />} onPress={handleBulkHealthCheck}>
+                  Health Check
+                </Button>
+                <Button
+                  size="sm"
+                  variant="flat"
+                  color="danger"
+                  startContent={<Trash2 className="w-3.5 h-3.5" />}
+                  onPress={handleBulkDelete}
+                  isDisabled={selectedManualNodes.length === 0}
+                >
+                  Delete ({selectedManualNodes.length})
+                </Button>
+                <Button
+                  size="sm"
+                  variant="flat"
+                  startContent={<ToggleRight className="w-3.5 h-3.5" />}
+                  onPress={() => handleBulkToggle(true)}
+                  isDisabled={selectedManualNodes.length === 0}
+                >
+                  Enable ({selectedManualNodes.length})
+                </Button>
+                <Button
+                  size="sm"
+                  variant="flat"
+                  startContent={<ToggleLeft className="w-3.5 h-3.5" />}
+                  onPress={() => handleBulkToggle(false)}
+                  isDisabled={selectedManualNodes.length === 0}
+                >
+                  Disable ({selectedManualNodes.length})
+                </Button>
+                <Button
+                  size="sm"
+                  variant="flat"
+                  color="secondary"
+                  startContent={<FolderInput className="w-3.5 h-3.5" />}
+                  onPress={handleBulkCopyToManual}
+                  isDisabled={selectedSubNodes.length === 0}
+                >
+                  Copy to Manual ({selectedSubNodes.length})
+                </Button>
+                <Button size="sm" isIconOnly variant="light" onPress={() => setSelectedNodes(new Set())} className="ml-auto">
+                  <X className="w-3.5 h-3.5" />
+                </Button>
+              </div>
+            )}
+
             {/* Table */}
             {unifiedNodes.length === 0 ? (
               <Card>
@@ -891,6 +1017,14 @@ export default function Subscriptions() {
                 }
               >
                 <TableHeader>
+                  <TableColumn width={40}>
+                    <Checkbox
+                      size="sm"
+                      isSelected={allPageSelected}
+                      isIndeterminate={somePageSelected && !allPageSelected}
+                      onValueChange={handleToggleSelectAll}
+                    />
+                  </TableColumn>
                   <TableColumn width={40}> </TableColumn>
                   <TableColumn allowsSorting>
                     <span className="cursor-pointer flex items-center gap-1" onClick={() => handleColumnSort('name')}>
@@ -923,6 +1057,13 @@ export default function Subscriptions() {
                     const mn = un.manualNodeId ? manualNodes.find(m => m.id === un.manualNodeId) : null;
                     return (
                       <TableRow key={un.key}>
+                        <TableCell>
+                          <Checkbox
+                            size="sm"
+                            isSelected={selectedNodes.has(un.key)}
+                            onValueChange={() => handleToggleSelect(un.key)}
+                          />
+                        </TableCell>
                         <TableCell>
                           <span className="text-lg">{un.node.country_emoji || '🌐'}</span>
                         </TableCell>
