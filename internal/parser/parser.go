@@ -205,6 +205,32 @@ func getParamBool(params url.Values, key string) bool {
 	return v == "1" || v == "true" || v == "True" || v == "TRUE"
 }
 
+// validFingerprints is the set of allowed uTLS fingerprint values
+var validFingerprints = map[string]bool{
+	"chrome":     true,
+	"firefox":    true,
+	"safari":     true,
+	"ios":        true,
+	"android":    true,
+	"edge":       true,
+	"360":        true,
+	"qq":         true,
+	"random":     true,
+	"randomized": true,
+}
+
+// validateFingerprint checks if the fingerprint value is valid.
+// Returns an error if the value is not in the allowed list.
+func validateFingerprint(fp string) error {
+	if fp == "" {
+		return nil
+	}
+	if !validFingerprints[fp] {
+		return fmt.Errorf("invalid uTLS fingerprint: %q", fp)
+	}
+	return nil
+}
+
 // getParamInt gets an integer parameter
 func getParamInt(params url.Values, key string, defaultValue int) int {
 	if v := params.Get(key); v != "" {
