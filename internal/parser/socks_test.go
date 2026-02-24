@@ -17,7 +17,7 @@ func TestSocksParser_Parse(t *testing.T) {
 	}{
 		{
 			name:         "Base64 encoded auth",
-			url:          "socks://dGVzdHVzZXI6dGVzdHBhc3M=@192.168.1.100:1080#测试节点",
+			url:          "socks://dGVzdHVzZXI6dGVzdHBhc3M=@192.168.1.100:1080#test-node",
 			wantServer:   "192.168.1.100",
 			wantPort:     1080,
 			wantUsername: "testuser",
@@ -126,8 +126,8 @@ func TestSocksParser_Parse(t *testing.T) {
 }
 
 func TestParseURL_Socks(t *testing.T) {
-	// 测试通过 ParseURL 函数解析 (Base64: testuser:testpass)
-	url := "socks://dGVzdHVzZXI6dGVzdHBhc3M=@192.168.1.100:1080#美国-测试节点"
+	// Test parsing via ParseURL function (Base64: testuser:testpass)
+	url := "socks://dGVzdHVzZXI6dGVzdHBhc3M=@192.168.1.100:1080#US-test-node"
 	node, err := ParseURL(url)
 	if err != nil {
 		t.Fatalf("ParseURL() error = %v", err)
@@ -142,8 +142,8 @@ func TestParseURL_Socks(t *testing.T) {
 	if node.ServerPort != 1080 {
 		t.Errorf("ServerPort = %v, want 1080", node.ServerPort)
 	}
-	if node.Tag != "美国-测试节点" {
-		t.Errorf("Tag = %v, want 美国-测试节点", node.Tag)
+	if node.Tag != "US-test-node" {
+		t.Errorf("Tag = %v, want US-test-node", node.Tag)
 	}
 	if node.Country != "US" {
 		t.Errorf("Country = %v, want US", node.Country)

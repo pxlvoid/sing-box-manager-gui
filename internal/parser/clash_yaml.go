@@ -10,19 +10,19 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// ClashConfig Clash 配置结构
+// ClashConfig Clash configuration structure
 type ClashConfig struct {
 	Proxies []ClashProxy `yaml:"proxies"`
 }
 
-// ClashProxy Clash 代理配置
+// ClashProxy Clash proxy configuration
 type ClashProxy struct {
 	Name           string                 `yaml:"name"`
 	Type           string                 `yaml:"type"`
 	Server         string                 `yaml:"server"`
 	Port           int                    `yaml:"port"`
 	Password       string                 `yaml:"password,omitempty"`
-	Username       string                 `yaml:"username,omitempty"` // SOCKS 用户名
+	Username       string                 `yaml:"username,omitempty"` // SOCKS username
 	UUID           string                 `yaml:"uuid,omitempty"`
 	Cipher         string                 `yaml:"cipher,omitempty"`
 	AlterId        int                    `yaml:"alterId,omitempty"`
@@ -30,7 +30,7 @@ type ClashProxy struct {
 	TLS            bool                   `yaml:"tls,omitempty"`
 	SkipCertVerify bool                   `yaml:"skip-cert-verify,omitempty"`
 	SNI            string                 `yaml:"sni,omitempty"`
-	Servername     string                 `yaml:"servername,omitempty"` // Clash 格式的 SNI 字段
+	Servername     string                 `yaml:"servername,omitempty"` // Clash format SNI field
 	ALPN           []string               `yaml:"alpn,omitempty"`
 	Fingerprint    string                 `yaml:"fingerprint,omitempty"`
 	Flow           string                 `yaml:"flow,omitempty"`
@@ -42,19 +42,19 @@ type ClashProxy struct {
 	HTTPOpts       *HTTPOpts              `yaml:"http-opts,omitempty"`
 	GrpcOpts       *GrpcOpts              `yaml:"grpc-opts,omitempty"`
 	RealityOpts    *RealityOpts           `yaml:"reality-opts,omitempty"`
-	// Hysteria2 特有
+	// Hysteria2 specific
 	Auth         string `yaml:"auth,omitempty"`
 	Obfs         string `yaml:"obfs,omitempty"`
 	ObfsPassword string `yaml:"obfs-password,omitempty"`
 	Up           string `yaml:"up,omitempty"`
 	Down         string `yaml:"down,omitempty"`
-	// TUIC 特有
+	// TUIC specific
 	CongestionController string `yaml:"congestion-controller,omitempty"`
 	UDPRelayMode         string `yaml:"udp-relay-mode,omitempty"`
 	ReduceRTT            bool   `yaml:"reduce-rtt,omitempty"`
 }
 
-// WSOpts WebSocket 选项
+// WSOpts WebSocket options
 type WSOpts struct {
 	Path                string            `yaml:"path,omitempty"`
 	Headers             map[string]string `yaml:"headers,omitempty"`
@@ -62,42 +62,42 @@ type WSOpts struct {
 	EarlyDataHeaderName string            `yaml:"early-data-header-name,omitempty"`
 }
 
-// H2Opts HTTP/2 选项
+// H2Opts HTTP/2 options
 type H2Opts struct {
 	Path string   `yaml:"path,omitempty"`
 	Host []string `yaml:"host,omitempty"`
 }
 
-// HTTPOpts HTTP 选项
+// HTTPOpts HTTP options
 type HTTPOpts struct {
 	Method  string              `yaml:"method,omitempty"`
 	Path    []string            `yaml:"path,omitempty"`
 	Headers map[string][]string `yaml:"headers,omitempty"`
 }
 
-// GrpcOpts gRPC 选项
+// GrpcOpts gRPC options
 type GrpcOpts struct {
 	GrpcServiceName string `yaml:"grpc-service-name,omitempty"`
 }
 
-// RealityOpts Reality 选项
+// RealityOpts Reality options
 type RealityOpts struct {
 	PublicKey string `yaml:"public-key,omitempty"`
 	ShortID   string `yaml:"short-id,omitempty"`
 }
 
-// ParseClashYAML 解析 Clash YAML 配置
+// ParseClashYAML parses Clash YAML configuration
 func ParseClashYAML(content string) ([]storage.Node, error) {
 	var config ClashConfig
 	if err := yaml.Unmarshal([]byte(content), &config); err != nil {
-		return nil, fmt.Errorf("解析 YAML 失败: %w", err)
+		return nil, fmt.Errorf("failed to parse YAML: %w", err)
 	}
 
 	var nodes []storage.Node
 	for _, proxy := range config.Proxies {
 		node, err := convertClashProxy(proxy)
 		if err != nil {
-			continue // 跳过无法解析的节点
+			continue // Skip nodes that cannot be parsed
 		}
 		nodes = append(nodes, *node)
 	}
@@ -105,7 +105,7 @@ func ParseClashYAML(content string) ([]storage.Node, error) {
 	return nodes, nil
 }
 
-// convertClashProxy 转换 Clash 代理配置为内部格式
+// convertClashProxy converts Clash proxy configuration to internal format
 func convertClashProxy(proxy ClashProxy) (*storage.Node, error) {
 	var nodeType string
 	extra := make(map[string]interface{})
@@ -155,7 +155,7 @@ func convertClashProxy(proxy ClashProxy) (*storage.Node, error) {
 				"password": proxy.ObfsPassword,
 			}
 		}
-		// 带宽配置 - 转换为 up_mbps/down_mbps
+		// Bandwidth configuration - convert to up_mbps/down_mbps
 		if proxy.Up != "" {
 			if mbps := parseBandwidthClash(proxy.Up); mbps > 0 {
 				extra["up_mbps"] = mbps
@@ -166,7 +166,7 @@ func convertClashProxy(proxy ClashProxy) (*storage.Node, error) {
 				extra["down_mbps"] = mbps
 			}
 		}
-		// Hysteria2 必须启用 TLS
+		// Hysteria2 must enable TLS
 		tls := map[string]interface{}{
 			"enabled": true,
 		}
@@ -217,10 +217,10 @@ func convertClashProxy(proxy ClashProxy) (*storage.Node, error) {
 		}
 
 	default:
-		return nil, fmt.Errorf("不支持的代理类型: %s", proxy.Type)
+		return nil, fmt.Errorf("unsupported proxy type: %s", proxy.Type)
 	}
 
-	// 传输层配置
+	// Transport layer configuration
 	network := proxy.Network
 	if network == "" {
 		network = "tcp"
@@ -277,19 +277,19 @@ func convertClashProxy(proxy ClashProxy) (*storage.Node, error) {
 		extra["transport"] = transport
 	}
 
-	// TLS 配置
+	// TLS configuration
 	if proxy.TLS {
 		tls := map[string]interface{}{
 			"enabled": true,
 		}
 
-		// 设置 server_name（按优先级：SNI > Servername > 服务器地址）
+		// Set server_name (by priority: SNI > Servername > server address)
 		if proxy.SNI != "" {
 			tls["server_name"] = proxy.SNI
 		} else if proxy.Servername != "" {
 			tls["server_name"] = proxy.Servername
 		} else {
-			// 回退到服务器地址，确保 TLS 握手有正确的 SNI
+			// Fall back to server address, ensure correct SNI for TLS handshake
 			tls["server_name"] = proxy.Server
 		}
 
@@ -308,7 +308,7 @@ func convertClashProxy(proxy ClashProxy) (*storage.Node, error) {
 			}
 		}
 
-		// Reality 配置
+		// Reality configuration
 		if proxy.RealityOpts != nil {
 			reality := map[string]interface{}{
 				"enabled": true,
@@ -321,11 +321,11 @@ func convertClashProxy(proxy ClashProxy) (*storage.Node, error) {
 			}
 			tls["reality"] = reality
 
-			// Reality 必须要有 uTLS 配置，如果没有设置则使用默认值
+			// Reality requires uTLS configuration, use default if not set
 			if _, ok := tls["utls"]; !ok {
 				fp := proxy.Fingerprint
 				if fp == "" {
-					fp = "chrome" // 默认使用 chrome fingerprint
+					fp = "chrome" // Default to chrome fingerprint
 				}
 				tls["utls"] = map[string]interface{}{
 					"enabled":     true,
@@ -337,7 +337,7 @@ func convertClashProxy(proxy ClashProxy) (*storage.Node, error) {
 		extra["tls"] = tls
 	}
 
-	// 解析国家信息
+	// Parse country info
 	var country, countryEmoji string
 	if countryInfo := utils.ParseCountryFromNodeName(proxy.Name); countryInfo != nil {
 		country = countryInfo.Code
@@ -357,8 +357,8 @@ func convertClashProxy(proxy ClashProxy) (*storage.Node, error) {
 	return node, nil
 }
 
-// parseBandwidthClash 解析带宽字符串为 Mbps 整数
-// 支持格式: "100", "100Mbps", "100 mbps", "100M" 等
+// parseBandwidthClash parses bandwidth string to Mbps integer
+// Supported formats: "100", "100Mbps", "100 mbps", "100M", etc.
 func parseBandwidthClash(s string) int {
 	s = strings.TrimSpace(strings.ToLower(s))
 	s = strings.TrimSuffix(s, "mbps")

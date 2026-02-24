@@ -23,7 +23,7 @@ import { useStore } from '../store';
 import { ruleSetApi } from '../api';
 import type { Rule, RuleGroup } from '../store';
 
-// 规则集验证结果类型
+// Rule set validation result type
 interface ValidationResult {
   valid: boolean;
   url: string;
@@ -48,19 +48,19 @@ const iconMap: Record<string, React.ReactNode> = {
 };
 
 const baseOutboundOptions = [
-  { value: 'Proxy', label: 'Proxy (代理)' },
-  { value: 'DIRECT', label: 'DIRECT (直连)' },
-  { value: 'REJECT', label: 'REJECT (拦截)' },
+  { value: 'Proxy', label: 'Proxy' },
+  { value: 'DIRECT', label: 'DIRECT' },
+  { value: 'REJECT', label: 'REJECT (Block)' },
 ];
 
 const ruleTypeOptions = [
-  { value: 'domain_suffix', label: '域名后缀 (domain_suffix)' },
-  { value: 'domain_keyword', label: '域名关键字 (domain_keyword)' },
-  { value: 'domain', label: '完整域名 (domain)' },
-  { value: 'ip_cidr', label: 'IP 段 (ip_cidr)' },
-  { value: 'geosite', label: 'GeoSite 规则集' },
-  { value: 'geoip', label: 'GeoIP 规则集' },
-  { value: 'port', label: '端口 (port)' },
+  { value: 'domain_suffix', label: 'Domain Suffix (domain_suffix)' },
+  { value: 'domain_keyword', label: 'Domain Keyword (domain_keyword)' },
+  { value: 'domain', label: 'Full Domain (domain)' },
+  { value: 'ip_cidr', label: 'IP Range (ip_cidr)' },
+  { value: 'geosite', label: 'GeoSite Rule Set' },
+  { value: 'geoip', label: 'GeoIP Rule Set' },
+  { value: 'port', label: 'Port (port)' },
 ];
 
 const defaultRule: Omit<Rule, 'id'> = {
@@ -94,7 +94,7 @@ export default function Rules() {
   const [formData, setFormData] = useState<Omit<Rule, 'id'>>(defaultRule);
   const [valuesText, setValuesText] = useState('');
 
-  // 规则集验证状态
+  // Rule set validation state
   const [validationResults, setValidationResults] = useState<Record<string, ValidationResult>>({});
   const [isValidating, setIsValidating] = useState(false);
   const validationTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -106,7 +106,7 @@ export default function Rules() {
     fetchCountryGroups();
   }, []);
 
-  // 验证规则集（防抖）
+  // Validate rule set (debounced)
   const validateRuleSet = useCallback(async (type: 'geosite' | 'geoip', names: string[]) => {
     if (names.length === 0) {
       setValidationResults({});
@@ -126,7 +126,7 @@ export default function Rules() {
           valid: false,
           url: '',
           tag: '',
-          message: '验证请求失败',
+          message: 'Validation request failed',
         };
       }
     }
@@ -135,7 +135,7 @@ export default function Rules() {
     setIsValidating(false);
   }, []);
 
-  // 当规则值改变时触发验证（防抖 500ms）
+  // Trigger validation when rule values change (debounce 500ms)
   useEffect(() => {
     if (formData.rule_type !== 'geosite' && formData.rule_type !== 'geoip') {
       setValidationResults({});
@@ -167,7 +167,7 @@ export default function Rules() {
     };
   }, [valuesText, formData.rule_type, validateRuleSet]);
 
-  // 检查是否所有规则集都验证通过
+  // Check if all rule sets passed validation
   const allValidationsPassed = useCallback(() => {
     if (formData.rule_type !== 'geosite' && formData.rule_type !== 'geoip') {
       return true;
@@ -183,20 +183,20 @@ export default function Rules() {
     return names.every((name) => validationResults[name]?.valid);
   }, [formData.rule_type, valuesText, validationResults]);
 
-  // 获取所有可用的出站选项（包括国家节点组和过滤器）
+  // Get all available outbound options (including country node groups and filters)
   const getAllOutboundOptions = () => {
     const options = [...baseOutboundOptions];
 
-    // 添加国家节点组
+    // Add country node groups
     countryGroups.forEach((group) => {
       const label = `${group.emoji} ${group.name}`;
-      options.push({ value: label, label: `${label} (${group.node_count}节点)` });
+      options.push({ value: label, label: `${label} (${group.node_count} nodes)` });
     });
 
-    // 添加过滤器
+    // Add filters
     filters.forEach((filter) => {
       if (filter.enabled) {
-        options.push({ value: filter.name, label: `${filter.name} (过滤器)` });
+        options.push({ value: filter.name, label: `${filter.name} (Filter)` });
       }
     });
 
@@ -235,7 +235,7 @@ export default function Rules() {
   };
 
   const handleDeleteRule = async (rule: Rule) => {
-    if (confirm(`确定要删除规则 "${rule.name}" 吗？`)) {
+    if (confirm(`Are you sure you want to delete rule "${rule.name}"?`)) {
       await deleteRule(rule.id);
     }
   };
@@ -267,13 +267,13 @@ export default function Rules() {
   return (
     <div className="space-y-6">
       <div className="flex justify-between items-center">
-        <h1 className="text-2xl font-bold text-gray-800 dark:text-white">规则管理</h1>
+        <h1 className="text-2xl font-bold text-gray-800 dark:text-white">Rule Management</h1>
       </div>
 
-      {/* 预设规则组 */}
+      {/* Preset Rule Groups */}
       <Card>
         <CardHeader>
-          <h2 className="text-lg font-semibold">预设规则组</h2>
+          <h2 className="text-lg font-semibold">Preset Rule Groups</h2>
         </CardHeader>
         <CardBody>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -308,7 +308,7 @@ export default function Rules() {
                     className="w-32"
                     selectedKeys={[group.outbound]}
                     onChange={(e) => handleOutboundChange(group, e.target.value)}
-                    aria-label="选择出站"
+                    aria-label="Select outbound"
                   >
                     {getAllOutboundOptions().map((opt) => (
                       <SelectItem key={opt.value} value={opt.value}>
@@ -327,23 +327,23 @@ export default function Rules() {
         </CardBody>
       </Card>
 
-      {/* 自定义规则 */}
+      {/* Custom Rules */}
       <Card>
         <CardHeader className="flex justify-between items-center">
-          <h2 className="text-lg font-semibold">自定义规则</h2>
+          <h2 className="text-lg font-semibold">Custom Rules</h2>
           <Button
             color="primary"
             size="sm"
             startContent={<Plus className="w-4 h-4" />}
             onPress={handleAddRule}
           >
-            添加规则
+            Add Rule
           </Button>
         </CardHeader>
         <CardBody>
           {rules.length === 0 ? (
             <p className="text-gray-500 text-center py-8">
-              暂无自定义规则，点击上方按钮添加
+              No custom rules yet. Click the button above to add one.
             </p>
           ) : (
             <div className="space-y-3">
@@ -382,14 +382,14 @@ export default function Rules() {
                         ))}
                         {rule.values.length > 3 && (
                           <Chip size="sm" variant="bordered">
-                            +{rule.values.length - 3} 条
+                            +{rule.values.length - 3} more
                           </Chip>
                         )}
                       </div>
                     </div>
                     <div className="flex items-center gap-2">
                       <Chip size="sm" variant="flat">
-                        优先级: {rule.priority}
+                        Priority: {rule.priority}
                       </Chip>
                       <Button
                         isIconOnly
@@ -420,21 +420,21 @@ export default function Rules() {
         </CardBody>
       </Card>
 
-      {/* 添加/编辑规则弹窗 */}
+      {/* Add/Edit Rule Modal */}
       <Modal isOpen={isOpen} onClose={onClose} size="lg">
         <ModalContent>
-          <ModalHeader>{editingRule ? '编辑规则' : '添加规则'}</ModalHeader>
+          <ModalHeader>{editingRule ? 'Edit Rule' : 'Add Rule'}</ModalHeader>
           <ModalBody>
             <div className="space-y-4">
               <Input
-                label="规则名称"
-                placeholder="例如：屏蔽广告域名"
+                label="Rule Name"
+                placeholder="e.g.: Block ad domains"
                 value={formData.name}
                 onChange={(e) => setFormData({ ...formData, name: e.target.value })}
               />
 
               <Select
-                label="规则类型"
+                label="Rule Type"
                 selectedKeys={[formData.rule_type]}
                 onChange={(e) => setFormData({ ...formData, rule_type: e.target.value })}
               >
@@ -446,28 +446,28 @@ export default function Rules() {
               </Select>
 
               <Textarea
-                label="规则值"
+                label="Rule Values"
                 placeholder={
                   formData.rule_type === 'domain_suffix'
-                    ? '每行一个域名后缀，例如：\ngoogle.com\nyoutube.com'
+                    ? 'One domain suffix per line, e.g.:\ngoogle.com\nyoutube.com'
                     : formData.rule_type === 'ip_cidr'
-                    ? '每行一个 IP 段，例如：\n192.168.0.0/16\n10.0.0.0/8'
+                    ? 'One IP range per line, e.g.:\n192.168.0.0/16\n10.0.0.0/8'
                     : formData.rule_type === 'geosite'
-                    ? '每行一个 geosite 规则集名称，例如：\ngoogle\nyoutube\ncursor'
+                    ? 'One geosite rule set name per line, e.g.:\ngoogle\nyoutube\ncursor'
                     : formData.rule_type === 'geoip'
-                    ? '每行一个 geoip 规则集名称，例如：\ncn\ngoogle'
-                    : '每行一个值'
+                    ? 'One geoip rule set name per line, e.g.:\ncn\ngoogle'
+                    : 'One value per line'
                 }
                 value={valuesText}
                 onChange={(e) => setValuesText(e.target.value)}
                 minRows={4}
               />
 
-              {/* 规则集验证结果显示 */}
+              {/* Rule set validation results */}
               {(formData.rule_type === 'geosite' || formData.rule_type === 'geoip') && valuesText.trim() && (
                 <div className="space-y-2">
                   <div className="flex items-center gap-2 text-sm text-gray-600 dark:text-gray-400">
-                    <span>规则集验证结果</span>
+                    <span>Rule Set Validation Results</span>
                     {isValidating && <Spinner size="sm" />}
                   </div>
                   <div className="space-y-1 max-h-32 overflow-y-auto">
@@ -481,7 +481,7 @@ export default function Rules() {
                           return (
                             <div key={name} className="flex items-center gap-2 text-sm text-gray-500">
                               <Spinner size="sm" />
-                              <span>{name} - 验证中...</span>
+                              <span>{name} - Validating...</span>
                             </div>
                           );
                         }
@@ -507,7 +507,7 @@ export default function Rules() {
               )}
 
               <Select
-                label="出站"
+                label="Outbound"
                 selectedKeys={[formData.outbound]}
                 onChange={(e) => setFormData({ ...formData, outbound: e.target.value })}
               >
@@ -520,8 +520,8 @@ export default function Rules() {
 
               <Input
                 type="number"
-                label="优先级"
-                placeholder="数字越小优先级越高"
+                label="Priority"
+                placeholder="Lower number = higher priority"
                 value={String(formData.priority)}
                 onChange={(e) =>
                   setFormData({ ...formData, priority: parseInt(e.target.value) || 100 })
@@ -529,7 +529,7 @@ export default function Rules() {
               />
 
               <div className="flex items-center justify-between">
-                <span>启用规则</span>
+                <span>Enable Rule</span>
                 <Switch
                   isSelected={formData.enabled}
                   onValueChange={(enabled) => setFormData({ ...formData, enabled })}
@@ -539,14 +539,14 @@ export default function Rules() {
           </ModalBody>
           <ModalFooter>
             <Button variant="flat" onPress={onClose}>
-              取消
+              Cancel
             </Button>
             <Button
               color="primary"
               onPress={handleSubmit}
               isDisabled={!formData.name || !valuesText.trim() || isValidating || !allValidationsPassed()}
             >
-              {editingRule ? '保存' : '添加'}
+              {editingRule ? 'Save' : 'Add'}
             </Button>
           </ModalFooter>
         </ModalContent>

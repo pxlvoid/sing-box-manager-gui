@@ -10,29 +10,29 @@ import (
 	"github.com/xiaobei/singbox-manager/pkg/utils"
 )
 
-// SubscriptionService 订阅服务
+// SubscriptionService handles subscription operations
 type SubscriptionService struct {
 	store *storage.JSONStore
 }
 
-// NewSubscriptionService 创建订阅服务
+// NewSubscriptionService creates a new subscription service
 func NewSubscriptionService(store *storage.JSONStore) *SubscriptionService {
 	return &SubscriptionService{
 		store: store,
 	}
 }
 
-// GetAll 获取所有订阅
+// GetAll returns all subscriptions
 func (s *SubscriptionService) GetAll() []storage.Subscription {
 	return s.store.GetSubscriptions()
 }
 
-// Get 获取单个订阅
+// Get returns a single subscription
 func (s *SubscriptionService) Get(id string) *storage.Subscription {
 	return s.store.GetSubscription(id)
 }
 
-// Add 添加订阅
+// Add adds a subscription
 func (s *SubscriptionService) Add(name, url string) (*storage.Subscription, error) {
 	sub := storage.Subscription{
 		ID:        uuid.New().String(),
@@ -44,34 +44,34 @@ func (s *SubscriptionService) Add(name, url string) (*storage.Subscription, erro
 		Enabled:   true,
 	}
 
-	// 拉取并解析订阅
+	// Fetch and parse subscription
 	if err := s.refresh(&sub); err != nil {
-		return nil, fmt.Errorf("拉取订阅失败: %w", err)
+		return nil, fmt.Errorf("failed to fetch subscription: %w", err)
 	}
 
-	// 保存订阅
+	// Save subscription
 	if err := s.store.AddSubscription(sub); err != nil {
-		return nil, fmt.Errorf("保存订阅失败: %w", err)
+		return nil, fmt.Errorf("failed to save subscription: %w", err)
 	}
 
 	return &sub, nil
 }
 
-// Update 更新订阅
+// Update updates a subscription
 func (s *SubscriptionService) Update(sub storage.Subscription) error {
 	return s.store.UpdateSubscription(sub)
 }
 
-// Delete 删除订阅
+// Delete deletes a subscription
 func (s *SubscriptionService) Delete(id string) error {
 	return s.store.DeleteSubscription(id)
 }
 
-// Refresh 刷新订阅
+// Refresh refreshes a subscription
 func (s *SubscriptionService) Refresh(id string) error {
 	sub := s.store.GetSubscription(id)
 	if sub == nil {
-		return fmt.Errorf("订阅不存在: %s", id)
+		return fmt.Errorf("subscription not found: %s", id)
 	}
 
 	if err := s.refresh(sub); err != nil {
@@ -81,13 +81,13 @@ func (s *SubscriptionService) Refresh(id string) error {
 	return s.store.UpdateSubscription(*sub)
 }
 
-// RefreshAll 刷新所有订阅
+// RefreshAll refreshes all subscriptions
 func (s *SubscriptionService) RefreshAll() error {
 	subs := s.store.GetSubscriptions()
 	for _, sub := range subs {
 		if sub.Enabled {
 			if err := s.refresh(&sub); err != nil {
-				// 记录错误但继续处理其他订阅
+				// Log error but continue processing other subscriptions
 				continue
 			}
 			if err := s.store.UpdateSubscription(sub); err != nil {
@@ -98,26 +98,26 @@ func (s *SubscriptionService) RefreshAll() error {
 	return nil
 }
 
-// refresh 内部刷新方法
+// refresh internal refresh method
 func (s *SubscriptionService) refresh(sub *storage.Subscription) error {
-	// 拉取订阅内容
+	// Fetch subscription content
 	content, info, err := utils.FetchSubscription(sub.URL)
 	if err != nil {
-		return fmt.Errorf("拉取订阅失败: %w", err)
+		return fmt.Errorf("failed to fetch subscription: %w", err)
 	}
 
-	// 解析节点
+	// Parse nodes
 	nodes, err := parser.ParseSubscriptionContent(content)
 	if err != nil {
-		return fmt.Errorf("解析订阅失败: %w", err)
+		return fmt.Errorf("failed to parse subscription: %w", err)
 	}
 
-	// 更新订阅信息
+	// Update subscription info
 	sub.Nodes = nodes
 	sub.NodeCount = len(nodes)
 	sub.UpdatedAt = time.Now()
 
-	// 更新流量信息
+	// Update traffic info
 	if info != nil && info.Total > 0 {
 		sub.Traffic = &storage.Traffic{
 			Total:     info.Total,
@@ -130,11 +130,11 @@ func (s *SubscriptionService) refresh(sub *storage.Subscription) error {
 	return nil
 }
 
-// Toggle 切换订阅启用状态
+// Toggle toggles subscription enabled state
 func (s *SubscriptionService) Toggle(id string, enabled bool) error {
 	sub := s.store.GetSubscription(id)
 	if sub == nil {
-		return fmt.Errorf("订阅不存在: %s", id)
+		return fmt.Errorf("subscription not found: %s", id)
 	}
 
 	sub.Enabled = enabled

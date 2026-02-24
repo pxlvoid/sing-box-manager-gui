@@ -10,19 +10,19 @@ import (
 	"github.com/xiaobei/singbox-manager/internal/storage"
 )
 
-// SocksParser SOCKS 解析器
+// SocksParser SOCKS Parser
 type SocksParser struct{}
 
-// Protocol 返回协议名称
+// Protocol Return protocol name
 func (p *SocksParser) Protocol() string {
 	return "socks"
 }
 
-// Parse 解析 SOCKS URL
-// 格式1: socks://username:password@server:port#name
-// 格式2: socks://base64(username:password)@server:port#name
-// 格式3: socks://server:port#name (无认证)
-// 也支持 socks5:// 和 socks4:// 前缀
+// Parse Parse SOCKS URL
+// Format1: socks://username:password@server:port#name
+// Format2: socks://base64(username:password)@server:port#name
+// Format3: socks://server:port#name (no authentication)
+// Also supports socks5:// and socks4:// prefixes
 func (p *SocksParser) Parse(rawURL string) (*storage.Node, error) {
 	addressPart, params, name, err := parseURLParams(rawURL)
 	if err != nil {
@@ -30,9 +30,9 @@ func (p *SocksParser) Parse(rawURL string) (*storage.Node, error) {
 	}
 
 	var username, password, serverPart string
-	version := "5" // 默认 SOCKS5
+	version := "5" // Default SOCKS5
 
-	// 检测版本（从协议名称）
+	// Detect version (from protocol name)
 	idx := strings.Index(rawURL, "://")
 	if idx != -1 {
 		protocol := strings.ToLower(rawURL[:idx])
@@ -41,55 +41,55 @@ func (p *SocksParser) Parse(rawURL string) (*storage.Node, error) {
 		}
 	}
 
-	// 分离认证信息和服务器
+	// Separate authentication info and server
 	atIdx := strings.LastIndex(addressPart, "@")
 	if atIdx != -1 {
-		// 有认证信息
+		// Has authentication
 		authPart := addressPart[:atIdx]
 		serverPart = addressPart[atIdx+1:]
 
-		// 尝试解析 username:password 格式
+		// Try to parse username:password format
 		if colonIdx := strings.Index(authPart, ":"); colonIdx != -1 {
-			// 直接格式: username:password
+			// Direct format: username:password
 			username, _ = url.QueryUnescape(authPart[:colonIdx])
 			password, _ = url.QueryUnescape(authPart[colonIdx+1:])
 		} else {
-			// 没有冒号，可能是 Base64 编码的 username:password 或者只是用户名
-			// 尝试 Base64 解码
+			// No colon, may be Base64 encoded username:password or just username
+			// Try Base64 decoding
 			decoded := tryBase64Decode(authPart)
 
 			if decoded != "" && strings.Contains(decoded, ":") {
-				// 解码成功且包含冒号，说明是 Base64 编码的 username:password
+				// Decoded successfully and contains colon, indicating Base64 encoded username:password
 				colonIdx := strings.Index(decoded, ":")
 				username = decoded[:colonIdx]
 				password = decoded[colonIdx+1:]
 			} else {
-				// 解码失败或不包含冒号，当作普通用户名处理
+				// Decoding failed or does not contain colon, treat as normal username
 				username, _ = url.QueryUnescape(authPart)
 			}
 		}
 	} else {
-		// 无认证信息
+		// No authentication
 		serverPart = addressPart
 	}
 
-	// 解析服务器地址
+	// Parse server address
 	server, port, err := parseServerInfo(serverPart)
 	if err != nil {
-		return nil, fmt.Errorf("解析服务器地址失败: %w", err)
+		return nil, fmt.Errorf("Failed to parse server address: %w", err)
 	}
 
-	// 设置默认名称
+	// Set default name
 	if name == "" {
 		name = fmt.Sprintf("%s:%d", server, port)
 	}
 
-	// 构建 Extra
+	// Build Extra
 	extra := map[string]interface{}{
 		"version": version,
 	}
 
-	// 添加认证信息
+	// Add authentication info
 	if username != "" {
 		extra["username"] = username
 	}
@@ -97,7 +97,7 @@ func (p *SocksParser) Parse(rawURL string) (*storage.Node, error) {
 		extra["password"] = password
 	}
 
-	// 处理 URL 参数中可能的额外配置
+	// Handle possible extra configuration from URL parameters
 	if v := params.Get("version"); v != "" {
 		extra["version"] = v
 	}
@@ -108,7 +108,7 @@ func (p *SocksParser) Parse(rawURL string) (*storage.Node, error) {
 		extra["password"] = pw
 	}
 
-	// UoT (UDP over TCP) 配置
+	// UoT (UDP over TCP) configuration
 	if getParamBool(params, "udp-over-tcp") || getParamBool(params, "uot") {
 		extra["udp_over_tcp"] = map[string]interface{}{
 			"enabled": true,
@@ -126,7 +126,7 @@ func (p *SocksParser) Parse(rawURL string) (*storage.Node, error) {
 	return node, nil
 }
 
-// isValidUsername 检查字符串是否是有效的用户名（只包含可打印字符）
+// isValidUsername Check if string is valid username (contains only printable characters)
 func isValidUsername(s string) bool {
 	if s == "" {
 		return false
@@ -139,21 +139,21 @@ func isValidUsername(s string) bool {
 	return true
 }
 
-// tryBase64Decode 尝试多种 Base64 解码方式
+// tryBase64Decode Try multiple Base64 decoding methods
 func tryBase64Decode(s string) string {
-	// 尝试标准 Base64
+	// Try standard Base64
 	if decoded, err := base64.StdEncoding.DecodeString(s); err == nil {
 		if isValidUsername(string(decoded)) {
 			return string(decoded)
 		}
 	}
-	// 尝试 URL 安全 Base64
+	// Try URL-safe Base64
 	if decoded, err := base64.URLEncoding.DecodeString(s); err == nil {
 		if isValidUsername(string(decoded)) {
 			return string(decoded)
 		}
 	}
-	// 尝试无填充 Base64
+	// Try unpadded Base64
 	if decoded, err := base64.RawStdEncoding.DecodeString(s); err == nil {
 		if isValidUsername(string(decoded)) {
 			return string(decoded)

@@ -9,22 +9,22 @@ import (
 	"github.com/xiaobei/singbox-manager/pkg/utils"
 )
 
-// ShadowsocksParser Shadowsocks 解析器
+// ShadowsocksParser Shadowsocks parser
 type ShadowsocksParser struct{}
 
-// Protocol 返回协议名称
+// Protocol returns the protocol name
 func (p *ShadowsocksParser) Protocol() string {
 	return "shadowsocks"
 }
 
-// Parse 解析 Shadowsocks URL
-// 格式1 (SIP002): ss://BASE64(method:password)@server:port#name
-// 格式2 (Legacy): ss://BASE64(method:password@server:port)#name
+// Parse parses a Shadowsocks URL
+// Format 1 (SIP002): ss://BASE64(method:password)@server:port#name
+// Format 2 (Legacy): ss://BASE64(method:password@server:port)#name
 func (p *ShadowsocksParser) Parse(rawURL string) (*storage.Node, error) {
-	// 去除协议头
+	// Remove protocol prefix
 	rawURL = strings.TrimPrefix(rawURL, "ss://")
 
-	// 分离 fragment (#name)
+	// Separate fragment (#name)
 	var name string
 	if idx := strings.Index(rawURL, "#"); idx != -1 {
 		name, _ = url.QueryUnescape(rawURL[idx+1:])
@@ -34,68 +34,68 @@ func (p *ShadowsocksParser) Parse(rawURL string) (*storage.Node, error) {
 	var method, password, server string
 	var port int
 
-	// 尝试 SIP002 格式: BASE64@server:port
+	// Try SIP002 format: BASE64@server:port
 	if atIdx := strings.LastIndex(rawURL, "@"); atIdx != -1 {
-		// 新格式
+		// New format
 		userInfo := rawURL[:atIdx]
 		serverPart := rawURL[atIdx+1:]
 
-		// 解析服务器信息
+		// Parse server info
 		var err error
 		server, port, err = parseServerInfo(serverPart)
 		if err != nil {
-			return nil, fmt.Errorf("解析服务器地址失败: %w", err)
+			return nil, fmt.Errorf("failed to parse server address: %w", err)
 		}
 
-		// 解码用户信息
+		// Decode user info
 		decoded, err := utils.DecodeBase64(userInfo)
 		if err != nil {
-			// 可能是 URL 编码的
+			// Might be URL encoded
 			decoded, err = url.QueryUnescape(userInfo)
 			if err != nil {
-				return nil, fmt.Errorf("解码用户信息失败: %w", err)
+				return nil, fmt.Errorf("failed to decode user info: %w", err)
 			}
 		}
 
-		// 分离 method:password
+		// Separate method:password
 		colonIdx := strings.Index(decoded, ":")
 		if colonIdx == -1 {
-			return nil, fmt.Errorf("无效的用户信息格式")
+			return nil, fmt.Errorf("invalid user info format")
 		}
 		method = decoded[:colonIdx]
 		password = decoded[colonIdx+1:]
 	} else {
-		// 旧格式: BASE64(method:password@server:port)
+		// Legacy format: BASE64(method:password@server:port)
 		decoded, err := utils.DecodeBase64(rawURL)
 		if err != nil {
-			return nil, fmt.Errorf("解码失败: %w", err)
+			return nil, fmt.Errorf("decode failed: %w", err)
 		}
 
-		// 分离 method:password@server:port
+		// Separate method:password@server:port
 		atIdx := strings.LastIndex(decoded, "@")
 		if atIdx == -1 {
-			return nil, fmt.Errorf("无效的 URL 格式")
+			return nil, fmt.Errorf("invalid URL format")
 		}
 
 		userInfo := decoded[:atIdx]
 		serverPart := decoded[atIdx+1:]
 
-		// 解析服务器信息
+		// Parse server info
 		server, port, err = parseServerInfo(serverPart)
 		if err != nil {
-			return nil, fmt.Errorf("解析服务器地址失败: %w", err)
+			return nil, fmt.Errorf("failed to parse server address: %w", err)
 		}
 
-		// 分离 method:password
+		// Separate method:password
 		colonIdx := strings.Index(userInfo, ":")
 		if colonIdx == -1 {
-			return nil, fmt.Errorf("无效的用户信息格式")
+			return nil, fmt.Errorf("invalid user info format")
 		}
 		method = userInfo[:colonIdx]
 		password = userInfo[colonIdx+1:]
 	}
 
-	// 设置默认名称
+	// Set default name
 	if name == "" {
 		name = fmt.Sprintf("%s:%d", server, port)
 	}

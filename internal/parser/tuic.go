@@ -8,38 +8,38 @@ import (
 	"github.com/xiaobei/singbox-manager/internal/storage"
 )
 
-// TuicParser TUIC 解析器
+// TuicParser TUIC Parser
 type TuicParser struct{}
 
-// Protocol 返回协议名称
+// Protocol Return protocol name
 func (p *TuicParser) Protocol() string {
 	return "tuic"
 }
 
-// Parse 解析 TUIC URL
-// 格式: tuic://uuid:password@server:port?params#name
+// Parse Parse TUIC URL
+// Format: tuic://uuid:password@server:port?params#name
 func (p *TuicParser) Parse(rawURL string) (*storage.Node, error) {
 	addressPart, params, name, err := parseURLParams(rawURL)
 	if err != nil {
 		return nil, err
 	}
 
-	// 分离 userinfo 和服务器信息
+	// Separate userinfo and server information
 	atIdx := strings.LastIndex(addressPart, "@")
 	if atIdx == -1 {
-		return nil, fmt.Errorf("无效的 TUIC URL 格式")
+		return nil, fmt.Errorf("Invalid TUIC URL format")
 	}
 
 	userInfo, _ := url.QueryUnescape(addressPart[:atIdx])
 	serverPart := addressPart[atIdx+1:]
 
-	// 解析服务器地址
+	// Parse server address
 	server, port, err := parseServerInfo(serverPart)
 	if err != nil {
-		return nil, fmt.Errorf("解析服务器地址失败: %w", err)
+		return nil, fmt.Errorf("Failed to parse server address: %w", err)
 	}
 
-	// 解析 uuid:password
+	// Parse uuid:password
 	var uuid, password string
 	colonIdx := strings.Index(userInfo, ":")
 	if colonIdx == -1 {
@@ -50,18 +50,18 @@ func (p *TuicParser) Parse(rawURL string) (*storage.Node, error) {
 		password = userInfo[colonIdx+1:]
 	}
 
-	// 设置默认名称
+	// Set default name
 	if name == "" {
 		name = fmt.Sprintf("%s:%d", server, port)
 	}
 
-	// 构建 Extra
+	// Build Extra
 	extra := map[string]interface{}{
 		"uuid":     uuid,
 		"password": password,
 	}
 
-	// TLS 配置
+	// TLS configuration
 	tls := map[string]interface{}{
 		"enabled": true,
 	}
@@ -71,7 +71,7 @@ func (p *TuicParser) Parse(rawURL string) (*storage.Node, error) {
 		tls["server_name"] = sni
 	}
 
-	// 跳过证书验证
+	// Skip certificate verification
 	if getParamBool(params, "insecure") || getParamBool(params, "allowInsecure") || getParamBool(params, "skip-cert-verify") {
 		tls["insecure"] = true
 	}
@@ -81,33 +81,33 @@ func (p *TuicParser) Parse(rawURL string) (*storage.Node, error) {
 		tls["alpn"] = strings.Split(alpn, ",")
 	}
 
-	// 禁用 SNI
+	// Disable SNI
 	if getParamBool(params, "disable-sni") {
 		tls["disable_sni"] = true
 	}
 
 	extra["tls"] = tls
 
-	// 拥塞控制
+	// Congestion control
 	if cc := params.Get("congestion_control"); cc != "" {
 		extra["congestion_control"] = cc
 	} else if cc := params.Get("congestion-control"); cc != "" {
 		extra["congestion_control"] = cc
 	}
 
-	// UDP 中继模式
+	// UDP relay mode
 	if mode := params.Get("udp-relay-mode"); mode != "" {
 		extra["udp_relay_mode"] = mode
 	} else if mode := params.Get("udp_relay_mode"); mode != "" {
 		extra["udp_relay_mode"] = mode
 	}
 
-	// 零 RTT
+	// Zero RTT
 	if getParamBool(params, "zero-rtt") || getParamBool(params, "reduce-rtt") {
 		extra["zero_rtt_handshake"] = true
 	}
 
-	// 心跳
+	// Heartbeat
 	if heartbeat := params.Get("heartbeat"); heartbeat != "" {
 		extra["heartbeat"] = heartbeat
 	}

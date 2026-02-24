@@ -5,7 +5,7 @@ import (
 	"strings"
 )
 
-// CountryInfo 国家信息
+// CountryInfo represents country information
 type CountryInfo struct {
 	Code    string
 	Name    string
@@ -13,7 +13,7 @@ type CountryInfo struct {
 	Aliases []string
 }
 
-// 国家数据
+// Country data
 var countries = []CountryInfo{
 	{Code: "HK", Name: "Hong Kong", Emoji: "🇭🇰", Aliases: []string{"香港", "Hong Kong", "HK", "HongKong", "HONG KONG"}},
 	{Code: "TW", Name: "Taiwan", Emoji: "🇹🇼", Aliases: []string{"台湾", "Taiwan", "TW", "台北", "Taipei"}},
@@ -68,18 +68,18 @@ var countries = []CountryInfo{
 	{Code: "PE", Name: "Peru", Emoji: "🇵🇪", Aliases: []string{"秘鲁", "Peru", "PE"}},
 }
 
-// ParseCountryFromNodeName 从节点名称解析国家信息
+// ParseCountryFromNodeName parses country info from a node name
 func ParseCountryFromNodeName(nodeName string) *CountryInfo {
 	if nodeName == "" {
 		return nil
 	}
 
-	// 转为大写便于匹配
+	// Convert to uppercase for matching
 	upperName := strings.ToUpper(nodeName)
 
 	for _, country := range countries {
 		for _, alias := range country.Aliases {
-			// 检查是否包含别名（不区分大小写）
+			// Check if it contains the alias (case-insensitive)
 			if strings.Contains(upperName, strings.ToUpper(alias)) {
 				return &CountryInfo{
 					Code:    country.Code,
@@ -91,7 +91,7 @@ func ParseCountryFromNodeName(nodeName string) *CountryInfo {
 		}
 	}
 
-	// 尝试匹配 emoji 国旗
+	// Try to match emoji flags
 	emojiPattern := regexp.MustCompile(`[\x{1F1E0}-\x{1F1FF}]{2}`)
 	if match := emojiPattern.FindString(nodeName); match != "" {
 		for _, country := range countries {
@@ -109,7 +109,7 @@ func ParseCountryFromNodeName(nodeName string) *CountryInfo {
 	return nil
 }
 
-// GetAllCountries 获取所有国家信息
+// GetAllCountries returns all country information
 func GetAllCountries() []CountryInfo {
 	return countries
 }

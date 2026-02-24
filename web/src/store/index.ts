@@ -2,7 +2,7 @@ import { create } from 'zustand';
 import { subscriptionApi, filterApi, ruleApi, ruleGroupApi, settingsApi, serviceApi, nodeApi, manualNodeApi, monitorApi } from '../api';
 import { toast } from '../components/Toast';
 
-// 类型定义
+// Type definitions
 export interface Subscription {
   id: string;
   name: string;
@@ -93,19 +93,19 @@ export interface Settings {
   config_path: string;
   mixed_port: number;
   tun_enabled: boolean;
-  allow_lan: boolean;              // 允许局域网访问
+  allow_lan: boolean;              // Allow LAN access
   proxy_dns: string;
   direct_dns: string;
-  hosts?: HostEntry[];           // DNS hosts 映射
+  hosts?: HostEntry[];           // DNS hosts mapping
   web_port: number;
   clash_api_port: number;
   clash_ui_path: string;
-  clash_api_secret: string;        // ClashAPI 密钥
+  clash_api_secret: string;        // ClashAPI secret
   final_outbound: string;
   ruleset_base_url: string;
-  auto_apply: boolean;           // 配置变更后自动应用
-  subscription_interval: number; // 订阅自动更新间隔 (分钟)
-  github_proxy: string;          // GitHub 代理地址
+  auto_apply: boolean;           // Auto-apply after config changes
+  subscription_interval: number; // Subscription auto-update interval (minutes)
+  github_proxy: string;          // GitHub proxy address
 }
 
 export interface ServiceStatus {
@@ -127,7 +127,7 @@ export interface SystemInfo {
 }
 
 interface AppState {
-  // 数据
+  // Data
   subscriptions: Subscription[];
   manualNodes: ManualNode[];
   countryGroups: CountryGroup[];
@@ -138,10 +138,10 @@ interface AppState {
   serviceStatus: ServiceStatus | null;
   systemInfo: SystemInfo | null;
 
-  // 加载状态
+  // Loading state
   loading: boolean;
 
-  // 操作
+  // Actions
   fetchSubscriptions: () => Promise<void>;
   fetchManualNodes: () => Promise<void>;
   fetchCountryGroups: () => Promise<void>;
@@ -158,23 +158,23 @@ interface AppState {
   refreshSubscription: (id: string) => Promise<void>;
   toggleSubscription: (id: string, enabled: boolean) => Promise<void>;
 
-  // 手动节点操作
+  // Manual node operations
   addManualNode: (node: Omit<ManualNode, 'id'>) => Promise<void>;
   updateManualNode: (id: string, node: Partial<ManualNode>) => Promise<void>;
   deleteManualNode: (id: string) => Promise<void>;
 
   updateSettings: (settings: Settings) => Promise<void>;
 
-  // 规则组操作
+  // Rule group operations
   toggleRuleGroup: (id: string, enabled: boolean) => Promise<void>;
   updateRuleGroupOutbound: (id: string, outbound: string) => Promise<void>;
 
-  // 自定义规则操作
+  // Custom rule operations
   addRule: (rule: Omit<Rule, 'id'>) => Promise<void>;
   updateRule: (id: string, rule: Partial<Rule>) => Promise<void>;
   deleteRule: (id: string) => Promise<void>;
 
-  // 过滤器操作
+  // Filter operations
   addFilter: (filter: Omit<Filter, 'id'>) => Promise<void>;
   updateFilter: (id: string, filter: Partial<Filter>) => Promise<void>;
   deleteFilter: (id: string) => Promise<void>;
@@ -198,7 +198,7 @@ export const useStore = create<AppState>((set, get) => ({
       const res = await subscriptionApi.getAll();
       set({ subscriptions: res.data.data || [] });
     } catch (error) {
-      console.error('获取订阅失败:', error);
+      console.error('Failed to fetch subscriptions:', error);
     }
   },
 
@@ -207,7 +207,7 @@ export const useStore = create<AppState>((set, get) => ({
       const res = await manualNodeApi.getAll();
       set({ manualNodes: res.data.data || [] });
     } catch (error) {
-      console.error('获取手动节点失败:', error);
+      console.error('Failed to fetch manual nodes:', error);
     }
   },
 
@@ -216,7 +216,7 @@ export const useStore = create<AppState>((set, get) => ({
       const res = await nodeApi.getCountries();
       set({ countryGroups: res.data.data || [] });
     } catch (error) {
-      console.error('获取国家分组失败:', error);
+      console.error('Failed to fetch country groups:', error);
     }
   },
 
@@ -225,7 +225,7 @@ export const useStore = create<AppState>((set, get) => ({
       const res = await filterApi.getAll();
       set({ filters: res.data.data || [] });
     } catch (error) {
-      console.error('获取过滤器失败:', error);
+      console.error('Failed to fetch filters:', error);
     }
   },
 
@@ -234,7 +234,7 @@ export const useStore = create<AppState>((set, get) => ({
       const res = await ruleApi.getAll();
       set({ rules: res.data.data || [] });
     } catch (error) {
-      console.error('获取规则失败:', error);
+      console.error('Failed to fetch rules:', error);
     }
   },
 
@@ -243,7 +243,7 @@ export const useStore = create<AppState>((set, get) => ({
       const res = await ruleGroupApi.getAll();
       set({ ruleGroups: res.data.data || [] });
     } catch (error) {
-      console.error('获取规则组失败:', error);
+      console.error('Failed to fetch rule groups:', error);
     }
   },
 
@@ -252,7 +252,7 @@ export const useStore = create<AppState>((set, get) => ({
       const res = await settingsApi.get();
       set({ settings: res.data.data });
     } catch (error) {
-      console.error('获取设置失败:', error);
+      console.error('Failed to fetch settings:', error);
     }
   },
 
@@ -261,7 +261,7 @@ export const useStore = create<AppState>((set, get) => ({
       const res = await serviceApi.status();
       set({ serviceStatus: res.data.data });
     } catch (error) {
-      console.error('获取服务状态失败:', error);
+      console.error('Failed to fetch service status:', error);
     }
   },
 
@@ -270,7 +270,7 @@ export const useStore = create<AppState>((set, get) => ({
       const res = await monitorApi.system();
       set({ systemInfo: res.data.data });
     } catch (error) {
-      console.error('获取系统信息失败:', error);
+      console.error('Failed to fetch system info:', error);
     }
   },
 
@@ -279,9 +279,9 @@ export const useStore = create<AppState>((set, get) => ({
     try {
       await subscriptionApi.add(name, url);
       await get().fetchSubscriptions();
-      toast.success('订阅添加成功');
+      toast.success('Subscription added successfully');
     } catch (error: any) {
-      toast.error(error.response?.data?.error || '添加订阅失败');
+      toast.error(error.response?.data?.error || 'Failed to add subscription');
       throw error;
     } finally {
       set({ loading: false });
@@ -293,9 +293,9 @@ export const useStore = create<AppState>((set, get) => ({
     try {
       await subscriptionApi.update(id, { name, url });
       await get().fetchSubscriptions();
-      toast.success('订阅更新成功');
+      toast.success('Subscription updated successfully');
     } catch (error: any) {
-      toast.error(error.response?.data?.error || '更新订阅失败');
+      toast.error(error.response?.data?.error || 'Failed to update subscription');
       throw error;
     } finally {
       set({ loading: false });
@@ -306,10 +306,10 @@ export const useStore = create<AppState>((set, get) => ({
     try {
       await subscriptionApi.delete(id);
       await get().fetchSubscriptions();
-      toast.success('订阅已删除');
+      toast.success('Subscription deleted');
     } catch (error: any) {
-      console.error('删除订阅失败:', error);
-      toast.error(error.response?.data?.error || '删除订阅失败');
+      console.error('Failed to delete subscription:', error);
+      toast.error(error.response?.data?.error || 'Failed to delete subscription');
     }
   },
 
@@ -319,15 +319,15 @@ export const useStore = create<AppState>((set, get) => ({
       const res = await subscriptionApi.refresh(id);
       await get().fetchSubscriptions();
       await get().fetchCountryGroups();
-      // 检查后端返回的 warning
+      // Check backend warning
       if (res.data.warning) {
         toast.info(res.data.warning);
       } else {
-        toast.success('订阅刷新成功');
+        toast.success('Subscription refreshed successfully');
       }
     } catch (error: any) {
-      console.error('刷新订阅失败:', error);
-      toast.error(error.response?.data?.error || '刷新订阅失败');
+      console.error('Failed to refresh subscription:', error);
+      toast.error(error.response?.data?.error || 'Failed to refresh subscription');
     } finally {
       set({ loading: false });
     }
@@ -343,11 +343,11 @@ export const useStore = create<AppState>((set, get) => ({
         if (res.data.warning) {
           toast.info(res.data.warning);
         } else {
-          toast.success(`订阅已${enabled ? '启用' : '禁用'}`);
+          toast.success(`Subscription ${enabled ? 'enabled' : 'disabled'}`);
         }
       } catch (error: any) {
-        console.error('切换订阅状态失败:', error);
-        toast.error(error.response?.data?.error || '切换订阅状态失败');
+        console.error('Failed to toggle subscription:', error);
+        toast.error(error.response?.data?.error || 'Failed to toggle subscription');
       }
     }
   },
@@ -360,11 +360,11 @@ export const useStore = create<AppState>((set, get) => ({
       if (res.data.warning) {
         toast.info(res.data.warning);
       } else {
-        toast.success('节点添加成功');
+        toast.success('Node added successfully');
       }
     } catch (error: any) {
-      console.error('添加手动节点失败:', error);
-      toast.error(error.response?.data?.error || '添加节点失败');
+      console.error('Failed to add manual node:', error);
+      toast.error(error.response?.data?.error || 'Failed to add node');
       throw error;
     }
   },
@@ -377,11 +377,11 @@ export const useStore = create<AppState>((set, get) => ({
       if (res.data.warning) {
         toast.info(res.data.warning);
       } else {
-        toast.success('节点更新成功');
+        toast.success('Node updated successfully');
       }
     } catch (error: any) {
-      console.error('更新手动节点失败:', error);
-      toast.error(error.response?.data?.error || '更新节点失败');
+      console.error('Failed to update manual node:', error);
+      toast.error(error.response?.data?.error || 'Failed to update node');
       throw error;
     }
   },
@@ -394,25 +394,25 @@ export const useStore = create<AppState>((set, get) => ({
       if (res.data.warning) {
         toast.info(res.data.warning);
       } else {
-        toast.success('节点已删除');
+        toast.success('Node deleted');
       }
     } catch (error: any) {
-      console.error('删除手动节点失败:', error);
-      toast.error(error.response?.data?.error || '删除节点失败');
+      console.error('Failed to delete manual node:', error);
+      toast.error(error.response?.data?.error || 'Failed to delete node');
     }
   },
 
   updateSettings: async (settings: Settings) => {
     try {
       const res = await settingsApi.update(settings);
-      // 使用后端返回的数据（可能包含自动生成的密钥）
+      // Use backend-returned data (may contain auto-generated secret)
       if (res.data.data) {
         set({ settings: res.data.data });
       } else {
         set({ settings });
       }
     } catch (error) {
-      console.error('更新设置失败:', error);
+      console.error('Failed to update settings:', error);
     }
   },
 
@@ -425,11 +425,11 @@ export const useStore = create<AppState>((set, get) => ({
         if (res.data.warning) {
           toast.info(res.data.warning);
         } else {
-          toast.success(`规则组已${enabled ? '启用' : '禁用'}`);
+          toast.success(`Rule group ${enabled ? 'enabled' : 'disabled'}`);
         }
       } catch (error: any) {
-        console.error('更新规则组失败:', error);
-        toast.error(error.response?.data?.error || '更新规则组失败');
+        console.error('Failed to update rule group:', error);
+        toast.error(error.response?.data?.error || 'Failed to update rule group');
       }
     }
   },
@@ -443,11 +443,11 @@ export const useStore = create<AppState>((set, get) => ({
         if (res.data.warning) {
           toast.info(res.data.warning);
         } else {
-          toast.success('规则组出站已更新');
+          toast.success('Rule group outbound updated');
         }
       } catch (error: any) {
-        console.error('更新规则组出站失败:', error);
-        toast.error(error.response?.data?.error || '更新规则组出站失败');
+        console.error('Failed to update rule group outbound:', error);
+        toast.error(error.response?.data?.error || 'Failed to update rule group outbound');
       }
     }
   },
@@ -459,11 +459,11 @@ export const useStore = create<AppState>((set, get) => ({
       if (res.data.warning) {
         toast.info(res.data.warning);
       } else {
-        toast.success('规则添加成功');
+        toast.success('Rule added successfully');
       }
     } catch (error: any) {
-      console.error('添加规则失败:', error);
-      toast.error(error.response?.data?.error || '添加规则失败');
+      console.error('Failed to add rule:', error);
+      toast.error(error.response?.data?.error || 'Failed to add rule');
       throw error;
     }
   },
@@ -475,11 +475,11 @@ export const useStore = create<AppState>((set, get) => ({
       if (res.data.warning) {
         toast.info(res.data.warning);
       } else {
-        toast.success('规则更新成功');
+        toast.success('Rule updated successfully');
       }
     } catch (error: any) {
-      console.error('更新规则失败:', error);
-      toast.error(error.response?.data?.error || '更新规则失败');
+      console.error('Failed to update rule:', error);
+      toast.error(error.response?.data?.error || 'Failed to update rule');
       throw error;
     }
   },
@@ -491,11 +491,11 @@ export const useStore = create<AppState>((set, get) => ({
       if (res.data.warning) {
         toast.info(res.data.warning);
       } else {
-        toast.success('规则已删除');
+        toast.success('Rule deleted');
       }
     } catch (error: any) {
-      console.error('删除规则失败:', error);
-      toast.error(error.response?.data?.error || '删除规则失败');
+      console.error('Failed to delete rule:', error);
+      toast.error(error.response?.data?.error || 'Failed to delete rule');
     }
   },
 
@@ -503,10 +503,10 @@ export const useStore = create<AppState>((set, get) => ({
     try {
       await filterApi.add(filter);
       await get().fetchFilters();
-      toast.success('过滤器添加成功');
+      toast.success('Filter added successfully');
     } catch (error: any) {
-      console.error('添加过滤器失败:', error);
-      toast.error(error.response?.data?.error || '添加过滤器失败');
+      console.error('Failed to add filter:', error);
+      toast.error(error.response?.data?.error || 'Failed to add filter');
       throw error;
     }
   },
@@ -515,10 +515,10 @@ export const useStore = create<AppState>((set, get) => ({
     try {
       await filterApi.update(id, filter);
       await get().fetchFilters();
-      toast.success('过滤器更新成功');
+      toast.success('Filter updated successfully');
     } catch (error: any) {
-      console.error('更新过滤器失败:', error);
-      toast.error(error.response?.data?.error || '更新过滤器失败');
+      console.error('Failed to update filter:', error);
+      toast.error(error.response?.data?.error || 'Failed to update filter');
       throw error;
     }
   },
@@ -527,10 +527,10 @@ export const useStore = create<AppState>((set, get) => ({
     try {
       await filterApi.delete(id);
       await get().fetchFilters();
-      toast.success('过滤器已删除');
+      toast.success('Filter deleted');
     } catch (error: any) {
-      console.error('删除过滤器失败:', error);
-      toast.error(error.response?.data?.error || '删除过滤器失败');
+      console.error('Failed to delete filter:', error);
+      toast.error(error.response?.data?.error || 'Failed to delete filter');
       throw error;
     }
   },
@@ -541,10 +541,10 @@ export const useStore = create<AppState>((set, get) => ({
       try {
         await filterApi.update(id, { ...filter, enabled });
         await get().fetchFilters();
-        toast.success(`过滤器已${enabled ? '启用' : '禁用'}`);
+        toast.success(`Filter ${enabled ? 'enabled' : 'disabled'}`);
       } catch (error: any) {
-        console.error('切换过滤器状态失败:', error);
-        toast.error(error.response?.data?.error || '切换过滤器状态失败');
+        console.error('Failed to toggle filter:', error);
+        toast.error(error.response?.data?.error || 'Failed to toggle filter');
       }
     }
   },

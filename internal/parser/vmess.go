@@ -11,60 +11,60 @@ import (
 	"github.com/xiaobei/singbox-manager/pkg/utils"
 )
 
-// VmessParser VMess 解析器
+// VmessParser VMess parser
 type VmessParser struct{}
 
-// Protocol 返回协议名称
+// Protocol returns the protocol name
 func (p *VmessParser) Protocol() string {
 	return "vmess"
 }
 
-// vmessConfig VMess 配置结构
+// vmessConfig VMess configuration structure
 type vmessConfig struct {
-	V    interface{} `json:"v"`              // 版本
-	Ps   string      `json:"ps"`             // 节点名称
-	Add  string      `json:"add"`            // 服务器地址
-	Port interface{} `json:"port"`           // 端口
+	V    interface{} `json:"v"`              // version
+	Ps   string      `json:"ps"`             // node name
+	Add  string      `json:"add"`            // server address
+	Port interface{} `json:"port"`           // port
 	ID   string      `json:"id"`             // UUID
 	Aid  interface{} `json:"aid"`            // Alter ID
-	Scy  string      `json:"scy"`            // 加密方式
-	Net  string      `json:"net"`            // 传输协议
-	Type string      `json:"type"`           // 伪装类型
-	Host string      `json:"host"`           // 伪装域名
-	Path string      `json:"path"`           // 路径
+	Scy  string      `json:"scy"`            // encryption method
+	Net  string      `json:"net"`            // transport protocol
+	Type string      `json:"type"`           // camouflage type
+	Host string      `json:"host"`           // camouflage domain
+	Path string      `json:"path"`           // path
 	TLS  string      `json:"tls"`            // TLS
 	SNI  string      `json:"sni"`            // SNI
 	ALPN string      `json:"alpn"`           // ALPN
 	Fp   string      `json:"fp"`             // Fingerprint
-	Skip bool        `json:"skip-cert-verify"` // 跳过证书验证
+	Skip bool        `json:"skip-cert-verify"` // skip certificate verification
 }
 
-// Parse 解析 VMess URL
-// 格式: vmess://BASE64(json)#name
+// Parse parses a VMess URL
+// Format: vmess://BASE64(json)#name
 func (p *VmessParser) Parse(rawURL string) (*storage.Node, error) {
-	// 去除协议头
+	// Remove protocol prefix
 	rawURL = strings.TrimPrefix(rawURL, "vmess://")
 
-	// 分离 fragment (#name)
+	// Separate fragment (#name)
 	var fragmentName string
 	if idx := strings.Index(rawURL, "#"); idx != -1 {
 		fragmentName, _ = url.QueryUnescape(rawURL[idx+1:])
 		rawURL = rawURL[:idx]
 	}
 
-	// Base64 解码
+	// Base64 decode
 	decoded, err := utils.DecodeBase64(rawURL)
 	if err != nil {
-		return nil, fmt.Errorf("Base64 解码失败: %w", err)
+		return nil, fmt.Errorf("Base64 decode failed: %w", err)
 	}
 
-	// 解析 JSON
+	// Parse JSON
 	var config vmessConfig
 	if err := json.Unmarshal([]byte(decoded), &config); err != nil {
-		return nil, fmt.Errorf("JSON 解析失败: %w", err)
+		return nil, fmt.Errorf("JSON parse failed: %w", err)
 	}
 
-	// 获取端口
+	// Get port
 	var port int
 	switch v := config.Port.(type) {
 	case float64:
@@ -75,7 +75,7 @@ func (p *VmessParser) Parse(rawURL string) (*storage.Node, error) {
 		port = v
 	}
 
-	// 获取 Alter ID
+	// Get Alter ID
 	var alterId int
 	switch v := config.Aid.(type) {
 	case float64:
@@ -86,7 +86,7 @@ func (p *VmessParser) Parse(rawURL string) (*storage.Node, error) {
 		alterId = v
 	}
 
-	// 设置名称
+	// Set name
 	name := config.Ps
 	if fragmentName != "" {
 		name = fragmentName
@@ -95,25 +95,25 @@ func (p *VmessParser) Parse(rawURL string) (*storage.Node, error) {
 		name = fmt.Sprintf("%s:%d", config.Add, port)
 	}
 
-	// 构建 Extra
+	// Build Extra
 	extra := map[string]interface{}{
 		"uuid":     config.ID,
 		"alter_id": alterId,
 		"security": config.Scy,
 	}
 
-	// 设置默认加密方式
+	// Set default encryption method
 	if config.Scy == "" {
 		extra["security"] = "auto"
 	}
 
-	// 传输层配置
+	// Transport layer configuration
 	network := config.Net
 	if network == "" {
 		network = "tcp"
 	}
 
-	// 构建传输配置
+	// Build transport configuration
 	if network != "tcp" || config.Type == "http" {
 		transport := map[string]interface{}{
 			"type": network,
@@ -149,19 +149,19 @@ func (p *VmessParser) Parse(rawURL string) (*storage.Node, error) {
 		extra["transport"] = transport
 	}
 
-	// TLS 配置
+	// TLS configuration
 	if config.TLS == "tls" {
 		tls := map[string]interface{}{
 			"enabled": true,
 		}
-		// 设置 server_name（按优先级：SNI > Host > 服务器地址）
+		// Set server_name (by priority: SNI > Host > server address)
 		if config.SNI != "" {
 			tls["server_name"] = config.SNI
 		} else if config.Host != "" {
 			tls["server_name"] = config.Host
 		} else {
-			// 如果 SNI 和 Host 都为空，使用服务器地址作为默认 server_name
-			// 这是为了确保 TLS 握手时有正确的 SNI
+			// If both SNI and Host are empty, use server address as default server_name
+			// This ensures the correct SNI is used during TLS handshake
 			tls["server_name"] = config.Add
 		}
 		if config.Skip {

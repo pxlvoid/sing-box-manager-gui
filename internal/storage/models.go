@@ -2,7 +2,7 @@ package storage
 
 import "time"
 
-// Subscription 订阅
+// Subscription represents a proxy subscription
 type Subscription struct {
 	ID        string     `json:"id"`
 	Name      string     `json:"name"`
@@ -15,149 +15,149 @@ type Subscription struct {
 	Enabled   bool       `json:"enabled"`
 }
 
-// Traffic 流量信息
+// Traffic represents traffic information
 type Traffic struct {
-	Total     int64 `json:"total"`     // 总流量 (bytes)
-	Used      int64 `json:"used"`      // 已用流量
-	Remaining int64 `json:"remaining"` // 剩余流量
+	Total     int64 `json:"total"`     // total traffic (bytes)
+	Used      int64 `json:"used"`      // used traffic
+	Remaining int64 `json:"remaining"` // remaining traffic
 }
 
-// Node 节点
+// Node represents a proxy node
 type Node struct {
 	Tag          string                 `json:"tag"`
 	Type         string                 `json:"type"`                    // shadowsocks/vmess/vless/trojan/hysteria2/tuic
 	Server       string                 `json:"server"`
 	ServerPort   int                    `json:"server_port"`
-	Extra        map[string]interface{} `json:"extra,omitempty"`         // 协议特定字段
-	Country      string                 `json:"country,omitempty"`       // 国家代码
-	CountryEmoji string                 `json:"country_emoji,omitempty"` // 国家 emoji
+	Extra        map[string]interface{} `json:"extra,omitempty"`         // protocol-specific fields
+	Country      string                 `json:"country,omitempty"`       // country code
+	CountryEmoji string                 `json:"country_emoji,omitempty"` // country emoji
 }
 
-// ManualNode 手动添加的节点
+// ManualNode represents a manually added node
 type ManualNode struct {
 	ID      string `json:"id"`
 	Node    Node   `json:"node"`
 	Enabled bool   `json:"enabled"`
 }
 
-// CountryGroup 国家节点分组
+// CountryGroup represents a country-based node group
 type CountryGroup struct {
-	Code      string `json:"code"`       // 国家代码 (如 HK, US, JP)
-	Name      string `json:"name"`       // 国家名称 (如 香港, 美国, 日本)
-	Emoji     string `json:"emoji"`      // 国旗 emoji
-	NodeCount int    `json:"node_count"` // 节点数量
+	Code      string `json:"code"`       // country code (e.g. HK, US, JP)
+	Name      string `json:"name"`       // country name (e.g. Hong Kong, United States, Japan)
+	Emoji     string `json:"emoji"`      // country flag emoji
+	NodeCount int    `json:"node_count"` // node count
 }
 
-// Filter 过滤器
+// Filter represents a node filter
 type Filter struct {
 	ID               string         `json:"id"`
 	Name             string         `json:"name"`
-	Include          []string       `json:"include"`           // 包含关键字
-	Exclude          []string       `json:"exclude"`           // 排除关键字
-	IncludeCountries []string       `json:"include_countries"` // 包含的国家代码
-	ExcludeCountries []string       `json:"exclude_countries"` // 排除的国家代码
+	Include          []string       `json:"include"`           // include keywords
+	Exclude          []string       `json:"exclude"`           // exclude keywords
+	IncludeCountries []string       `json:"include_countries"` // included country codes
+	ExcludeCountries []string       `json:"exclude_countries"` // excluded country codes
 	Mode             string         `json:"mode"`              // urltest / select
 	URLTestConfig    *URLTestConfig `json:"urltest_config,omitempty"`
-	Subscriptions    []string       `json:"subscriptions"` // 适用的订阅ID，空表示全部
-	AllNodes         bool           `json:"all_nodes"`     // 是否应用于所有节点
+	Subscriptions    []string       `json:"subscriptions"` // applicable subscription IDs, empty means all
+	AllNodes         bool           `json:"all_nodes"`     // whether to apply to all nodes
 	Enabled          bool           `json:"enabled"`
 }
 
-// URLTestConfig urltest 模式配置
+// URLTestConfig represents urltest mode configuration
 type URLTestConfig struct {
 	URL       string `json:"url"`
 	Interval  string `json:"interval"`
 	Tolerance int    `json:"tolerance"`
 }
 
-// Rule 自定义规则
+// Rule represents a custom rule
 type Rule struct {
 	ID       string   `json:"id"`
 	Name     string   `json:"name"`
 	RuleType string   `json:"rule_type"` // domain_suffix/domain_keyword/ip_cidr/geosite/geoip/port
-	Values   []string `json:"values"`    // 规则值列表
-	Outbound string   `json:"outbound"`  // 目标出站
+	Values   []string `json:"values"`    // rule value list
+	Outbound string   `json:"outbound"`  // target outbound
 	Enabled  bool     `json:"enabled"`
-	Priority int      `json:"priority"`  // 优先级 (越小越优先)
+	Priority int      `json:"priority"`  // priority (lower value = higher priority)
 }
 
-// RuleGroup 预设规则组
+// RuleGroup represents a preset rule group
 type RuleGroup struct {
 	ID        string   `json:"id"`
 	Name      string   `json:"name"`
-	SiteRules []string `json:"site_rules"` // geosite 规则
-	IPRules   []string `json:"ip_rules"`   // geoip 规则
+	SiteRules []string `json:"site_rules"` // geosite rules
+	IPRules   []string `json:"ip_rules"`   // geoip rules
 	Outbound  string   `json:"outbound"`
 	Enabled   bool     `json:"enabled"`
 }
 
-// HostEntry DNS hosts 映射条目
+// HostEntry represents a DNS hosts mapping entry
 type HostEntry struct {
 	ID      string   `json:"id"`
-	Domain  string   `json:"domain"` // 域名
-	IPs     []string `json:"ips"`    // IP 地址列表
+	Domain  string   `json:"domain"` // domain name
+	IPs     []string `json:"ips"`    // IP address list
 	Enabled bool     `json:"enabled"`
 }
 
-// Settings 全局设置
+// Settings represents global settings
 type Settings struct {
-	// sing-box 路径
+	// sing-box paths
 	SingBoxPath string `json:"singbox_path"`
 	ConfigPath  string `json:"config_path"`
 
-	// 入站配置
-	MixedPort  int  `json:"mixed_port"`  // HTTP/SOCKS5 混合端口
-	TunEnabled bool `json:"tun_enabled"` // TUN 模式
-	AllowLAN   bool `json:"allow_lan"`   // 允许局域网访问
+	// inbound configuration
+	MixedPort  int  `json:"mixed_port"`  // HTTP/SOCKS5 mixed port
+	TunEnabled bool `json:"tun_enabled"` // TUN mode
+	AllowLAN   bool `json:"allow_lan"`   // allow LAN access
 
-	// DNS 配置
-	ProxyDNS  string      `json:"proxy_dns"`        // 代理 DNS
-	DirectDNS string      `json:"direct_dns"`       // 直连 DNS
-	Hosts     []HostEntry `json:"hosts,omitempty"`  // DNS hosts 映射
+	// DNS configuration
+	ProxyDNS  string      `json:"proxy_dns"`        // proxy DNS
+	DirectDNS string      `json:"direct_dns"`       // direct DNS
+	Hosts     []HostEntry `json:"hosts,omitempty"`  // DNS hosts mapping
 
-	// 控制面板
-	WebPort        int    `json:"web_port"`          // 管理界面端口
-	ClashAPIPort   int    `json:"clash_api_port"`    // Clash API 端口
-	ClashUIPath    string `json:"clash_ui_path"`     // zashboard 路径
-	ClashAPISecret string `json:"clash_api_secret"`  // ClashAPI 密钥
+	// control panel
+	WebPort        int    `json:"web_port"`          // management UI port
+	ClashAPIPort   int    `json:"clash_api_port"`    // Clash API port
+	ClashUIPath    string `json:"clash_ui_path"`     // Clash external UI path
+	ClashAPISecret string `json:"clash_api_secret"`  // Clash API secret
 
-	// 漏网规则
-	FinalOutbound string `json:"final_outbound"` // 默认出站
+	// final rule
+	FinalOutbound string `json:"final_outbound"` // default outbound
 
-	// 规则集源
-	RuleSetBaseURL string `json:"ruleset_base_url"` // 规则集下载地址
+	// rule set source
+	RuleSetBaseURL string `json:"ruleset_base_url"` // rule set download URL
 
-	// 自动化设置
-	AutoApply            bool `json:"auto_apply"`            // 配置变更后自动应用
-	SubscriptionInterval int  `json:"subscription_interval"` // 订阅自动更新间隔 (分钟)，0 表示禁用
+	// automation settings
+	AutoApply            bool `json:"auto_apply"`            // auto-apply after config changes
+	SubscriptionInterval int  `json:"subscription_interval"` // subscription auto-update interval (minutes), 0 to disable
 
-	// GitHub 代理设置
-	GithubProxy string `json:"github_proxy"` // GitHub 代理地址，如 https://ghproxy.com/
+	// GitHub proxy settings
+	GithubProxy string `json:"github_proxy"` // GitHub proxy URL, e.g. https://ghproxy.com/
 }
 
-// DefaultSettings 默认设置
+// DefaultSettings returns default settings
 func DefaultSettings() *Settings {
 	return &Settings{
 		SingBoxPath:          "bin/sing-box",
 		ConfigPath:           "generated/config.json",
 		MixedPort:            2080,
 		TunEnabled:           true,
-		AllowLAN:             false, // 默认不允许局域网访问
+		AllowLAN:             false, // LAN access disabled by default
 		ProxyDNS:             "https://1.1.1.1/dns-query",
 		DirectDNS:            "https://dns.alidns.com/dns-query",
 		WebPort:              9090,
 		ClashAPIPort:         9091,
-		ClashUIPath:          "zashboard",
-		ClashAPISecret:       "", // 默认为空，开启局域网时自动生成
+		ClashUIPath:          "",
+		ClashAPISecret:       "", // empty by default, auto-generated when LAN is enabled
 		FinalOutbound:        "Proxy",
 		RuleSetBaseURL:       "https://github.com/lyc8503/sing-box-rules/raw/rule-set-geosite",
-		AutoApply:            true, // 默认开启自动应用
-		SubscriptionInterval: 60,   // 默认 60 分钟更新一次
-		GithubProxy:          "",   // 默认不使用代理
+		AutoApply:            true, // auto-apply enabled by default
+		SubscriptionInterval: 60,   // default 60 minutes update interval
+		GithubProxy:          "",   // no proxy by default
 	}
 }
 
-// AppData 应用数据
+// AppData represents application data
 type AppData struct {
 	Subscriptions []Subscription `json:"subscriptions"`
 	ManualNodes   []ManualNode   `json:"manual_nodes"`
@@ -167,11 +167,11 @@ type AppData struct {
 	Settings      *Settings      `json:"settings"`
 }
 
-// DefaultRuleGroups 默认规则组
+// DefaultRuleGroups returns default rule groups
 func DefaultRuleGroups() []RuleGroup {
 	return []RuleGroup{
-		{ID: "ad-block", Name: "广告拦截", SiteRules: []string{"category-ads-all"}, Outbound: "REJECT", Enabled: true},
-		{ID: "ai-services", Name: "AI 服务", SiteRules: []string{"openai", "anthropic", "jetbrains-ai"}, Outbound: "Proxy", Enabled: true},
+		{ID: "ad-block", Name: "Ad Block", SiteRules: []string{"category-ads-all"}, Outbound: "REJECT", Enabled: true},
+		{ID: "ai-services", Name: "AI Services", SiteRules: []string{"openai", "anthropic", "jetbrains-ai"}, Outbound: "Proxy", Enabled: true},
 		{ID: "google", Name: "Google", SiteRules: []string{"google"}, IPRules: []string{"google"}, Outbound: "Proxy", Enabled: true},
 		{ID: "youtube", Name: "YouTube", SiteRules: []string{"youtube"}, Outbound: "Proxy", Enabled: true},
 		{ID: "github", Name: "GitHub", SiteRules: []string{"github"}, Outbound: "Proxy", Enabled: true},
@@ -181,60 +181,60 @@ func DefaultRuleGroups() []RuleGroup {
 		{ID: "spotify", Name: "Spotify", SiteRules: []string{"spotify"}, Outbound: "Proxy", Enabled: false},
 		{ID: "apple", Name: "Apple", SiteRules: []string{"apple"}, Outbound: "DIRECT", Enabled: true},
 		{ID: "microsoft", Name: "Microsoft", SiteRules: []string{"microsoft"}, Outbound: "DIRECT", Enabled: true},
-		{ID: "cn", Name: "中国地区", SiteRules: []string{"geolocation-cn"}, IPRules: []string{"cn"}, Outbound: "DIRECT", Enabled: true},
-		{ID: "private", Name: "私有网络", SiteRules: []string{"private"}, IPRules: []string{"private"}, Outbound: "DIRECT", Enabled: true},
+		{ID: "cn", Name: "China", SiteRules: []string{"geolocation-cn"}, IPRules: []string{"cn"}, Outbound: "DIRECT", Enabled: true},
+		{ID: "private", Name: "Private Network", SiteRules: []string{"private"}, IPRules: []string{"private"}, Outbound: "DIRECT", Enabled: true},
 	}
 }
 
-// CountryNames 国家代码到中文名称的映射
+// CountryNames maps country codes to English names
 var CountryNames = map[string]string{
-	"HK": "香港",
-	"TW": "台湾",
-	"JP": "日本",
-	"KR": "韩国",
-	"SG": "新加坡",
-	"US": "美国",
-	"GB": "英国",
-	"DE": "德国",
-	"FR": "法国",
-	"NL": "荷兰",
-	"AU": "澳大利亚",
-	"CA": "加拿大",
-	"RU": "俄罗斯",
-	"IN": "印度",
-	"BR": "巴西",
-	"AR": "阿根廷",
-	"TR": "土耳其",
-	"TH": "泰国",
-	"VN": "越南",
-	"MY": "马来西亚",
-	"PH": "菲律宾",
-	"ID": "印尼",
-	"AE": "阿联酋",
-	"ZA": "南非",
-	"CH": "瑞士",
-	"IT": "意大利",
-	"ES": "西班牙",
-	"SE": "瑞典",
-	"NO": "挪威",
-	"FI": "芬兰",
-	"DK": "丹麦",
-	"PL": "波兰",
-	"CZ": "捷克",
-	"AT": "奥地利",
-	"IE": "爱尔兰",
-	"PT": "葡萄牙",
-	"GR": "希腊",
-	"IL": "以色列",
-	"MX": "墨西哥",
-	"CL": "智利",
-	"CO": "哥伦比亚",
-	"PE": "秘鲁",
-	"NZ":    "新西兰",
-	"OTHER": "其他",
+	"HK": "Hong Kong",
+	"TW": "Taiwan",
+	"JP": "Japan",
+	"KR": "South Korea",
+	"SG": "Singapore",
+	"US": "United States",
+	"GB": "United Kingdom",
+	"DE": "Germany",
+	"FR": "France",
+	"NL": "Netherlands",
+	"AU": "Australia",
+	"CA": "Canada",
+	"RU": "Russia",
+	"IN": "India",
+	"BR": "Brazil",
+	"AR": "Argentina",
+	"TR": "Turkey",
+	"TH": "Thailand",
+	"VN": "Vietnam",
+	"MY": "Malaysia",
+	"PH": "Philippines",
+	"ID": "Indonesia",
+	"AE": "UAE",
+	"ZA": "South Africa",
+	"CH": "Switzerland",
+	"IT": "Italy",
+	"ES": "Spain",
+	"SE": "Sweden",
+	"NO": "Norway",
+	"FI": "Finland",
+	"DK": "Denmark",
+	"PL": "Poland",
+	"CZ": "Czech Republic",
+	"AT": "Austria",
+	"IE": "Ireland",
+	"PT": "Portugal",
+	"GR": "Greece",
+	"IL": "Israel",
+	"MX": "Mexico",
+	"CL": "Chile",
+	"CO": "Colombia",
+	"PE": "Peru",
+	"NZ":    "New Zealand",
+	"OTHER": "Other",
 }
 
-// CountryEmojis 国家代码到 emoji 的映射
+// CountryEmojis maps country codes to flag emojis
 var CountryEmojis = map[string]string{
 	"HK": "🇭🇰",
 	"TW": "🇹🇼",
@@ -282,7 +282,7 @@ var CountryEmojis = map[string]string{
 	"OTHER": "🌐",
 }
 
-// GetCountryName 获取国家名称
+// GetCountryName returns the country name for the given code
 func GetCountryName(code string) string {
 	if name, ok := CountryNames[code]; ok {
 		return name
@@ -290,7 +290,7 @@ func GetCountryName(code string) string {
 	return code
 }
 
-// GetCountryEmoji 获取国家 emoji
+// GetCountryEmoji returns the flag emoji for the given country code
 func GetCountryEmoji(code string) string {
 	if emoji, ok := CountryEmojis[code]; ok {
 		return emoji

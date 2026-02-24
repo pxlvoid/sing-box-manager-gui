@@ -8,7 +8,7 @@ import { toast } from '../components/Toast';
 export default function Dashboard() {
   const { serviceStatus, subscriptions, systemInfo, fetchServiceStatus, fetchSubscriptions, fetchSystemInfo } = useStore();
 
-  // 错误模态框状态
+  // Error modal state
   const [errorModal, setErrorModal] = useState<{
     isOpen: boolean;
     title: string;
@@ -19,9 +19,9 @@ export default function Dashboard() {
     message: ''
   });
 
-  // 显示错误的辅助函数
+  // Helper function to display errors
   const showError = (title: string, error: any) => {
-    const message = error.response?.data?.error || error.message || '操作失败';
+    const message = error.response?.data?.error || error.message || 'Operation failed';
     setErrorModal({
       isOpen: true,
       title,
@@ -34,7 +34,7 @@ export default function Dashboard() {
     fetchSubscriptions();
     fetchSystemInfo();
 
-    // 每 5 秒刷新状态和系统信息
+    // Refresh status and system info every 5 seconds
     const interval = setInterval(() => {
       fetchServiceStatus();
       fetchSystemInfo();
@@ -46,9 +46,9 @@ export default function Dashboard() {
     try {
       await serviceApi.start();
       await fetchServiceStatus();
-      toast.success('服务已启动');
+      toast.success('Service started');
     } catch (error) {
-      showError('启动失败', error);
+      showError('Failed to start', error);
     }
   };
 
@@ -56,9 +56,9 @@ export default function Dashboard() {
     try {
       await serviceApi.stop();
       await fetchServiceStatus();
-      toast.success('服务已停止');
+      toast.success('Service stopped');
     } catch (error) {
-      showError('停止失败', error);
+      showError('Failed to stop', error);
     }
   };
 
@@ -66,9 +66,9 @@ export default function Dashboard() {
     try {
       await serviceApi.restart();
       await fetchServiceStatus();
-      toast.success('服务已重启');
+      toast.success('Service restarted');
     } catch (error) {
-      showError('重启失败', error);
+      showError('Failed to restart', error);
     }
   };
 
@@ -76,9 +76,9 @@ export default function Dashboard() {
     try {
       await configApi.apply();
       await fetchServiceStatus();
-      toast.success('配置已应用');
+      toast.success('Configuration applied');
     } catch (error) {
-      showError('应用配置失败', error);
+      showError('Failed to apply configuration', error);
     }
   };
 
@@ -87,19 +87,19 @@ export default function Dashboard() {
 
   return (
     <div className="space-y-6">
-      <h1 className="text-2xl font-bold text-gray-800 dark:text-white">仪表盘</h1>
+      <h1 className="text-2xl font-bold text-gray-800 dark:text-white">Dashboard</h1>
 
-      {/* 服务状态卡片 */}
+      {/* Service status card */}
       <Card>
         <CardHeader className="flex justify-between items-center">
           <div className="flex items-center gap-3">
-            <h2 className="text-lg font-semibold">sing-box 服务</h2>
+            <h2 className="text-lg font-semibold">sing-box Service</h2>
             <Chip
               color={serviceStatus?.running ? 'success' : 'danger'}
               variant="flat"
               size="sm"
             >
-              {serviceStatus?.running ? '运行中' : '已停止'}
+              {serviceStatus?.running ? 'Running' : 'Stopped'}
             </Chip>
           </div>
           <div className="flex gap-2">
@@ -112,7 +112,7 @@ export default function Dashboard() {
                   startContent={<Square className="w-4 h-4" />}
                   onPress={handleStop}
                 >
-                  停止
+                  Stop
                 </Button>
                 <Button
                   size="sm"
@@ -121,7 +121,7 @@ export default function Dashboard() {
                   startContent={<RefreshCw className="w-4 h-4" />}
                   onPress={handleRestart}
                 >
-                  重启
+                  Restart
                 </Button>
               </>
             ) : (
@@ -131,7 +131,7 @@ export default function Dashboard() {
                 startContent={<Play className="w-4 h-4" />}
                 onPress={handleStart}
               >
-                启动
+                Start
               </Button>
             )}
             <Button
@@ -139,14 +139,14 @@ export default function Dashboard() {
               color="primary"
               onPress={handleApplyConfig}
             >
-              应用配置
+              Apply Config
             </Button>
           </div>
         </CardHeader>
         <CardBody>
           <div className="grid grid-cols-3 gap-4">
             <div>
-              <p className="text-sm text-gray-500">版本</p>
+              <p className="text-sm text-gray-500">Version</p>
               <div className="flex items-center gap-1">
                 <p className="font-medium">
                   {serviceStatus?.version?.match(/version\s+([\d.]+)/)?.[1] || serviceStatus?.version || '-'}
@@ -166,20 +166,20 @@ export default function Dashboard() {
               </div>
             </div>
             <div>
-              <p className="text-sm text-gray-500">进程 ID</p>
+              <p className="text-sm text-gray-500">Process ID</p>
               <p className="font-medium">{serviceStatus?.pid || '-'}</p>
             </div>
             <div>
-              <p className="text-sm text-gray-500">状态</p>
+              <p className="text-sm text-gray-500">Status</p>
               <p className="font-medium">
-                {serviceStatus?.running ? '正常运行' : '未运行'}
+                {serviceStatus?.running ? 'Running normally' : 'Not running'}
               </p>
             </div>
           </div>
         </CardBody>
       </Card>
 
-      {/* 统计卡片 */}
+      {/* Statistics cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
         <Card>
           <CardBody className="flex flex-row items-center gap-4">
@@ -187,7 +187,7 @@ export default function Dashboard() {
               <Wifi className="w-6 h-6 text-blue-600 dark:text-blue-300" />
             </div>
             <div>
-              <p className="text-sm text-gray-500">订阅数量</p>
+              <p className="text-sm text-gray-500">Subscriptions</p>
               <p className="text-2xl font-bold">{enabledSubs} / {subscriptions.length}</p>
             </div>
           </CardBody>
@@ -199,7 +199,7 @@ export default function Dashboard() {
               <HardDrive className="w-6 h-6 text-green-600 dark:text-green-300" />
             </div>
             <div>
-              <p className="text-sm text-gray-500">节点总数</p>
+              <p className="text-sm text-gray-500">Total Nodes</p>
               <p className="text-2xl font-bold">{totalNodes}</p>
             </div>
           </CardBody>
@@ -211,13 +211,13 @@ export default function Dashboard() {
               <Cpu className="w-6 h-6 text-purple-600 dark:text-purple-300" />
             </div>
             <div>
-              <p className="text-sm text-gray-500">sbm 资源</p>
+              <p className="text-sm text-gray-500">sbm Resources</p>
               <p className="text-lg font-bold">
                 {systemInfo?.sbm ? (
                   <>
                     <span className="text-sm font-normal text-gray-500">CPU </span>
                     {systemInfo.sbm.cpu_percent.toFixed(1)}%
-                    <span className="text-sm font-normal text-gray-500 ml-2">内存 </span>
+                    <span className="text-sm font-normal text-gray-500 ml-2">Mem </span>
                     {systemInfo.sbm.memory_mb.toFixed(1)}MB
                   </>
                 ) : '-'}
@@ -232,17 +232,17 @@ export default function Dashboard() {
               <Activity className="w-6 h-6 text-orange-600 dark:text-orange-300" />
             </div>
             <div>
-              <p className="text-sm text-gray-500">sing-box 资源</p>
+              <p className="text-sm text-gray-500">sing-box Resources</p>
               <p className="text-lg font-bold">
                 {serviceStatus?.running && systemInfo?.singbox ? (
                   <>
                     <span className="text-sm font-normal text-gray-500">CPU </span>
                     {systemInfo.singbox.cpu_percent.toFixed(1)}%
-                    <span className="text-sm font-normal text-gray-500 ml-2">内存 </span>
+                    <span className="text-sm font-normal text-gray-500 ml-2">Mem </span>
                     {systemInfo.singbox.memory_mb.toFixed(1)}MB
                   </>
                 ) : (
-                  <span className="text-gray-400">未运行</span>
+                  <span className="text-gray-400">Not running</span>
                 )}
               </p>
             </div>
@@ -250,14 +250,14 @@ export default function Dashboard() {
         </Card>
       </div>
 
-      {/* 订阅列表预览 */}
+      {/* Subscription list preview */}
       <Card>
         <CardHeader>
-          <h2 className="text-lg font-semibold">订阅概览</h2>
+          <h2 className="text-lg font-semibold">Subscription Overview</h2>
         </CardHeader>
         <CardBody>
           {subscriptions.length === 0 ? (
-            <p className="text-gray-500 text-center py-4">暂无订阅，请前往节点页面添加</p>
+            <p className="text-gray-500 text-center py-4">No subscriptions yet. Go to the Nodes page to add one.</p>
           ) : (
             <div className="space-y-3">
               {subscriptions.map((sub) => (
@@ -274,11 +274,11 @@ export default function Dashboard() {
                       {sub.name}
                     </Chip>
                     <span className="text-sm text-gray-500">
-                      {sub.node_count} 个节点
+                      {sub.node_count} nodes
                     </span>
                   </div>
                   <span className="text-sm text-gray-400">
-                    更新于 {new Date(sub.updated_at).toLocaleString()}
+                    Updated {new Date(sub.updated_at).toLocaleString()}
                   </span>
                 </div>
               ))}
@@ -287,7 +287,7 @@ export default function Dashboard() {
         </CardBody>
       </Card>
 
-      {/* 错误提示模态框 */}
+      {/* Error modal */}
       <Modal isOpen={errorModal.isOpen} onClose={() => setErrorModal({ ...errorModal, isOpen: false })}>
         <ModalContent>
           <ModalHeader className="text-danger">{errorModal.title}</ModalHeader>
@@ -296,7 +296,7 @@ export default function Dashboard() {
           </ModalBody>
           <ModalFooter>
             <Button color="primary" onPress={() => setErrorModal({ ...errorModal, isOpen: false })}>
-              确定
+              OK
             </Button>
           </ModalFooter>
         </ModalContent>
