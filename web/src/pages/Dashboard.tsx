@@ -244,17 +244,23 @@ export default function Dashboard() {
       </Card>
 
       {/* Proxy Links */}
-      <Card>
-        <CardHeader>
-          <div className="flex items-center gap-2">
-            <Link className="w-5 h-5" />
-            <h2 className="text-lg font-semibold">Proxy Links</h2>
-          </div>
-        </CardHeader>
-        <CardBody>
-          {proxyLinks.length === 0 ? (
-            <p className="text-gray-500 text-center py-4">Set proxy addresses in Settings to generate links.</p>
-          ) : (
+      {proxyLinks.length === 0 ? (
+        <Card>
+          <CardBody className="flex flex-row items-center gap-2 py-3">
+            <Link className="w-5 h-5 text-gray-400" />
+            <span className="font-semibold">Proxy Links</span>
+            <span className="text-gray-500 text-sm">— Set proxy addresses in Settings to generate links.</span>
+          </CardBody>
+        </Card>
+      ) : (
+        <Card>
+          <CardHeader>
+            <div className="flex items-center gap-2">
+              <Link className="w-5 h-5" />
+              <h2 className="text-lg font-semibold">Proxy Links</h2>
+            </div>
+          </CardHeader>
+          <CardBody>
             <div className="space-y-2">
               {proxyLinks.map((item) => (
                 <div
@@ -280,9 +286,9 @@ export default function Dashboard() {
                 </div>
               ))}
             </div>
-          )}
-        </CardBody>
-      </Card>
+          </CardBody>
+        </Card>
+      )}
 
       {/* Statistics cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
