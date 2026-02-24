@@ -5,7 +5,7 @@ const api = axios.create({
   timeout: 30000,
 });
 
-// 订阅 API
+// Subscription API
 export const subscriptionApi = {
   getAll: () => api.get('/subscriptions'),
   add: (name: string, url: string) => api.post('/subscriptions', { name, url }),
@@ -15,7 +15,7 @@ export const subscriptionApi = {
   refreshAll: () => api.post('/subscriptions/refresh-all'),
 };
 
-// 过滤器 API
+// Filter API
 export const filterApi = {
   getAll: () => api.get('/filters'),
   add: (data: any) => api.post('/filters', data),
@@ -23,7 +23,7 @@ export const filterApi = {
   delete: (id: string) => api.delete(`/filters/${id}`),
 };
 
-// 规则 API
+// Rule API
 export const ruleApi = {
   getAll: () => api.get('/rules'),
   add: (data: any) => api.post('/rules', data),
@@ -31,33 +31,33 @@ export const ruleApi = {
   delete: (id: string) => api.delete(`/rules/${id}`),
 };
 
-// 规则组 API
+// Rule group API
 export const ruleGroupApi = {
   getAll: () => api.get('/rule-groups'),
   update: (id: string, data: any) => api.put(`/rule-groups/${id}`, data),
 };
 
-// 规则集验证 API
+// Ruleset validation API
 export const ruleSetApi = {
   validate: (type: 'geosite' | 'geoip', name: string) =>
     api.get('/ruleset/validate', { params: { type, name } }),
 };
 
-// 设置 API
+// Settings API
 export const settingsApi = {
   get: () => api.get('/settings'),
   update: (data: any) => api.put('/settings', data),
   getSystemHosts: () => api.get('/system-hosts'),
 };
 
-// 配置 API
+// Config API
 export const configApi = {
   generate: () => api.post('/config/generate'),
   preview: () => api.get('/config/preview'),
   apply: () => api.post('/config/apply'),
 };
 
-// 服务 API
+// Service API
 export const serviceApi = {
   status: () => api.get('/service/status'),
   start: () => api.post('/service/start'),
@@ -74,7 +74,7 @@ export const launchdApi = {
   restart: () => api.post('/launchd/restart'),
 };
 
-// 统一守护进程 API（自动判断系统）
+// Unified daemon API (auto-detects OS)
 export const daemonApi = {
   status: () => api.get('/daemon/status'),
   install: () => api.post('/daemon/install'),
@@ -82,7 +82,7 @@ export const daemonApi = {
   restart: () => api.post('/daemon/restart'),
 };
 
-// 监控 API
+// Monitor API
 export const monitorApi = {
   system: () => api.get('/monitor/system'),
   logs: () => api.get('/monitor/logs'),
@@ -90,7 +90,7 @@ export const monitorApi = {
   singboxLogs: (lines: number = 200) => api.get(`/monitor/logs/singbox?lines=${lines}`),
 };
 
-// 节点 API
+// Node API
 export const nodeApi = {
   getAll: () => api.get('/nodes'),
   getCountries: () => api.get('/nodes/countries'),
@@ -98,7 +98,7 @@ export const nodeApi = {
   parse: (url: string) => api.post('/nodes/parse', { url }),
 };
 
-// 手动节点 API
+// Manual node API
 export const manualNodeApi = {
   getAll: () => api.get('/manual-nodes'),
   add: (data: any) => api.post('/manual-nodes', data),
@@ -106,7 +106,7 @@ export const manualNodeApi = {
   delete: (id: string) => api.delete(`/manual-nodes/${id}`),
 };
 
-// 内核管理 API
+// Kernel management API
 export const kernelApi = {
   getInfo: () => api.get('/kernel/info'),
   getReleases: () => api.get('/kernel/releases'),

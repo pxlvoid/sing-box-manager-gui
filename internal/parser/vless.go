@@ -7,53 +7,53 @@ import (
 	"github.com/xiaobei/singbox-manager/internal/storage"
 )
 
-// VlessParser VLESS 解析器
+// VlessParser VLESS parser
 type VlessParser struct{}
 
-// Protocol 返回协议名称
+// Protocol returns the protocol name
 func (p *VlessParser) Protocol() string {
 	return "vless"
 }
 
-// Parse 解析 VLESS URL
-// 格式: vless://uuid@server:port?params#name
+// Parse parses a VLESS URL
+// Format: vless://uuid@server:port?params#name
 func (p *VlessParser) Parse(rawURL string) (*storage.Node, error) {
 	addressPart, params, name, err := parseURLParams(rawURL)
 	if err != nil {
 		return nil, err
 	}
 
-	// 分离 uuid 和服务器信息
+	// Separate uuid and server info
 	atIdx := strings.Index(addressPart, "@")
 	if atIdx == -1 {
-		return nil, fmt.Errorf("无效的 VLESS URL 格式")
+		return nil, fmt.Errorf("invalid VLESS URL format")
 	}
 
 	uuid := addressPart[:atIdx]
 	serverPart := addressPart[atIdx+1:]
 
-	// 解析服务器地址
+	// Parse server address
 	server, port, err := parseServerInfo(serverPart)
 	if err != nil {
-		return nil, fmt.Errorf("解析服务器地址失败: %w", err)
+		return nil, fmt.Errorf("failed to parse server address: %w", err)
 	}
 
-	// 设置默认名称
+	// Set default name
 	if name == "" {
 		name = fmt.Sprintf("%s:%d", server, port)
 	}
 
-	// 构建 Extra
+	// Build Extra
 	extra := map[string]interface{}{
 		"uuid": uuid,
 	}
 
-	// Flow 配置
+	// Flow configuration
 	if flow := params.Get("flow"); flow != "" {
 		extra["flow"] = flow
 	}
 
-	// 传输层配置
+	// Transport layer configuration
 	transportType := getParamString(params, "type", "tcp")
 	if transportType != "tcp" {
 		transport := map[string]interface{}{
@@ -93,7 +93,7 @@ func (p *VlessParser) Parse(rawURL string) (*storage.Node, error) {
 		extra["transport"] = transport
 	}
 
-	// TLS/Reality 配置
+	// TLS/Reality configuration
 	security := getParamString(params, "security", "none")
 	if security != "none" {
 		tls := map[string]interface{}{
@@ -107,7 +107,7 @@ func (p *VlessParser) Parse(rawURL string) (*storage.Node, error) {
 			tls["server_name"] = host
 		}
 
-		// 跳过证书验证
+		// Skip certificate verification
 		if getParamBool(params, "allowInsecure") || getParamBool(params, "insecure") {
 			tls["insecure"] = true
 		}
@@ -117,7 +117,7 @@ func (p *VlessParser) Parse(rawURL string) (*storage.Node, error) {
 			tls["alpn"] = strings.Split(alpn, ",")
 		}
 
-		// Reality 配置
+		// Reality configuration
 		if security == "reality" {
 			reality := map[string]interface{}{
 				"enabled": true,
@@ -137,7 +137,7 @@ func (p *VlessParser) Parse(rawURL string) (*storage.Node, error) {
 				"fingerprint": fp,
 			}
 		} else if fp := params.Get("fp"); fp != "" {
-			// 普通 TLS 的 uTLS
+			// uTLS for regular TLS
 			tls["utls"] = map[string]interface{}{
 				"enabled":     true,
 				"fingerprint": fp,

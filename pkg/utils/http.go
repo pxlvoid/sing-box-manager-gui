@@ -9,16 +9,16 @@ import (
 	"time"
 )
 
-// SubscriptionInfo 订阅信息（从响应头解析）
+// SubscriptionInfo represents subscription info (parsed from response headers)
 type SubscriptionInfo struct {
-	Upload      int64      // 上传流量
-	Download    int64      // 下载流量
-	Total       int64      // 总流量
-	Expire      *time.Time // 过期时间
-	ContentType string     // 内容类型
+	Upload      int64      // Upload traffic
+	Download    int64      // Download traffic
+	Total       int64      // Total traffic
+	Expire      *time.Time // Expiration time
+	ContentType string     // Content type
 }
 
-// FetchSubscription 拉取订阅内容
+// FetchSubscription fetches subscription content
 func FetchSubscription(url string) (string, *SubscriptionInfo, error) {
 	client := &http.Client{
 		Timeout: 30 * time.Second,
@@ -26,42 +26,42 @@ func FetchSubscription(url string) (string, *SubscriptionInfo, error) {
 
 	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {
-		return "", nil, fmt.Errorf("创建请求失败: %w", err)
+		return "", nil, fmt.Errorf("failed to create request: %w", err)
 	}
 
-	// 设置 User-Agent
+	// Set User-Agent
 	req.Header.Set("User-Agent", "clash-verge/v1.0.0")
 
 	resp, err := client.Do(req)
 	if err != nil {
-		return "", nil, fmt.Errorf("请求失败: %w", err)
+		return "", nil, fmt.Errorf("request failed: %w", err)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return "", nil, fmt.Errorf("HTTP 状态码: %d", resp.StatusCode)
+		return "", nil, fmt.Errorf("HTTP status code: %d", resp.StatusCode)
 	}
 
-	// 读取响应体
+	// Read response body
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return "", nil, fmt.Errorf("读取响应失败: %w", err)
+		return "", nil, fmt.Errorf("failed to read response: %w", err)
 	}
 
-	// 解析订阅信息
+	// Parse subscription info
 	info := parseSubscriptionInfo(resp.Header)
 
 	return string(body), info, nil
 }
 
-// parseSubscriptionInfo 从响应头解析订阅信息
+// parseSubscriptionInfo parses subscription info from response headers
 func parseSubscriptionInfo(header http.Header) *SubscriptionInfo {
 	info := &SubscriptionInfo{
 		ContentType: header.Get("Content-Type"),
 	}
 
-	// 解析 subscription-userinfo 头
-	// 格式: upload=xxx; download=xxx; total=xxx; expire=xxx
+	// Parse subscription-userinfo header
+	// Format: upload=xxx; download=xxx; total=xxx; expire=xxx
 	userInfo := header.Get("subscription-userinfo")
 	if userInfo == "" {
 		userInfo = header.Get("Subscription-Userinfo")
@@ -97,7 +97,7 @@ func parseSubscriptionInfo(header http.Header) *SubscriptionInfo {
 	return info
 }
 
-// FormatBytes 格式化字节数
+// FormatBytes formats byte count into human-readable string
 func FormatBytes(bytes int64) string {
 	const (
 		KB = 1024

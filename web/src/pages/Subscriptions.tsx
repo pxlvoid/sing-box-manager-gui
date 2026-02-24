@@ -45,20 +45,20 @@ const nodeTypeOptions = [
 ];
 
 const countryOptions = [
-  { code: 'HK', name: '香港', emoji: '🇭🇰' },
-  { code: 'TW', name: '台湾', emoji: '🇹🇼' },
-  { code: 'JP', name: '日本', emoji: '🇯🇵' },
-  { code: 'KR', name: '韩国', emoji: '🇰🇷' },
-  { code: 'SG', name: '新加坡', emoji: '🇸🇬' },
-  { code: 'US', name: '美国', emoji: '🇺🇸' },
-  { code: 'GB', name: '英国', emoji: '🇬🇧' },
-  { code: 'DE', name: '德国', emoji: '🇩🇪' },
-  { code: 'FR', name: '法国', emoji: '🇫🇷' },
-  { code: 'NL', name: '荷兰', emoji: '🇳🇱' },
-  { code: 'AU', name: '澳大利亚', emoji: '🇦🇺' },
-  { code: 'CA', name: '加拿大', emoji: '🇨🇦' },
-  { code: 'RU', name: '俄罗斯', emoji: '🇷🇺' },
-  { code: 'IN', name: '印度', emoji: '🇮🇳' },
+  { code: 'HK', name: 'Hong Kong', emoji: '🇭🇰' },
+  { code: 'TW', name: 'Taiwan', emoji: '🇹🇼' },
+  { code: 'JP', name: 'Japan', emoji: '🇯🇵' },
+  { code: 'KR', name: 'South Korea', emoji: '🇰🇷' },
+  { code: 'SG', name: 'Singapore', emoji: '🇸🇬' },
+  { code: 'US', name: 'United States', emoji: '🇺🇸' },
+  { code: 'GB', name: 'United Kingdom', emoji: '🇬🇧' },
+  { code: 'DE', name: 'Germany', emoji: '🇩🇪' },
+  { code: 'FR', name: 'France', emoji: '🇫🇷' },
+  { code: 'NL', name: 'Netherlands', emoji: '🇳🇱' },
+  { code: 'AU', name: 'Australia', emoji: '🇦🇺' },
+  { code: 'CA', name: 'Canada', emoji: '🇨🇦' },
+  { code: 'RU', name: 'Russia', emoji: '🇷🇺' },
+  { code: 'IN', name: 'India', emoji: '🇮🇳' },
 ];
 
 const defaultNode: Node = {
@@ -103,7 +103,7 @@ export default function Subscriptions() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [editingSubscription, setEditingSubscription] = useState<Subscription | null>(null);
 
-  // 手动节点表单
+  // Manual node form
   const [editingNode, setEditingNode] = useState<ManualNode | null>(null);
   const [nodeForm, setNodeForm] = useState<Node>(defaultNode);
   const [nodeEnabled, setNodeEnabled] = useState(true);
@@ -111,7 +111,7 @@ export default function Subscriptions() {
   const [isParsing, setIsParsing] = useState(false);
   const [parseError, setParseError] = useState('');
 
-  // 过滤器表单
+  // Filter form
   const [editingFilter, setEditingFilter] = useState<Filter | null>(null);
   const defaultFilterForm: Omit<Filter, 'id'> = {
     name: '',
@@ -167,7 +167,7 @@ export default function Subscriptions() {
       setEditingSubscription(null);
       onSubClose();
     } catch (error) {
-      console.error(editingSubscription ? '更新订阅失败:' : '添加订阅失败:', error);
+      console.error(editingSubscription ? 'Failed to update subscription:' : 'Failed to add subscription:', error);
     } finally {
       setIsSubmitting(false);
     }
@@ -178,7 +178,7 @@ export default function Subscriptions() {
   };
 
   const handleDeleteSubscription = async (id: string) => {
-    if (confirm('确定要删除这个订阅吗？')) {
+    if (confirm('Are you sure you want to delete this subscription?')) {
       await deleteSubscription(id);
     }
   };
@@ -187,7 +187,7 @@ export default function Subscriptions() {
     await toggleSubscription(sub.id, !sub.enabled);
   };
 
-  // 手动节点操作
+  // Manual node operations
   const handleOpenAddNode = () => {
     setEditingNode(null);
     setNodeForm(defaultNode);
@@ -206,7 +206,7 @@ export default function Subscriptions() {
     onNodeOpen();
   };
 
-  // 解析节点链接
+  // Parse node link
   const handleParseUrl = async () => {
     if (!nodeUrl.trim()) return;
 
@@ -218,7 +218,7 @@ export default function Subscriptions() {
       const parsedNode = response.data.data as Node;
       setNodeForm(parsedNode);
     } catch (error: any) {
-      const message = error.response?.data?.error || '解析失败，请检查链接格式';
+      const message = error.response?.data?.error || 'Failed to parse, please check the link format';
       setParseError(message);
     } finally {
       setIsParsing(false);
@@ -243,14 +243,14 @@ export default function Subscriptions() {
       }
       onNodeClose();
     } catch (error) {
-      console.error('保存节点失败:', error);
+      console.error('Failed to save node:', error);
     } finally {
       setIsSubmitting(false);
     }
   };
 
   const handleDeleteNode = async (id: string) => {
-    if (confirm('确定要删除这个节点吗？')) {
+    if (confirm('Are you sure you want to delete this node?')) {
       await deleteManualNode(id);
     }
   };
@@ -259,7 +259,7 @@ export default function Subscriptions() {
     await updateManualNode(mn.id, { ...mn, enabled: !mn.enabled });
   };
 
-  // 过滤器操作
+  // Filter operations
   const handleOpenAddFilter = () => {
     setEditingFilter(null);
     setFilterForm(defaultFilterForm);
@@ -299,14 +299,14 @@ export default function Subscriptions() {
       }
       onFilterClose();
     } catch (error) {
-      console.error('保存过滤器失败:', error);
+      console.error('Failed to save filter:', error);
     } finally {
       setIsSubmitting(false);
     }
   };
 
   const handleDeleteFilter = async (id: string) => {
-    if (confirm('确定要删除这个过滤器吗？')) {
+    if (confirm('Are you sure you want to delete this filter?')) {
       await deleteFilter(id);
     }
   };
@@ -318,7 +318,7 @@ export default function Subscriptions() {
   return (
     <div className="space-y-6">
       <div className="flex justify-between items-center">
-        <h1 className="text-2xl font-bold text-gray-800 dark:text-white">节点管理</h1>
+        <h1 className="text-2xl font-bold text-gray-800 dark:text-white">Node Management</h1>
         <div className="flex gap-2">
           <Button
             color="secondary"
@@ -326,7 +326,7 @@ export default function Subscriptions() {
             startContent={<FilterIcon className="w-4 h-4" />}
             onPress={handleOpenAddFilter}
           >
-            添加过滤器
+            Add Filter
           </Button>
           <Button
             color="primary"
@@ -334,25 +334,25 @@ export default function Subscriptions() {
             startContent={<Plus className="w-4 h-4" />}
             onPress={handleOpenAddNode}
           >
-            添加节点
+            Add Node
           </Button>
           <Button
             color="primary"
             startContent={<Plus className="w-4 h-4" />}
             onPress={handleOpenAddSubscription}
           >
-            添加订阅
+            Add Subscription
           </Button>
         </div>
       </div>
 
-      <Tabs aria-label="节点管理">
-        <Tab key="subscriptions" title="订阅管理">
+      <Tabs aria-label="Node Management">
+        <Tab key="subscriptions" title="Subscriptions">
           {subscriptions.length === 0 ? (
             <Card className="mt-4">
               <CardBody className="py-12 text-center">
                 <Globe className="w-12 h-12 mx-auto text-gray-300 mb-4" />
-                <p className="text-gray-500">暂无订阅，点击上方按钮添加</p>
+                <p className="text-gray-500">No subscriptions yet, click the button above to add one</p>
               </CardBody>
             </Card>
           ) : (
@@ -372,12 +372,12 @@ export default function Subscriptions() {
           )}
         </Tab>
 
-        <Tab key="manual" title="手动节点">
+        <Tab key="manual" title="Manual Nodes">
           {manualNodes.length === 0 ? (
             <Card className="mt-4">
               <CardBody className="py-12 text-center">
                 <Server className="w-12 h-12 mx-auto text-gray-300 mb-4" />
-                <p className="text-gray-500">暂无手动节点，点击上方按钮添加</p>
+                <p className="text-gray-500">No manual nodes yet, click the button above to add one</p>
               </CardBody>
             </Card>
           ) : (
@@ -424,14 +424,14 @@ export default function Subscriptions() {
           )}
         </Tab>
 
-        <Tab key="filters" title="过滤器">
+        <Tab key="filters" title="Filters">
           {filters.length === 0 ? (
             <Card className="mt-4">
               <CardBody className="py-12 text-center">
                 <FilterIcon className="w-12 h-12 mx-auto text-gray-300 mb-4" />
-                <p className="text-gray-500">暂无过滤器，点击上方按钮添加</p>
+                <p className="text-gray-500">No filters yet, click the button above to add one</p>
                 <p className="text-xs text-gray-400 mt-2">
-                  过滤器可以根据国家或关键字筛选节点，创建自定义节点分组
+                  Filters allow you to filter nodes by country or keywords, and create custom node groups
                 </p>
               </CardBody>
             </Card>
@@ -449,23 +449,23 @@ export default function Subscriptions() {
                             <Chip size="sm" variant="flat" color="success">
                               {filter.include_countries.map(code =>
                                 countryOptions.find(c => c.code === code)?.emoji || code
-                              ).join(' ')} 包含
+                              ).join(' ')} Include
                             </Chip>
                           )}
                           {filter.exclude_countries?.length > 0 && (
                             <Chip size="sm" variant="flat" color="danger">
                               {filter.exclude_countries.map(code =>
                                 countryOptions.find(c => c.code === code)?.emoji || code
-                              ).join(' ')} 排除
+                              ).join(' ')} Exclude
                             </Chip>
                           )}
                           {filter.include?.length > 0 && (
                             <Chip size="sm" variant="flat">
-                              关键字: {filter.include.join('|')}
+                              Keywords: {filter.include.join('|')}
                             </Chip>
                           )}
                           <Chip size="sm" variant="flat" color="secondary">
-                            {filter.mode === 'urltest' ? '自动测速' : '手动选择'}
+                            {filter.mode === 'urltest' ? 'Auto Speed Test' : 'Manual Select'}
                           </Chip>
                         </div>
                       </div>
@@ -500,12 +500,12 @@ export default function Subscriptions() {
           )}
         </Tab>
 
-        <Tab key="countries" title="按国家/地区">
+        <Tab key="countries" title="By Country/Region">
           {countryGroups.length === 0 ? (
             <Card className="mt-4">
               <CardBody className="py-12 text-center">
                 <Globe className="w-12 h-12 mx-auto text-gray-300 mb-4" />
-                <p className="text-gray-500">暂无节点，请先添加订阅或手动添加节点</p>
+                <p className="text-gray-500">No nodes yet, please add a subscription or manually add nodes first</p>
               </CardBody>
             </Card>
           ) : (
@@ -516,7 +516,7 @@ export default function Subscriptions() {
                     <span className="text-3xl">{group.emoji}</span>
                     <div>
                       <h3 className="font-semibold">{group.name}</h3>
-                      <p className="text-sm text-gray-500">{group.node_count} 个节点</p>
+                      <p className="text-sm text-gray-500">{group.node_count} nodes</p>
                     </div>
                   </CardBody>
                 </Card>
@@ -526,27 +526,27 @@ export default function Subscriptions() {
         </Tab>
       </Tabs>
 
-      {/* 添加/编辑订阅弹窗 */}
+      {/* Add/Edit Subscription Modal */}
       <Modal isOpen={isSubOpen} onClose={onSubClose}>
         <ModalContent>
-          <ModalHeader>{editingSubscription ? '编辑订阅' : '添加订阅'}</ModalHeader>
+          <ModalHeader>{editingSubscription ? 'Edit Subscription' : 'Add Subscription'}</ModalHeader>
           <ModalBody>
             <Input
-              label="订阅名称"
-              placeholder="输入订阅名称"
+              label="Subscription Name"
+              placeholder="Enter subscription name"
               value={name}
               onChange={(e) => setName(e.target.value)}
             />
             <Input
-              label="订阅地址"
-              placeholder="输入订阅 URL"
+              label="Subscription URL"
+              placeholder="Enter subscription URL"
               value={url}
               onChange={(e) => setUrl(e.target.value)}
             />
           </ModalBody>
           <ModalFooter>
             <Button variant="flat" onPress={onSubClose}>
-              取消
+              Cancel
             </Button>
             <Button
               color="primary"
@@ -554,25 +554,25 @@ export default function Subscriptions() {
               isLoading={isSubmitting}
               isDisabled={!name || !url}
             >
-              {editingSubscription ? '保存' : '添加'}
+              {editingSubscription ? 'Save' : 'Add'}
             </Button>
           </ModalFooter>
         </ModalContent>
       </Modal>
 
-      {/* 添加/编辑节点弹窗 */}
+      {/* Add/Edit Node Modal */}
       <Modal isOpen={isNodeOpen} onClose={onNodeClose} size="lg">
         <ModalContent>
-          <ModalHeader>{editingNode ? '编辑节点' : '添加节点'}</ModalHeader>
+          <ModalHeader>{editingNode ? 'Edit Node' : 'Add Node'}</ModalHeader>
           <ModalBody>
             <div className="space-y-4">
-              {/* 节点链接输入 - 仅在添加模式显示 */}
+              {/* Node Link Input - Only shown in add mode */}
               {!editingNode && (
                 <div className="space-y-2">
                   <div className="flex gap-2">
                     <Input
-                      label="节点链接"
-                      placeholder="粘贴节点链接，如 hysteria2://... vmess://... ss://... socks://..."
+                      label="Node Link"
+                      placeholder="Paste node link, e.g. hysteria2://... vmess://... ss://... socks://..."
                       value={nodeUrl}
                       onChange={(e) => setNodeUrl(e.target.value)}
                       startContent={<Link className="w-4 h-4 text-gray-400" />}
@@ -586,19 +586,19 @@ export default function Subscriptions() {
                       isDisabled={!nodeUrl.trim()}
                       className="self-end"
                     >
-                      解析
+                      Parse
                     </Button>
                   </div>
                   {parseError && (
                     <p className="text-sm text-danger">{parseError}</p>
                   )}
                   <p className="text-xs text-gray-400">
-                    支持的协议: ss://, vmess://, vless://, trojan://, hysteria2://, tuic://, socks://
+                    Supported protocols: ss://, vmess://, vless://, trojan://, hysteria2://, tuic://, socks://
                   </p>
                 </div>
               )}
 
-              {/* 解析后显示节点信息 */}
+              {/* Display node info after parsing */}
               {nodeForm.tag && (
                 <Card className="bg-default-100">
                   <CardBody className="py-3">
@@ -610,26 +610,26 @@ export default function Subscriptions() {
                           {nodeForm.type} · {nodeForm.server}:{nodeForm.server_port}
                         </p>
                       </div>
-                      <Chip size="sm" variant="flat" color="success">已解析</Chip>
+                      <Chip size="sm" variant="flat" color="success">Parsed</Chip>
                     </div>
                   </CardBody>
                 </Card>
               )}
 
-              {/* 手动编辑区域 - 可折叠 */}
+              {/* Manual edit area - collapsible */}
               <Accordion variant="bordered" selectionMode="multiple">
-                <AccordionItem key="manual" aria-label="手动编辑" title="手动编辑节点信息">
+                <AccordionItem key="manual" aria-label="Manual Edit" title="Manually Edit Node Info">
                   <div className="space-y-4 pb-2">
                     <Input
-                      label="节点名称"
-                      placeholder="例如：香港-01"
+                      label="Node Name"
+                      placeholder="e.g.: Hong Kong-01"
                       value={nodeForm.tag}
                       onChange={(e) => setNodeForm({ ...nodeForm, tag: e.target.value })}
                     />
 
                     <div className="grid grid-cols-2 gap-4">
                       <Select
-                        label="节点类型"
+                        label="Node Type"
                         selectedKeys={[nodeForm.type]}
                         onChange={(e) => setNodeForm({ ...nodeForm, type: e.target.value })}
                       >
@@ -641,7 +641,7 @@ export default function Subscriptions() {
                       </Select>
 
                       <Select
-                        label="国家/地区"
+                        label="Country/Region"
                         selectedKeys={[nodeForm.country || 'HK']}
                         onChange={(e) => {
                           const country = countryOptions.find(c => c.code === e.target.value);
@@ -662,7 +662,7 @@ export default function Subscriptions() {
 
                     <div className="grid grid-cols-2 gap-4">
                       <Input
-                        label="服务器地址"
+                        label="Server Address"
                         placeholder="example.com"
                         value={nodeForm.server}
                         onChange={(e) => setNodeForm({ ...nodeForm, server: e.target.value })}
@@ -670,7 +670,7 @@ export default function Subscriptions() {
 
                       <Input
                         type="number"
-                        label="端口"
+                        label="Port"
                         placeholder="443"
                         value={String(nodeForm.server_port)}
                         onChange={(e) => setNodeForm({ ...nodeForm, server_port: parseInt(e.target.value) || 443 })}
@@ -681,7 +681,7 @@ export default function Subscriptions() {
               </Accordion>
 
               <div className="flex items-center justify-between">
-                <span>启用节点</span>
+                <span>Enable Node</span>
                 <Switch
                   isSelected={nodeEnabled}
                   onValueChange={setNodeEnabled}
@@ -691,7 +691,7 @@ export default function Subscriptions() {
           </ModalBody>
           <ModalFooter>
             <Button variant="flat" onPress={onNodeClose}>
-              取消
+              Cancel
             </Button>
             <Button
               color="primary"
@@ -699,30 +699,30 @@ export default function Subscriptions() {
               isLoading={isSubmitting}
               isDisabled={!nodeForm.tag || !nodeForm.server}
             >
-              {editingNode ? '保存' : '添加'}
+              {editingNode ? 'Save' : 'Add'}
             </Button>
           </ModalFooter>
         </ModalContent>
       </Modal>
 
-      {/* 添加/编辑过滤器弹窗 */}
+      {/* Add/Edit Filter Modal */}
       <Modal isOpen={isFilterOpen} onClose={onFilterClose} size="2xl">
         <ModalContent>
-          <ModalHeader>{editingFilter ? '编辑过滤器' : '添加过滤器'}</ModalHeader>
+          <ModalHeader>{editingFilter ? 'Edit Filter' : 'Add Filter'}</ModalHeader>
           <ModalBody>
             <div className="space-y-4">
-              {/* 过滤器名称 */}
+              {/* Filter Name */}
               <Input
-                label="过滤器名称"
-                placeholder="例如：日本高速节点、TikTok专用"
+                label="Filter Name"
+                placeholder="e.g.: Japan High Speed Nodes, TikTok Dedicated"
                 value={filterForm.name}
                 onChange={(e) => setFilterForm({ ...filterForm, name: e.target.value })}
                 isRequired
               />
-              {/* 包含国家 */}
+              {/* Include Countries */}
               <Select
-                label="包含国家"
-                placeholder="选择要包含的国家（可多选）"
+                label="Include Countries"
+                placeholder="Select countries to include (multiple selection)"
                 selectionMode="multiple"
                 selectedKeys={filterForm.include_countries}
                 onSelectionChange={(keys) => {
@@ -739,10 +739,10 @@ export default function Subscriptions() {
                 ))}
               </Select>
 
-              {/* 排除国家 */}
+              {/* Exclude Countries */}
               <Select
-                label="排除国家"
-                placeholder="选择要排除的国家（可多选）"
+                label="Exclude Countries"
+                placeholder="Select countries to exclude (multiple selection)"
                 selectionMode="multiple"
                 selectedKeys={filterForm.exclude_countries}
                 onSelectionChange={(keys) => setFilterForm({
@@ -757,10 +757,10 @@ export default function Subscriptions() {
                 ))}
               </Select>
 
-              {/* 包含关键字 */}
+              {/* Include Keywords */}
               <Input
-                label="包含关键字"
-                placeholder="用 | 分隔，如：高速|IPLC|专线"
+                label="Include Keywords"
+                placeholder="Separated by |, e.g.: high-speed|IPLC|dedicated"
                 value={filterForm.include.join('|')}
                 onChange={(e) => setFilterForm({
                   ...filterForm,
@@ -768,10 +768,10 @@ export default function Subscriptions() {
                 })}
               />
 
-              {/* 排除关键字 */}
+              {/* Exclude Keywords */}
               <Input
-                label="排除关键字"
-                placeholder="用 | 分隔，如：过期|维护|低速"
+                label="Exclude Keywords"
+                placeholder="Separated by |, e.g.: expired|maintenance|slow"
                 value={filterForm.exclude.join('|')}
                 onChange={(e) => setFilterForm({
                   ...filterForm,
@@ -779,11 +779,11 @@ export default function Subscriptions() {
                 })}
               />
 
-              {/* 全部节点开关 */}
+              {/* Apply to All Nodes Toggle */}
               <div className="flex items-center justify-between">
                 <div>
-                  <span className="font-medium">应用于全部节点</span>
-                  <p className="text-xs text-gray-400">启用后将匹配所有订阅的节点</p>
+                  <span className="font-medium">Apply to All Nodes</span>
+                  <p className="text-xs text-gray-400">When enabled, will match nodes from all subscriptions</p>
                 </div>
                 <Switch
                   isSelected={filterForm.all_nodes}
@@ -791,27 +791,27 @@ export default function Subscriptions() {
                 />
               </div>
 
-              {/* 模式选择 */}
+              {/* Mode Selection */}
               <Select
-                label="模式"
+                label="Mode"
                 selectedKeys={[filterForm.mode]}
                 onChange={(e) => setFilterForm({ ...filterForm, mode: e.target.value })}
               >
                 <SelectItem key="urltest" value="urltest">
-                  自动测速 (urltest)
+                  Auto Speed Test (urltest)
                 </SelectItem>
                 <SelectItem key="selector" value="selector">
-                  手动选择 (selector)
+                  Manual Select (selector)
                 </SelectItem>
               </Select>
 
-              {/* urltest 配置 */}
+              {/* urltest Configuration */}
               {filterForm.mode === 'urltest' && (
                 <Card className="bg-default-50">
                   <CardBody className="space-y-3">
-                    <h4 className="font-medium text-sm">测速配置</h4>
+                    <h4 className="font-medium text-sm">Speed Test Configuration</h4>
                     <Input
-                      label="测速 URL"
+                      label="Speed Test URL"
                       placeholder="https://www.gstatic.com/generate_204"
                       value={filterForm.urltest_config?.url || ''}
                       onChange={(e) => setFilterForm({
@@ -822,7 +822,7 @@ export default function Subscriptions() {
                     />
                     <div className="grid grid-cols-2 gap-3">
                       <Input
-                        label="测速间隔"
+                        label="Speed Test Interval"
                         placeholder="5m"
                         value={filterForm.urltest_config?.interval || ''}
                         onChange={(e) => setFilterForm({
@@ -833,7 +833,7 @@ export default function Subscriptions() {
                       />
                       <Input
                         type="number"
-                        label="容差阈值 (ms)"
+                        label="Tolerance Threshold (ms)"
                         placeholder="50"
                         value={String(filterForm.urltest_config?.tolerance || 50)}
                         onChange={(e) => setFilterForm({
@@ -847,9 +847,9 @@ export default function Subscriptions() {
                 </Card>
               )}
 
-              {/* 启用开关 */}
+              {/* Enable Filter Toggle */}
               <div className="flex items-center justify-between">
-                <span>启用过滤器</span>
+                <span>Enable Filter</span>
                 <Switch
                   isSelected={filterForm.enabled}
                   onValueChange={(checked) => setFilterForm({ ...filterForm, enabled: checked })}
@@ -859,7 +859,7 @@ export default function Subscriptions() {
           </ModalBody>
           <ModalFooter>
             <Button variant="flat" onPress={onFilterClose}>
-              取消
+              Cancel
             </Button>
             <Button
               color="primary"
@@ -867,7 +867,7 @@ export default function Subscriptions() {
               isLoading={isSubmitting}
               isDisabled={!filterForm.name}
             >
-              {editingFilter ? '保存' : '添加'}
+              {editingFilter ? 'Save' : 'Add'}
             </Button>
           </ModalFooter>
         </ModalContent>
@@ -888,10 +888,10 @@ interface SubscriptionCardProps {
 function SubscriptionCard({ subscription: sub, onRefresh, onEdit, onDelete, onToggle, loading }: SubscriptionCardProps) {
   const [isExpanded, setIsExpanded] = useState(false);
 
-  // 确保 nodes 是数组，处理 null 或 undefined 情况
+  // Ensure nodes is an array, handle null or undefined cases
   const nodes = sub.nodes || [];
 
-  // 按国家分组节点
+  // Group nodes by country
   const nodesByCountry = nodes.reduce((acc, node) => {
     const country = node.country || 'OTHER';
     if (!acc[country]) {
@@ -909,7 +909,7 @@ function SubscriptionCard({ subscription: sub, onRefresh, onEdit, onDelete, onTo
       <CardHeader
         className="flex justify-between items-start cursor-pointer"
         onClick={(e) => {
-          // 如果点击的是按钮区域，不触发展开
+          // If clicking a button, don't trigger expand
           if ((e.target as HTMLElement).closest('button')) return;
           setIsExpanded(!isExpanded);
         }}
@@ -920,12 +920,12 @@ function SubscriptionCard({ subscription: sub, onRefresh, onEdit, onDelete, onTo
             variant="flat"
             size="sm"
           >
-            {sub.enabled ? '已启用' : '已禁用'}
+            {sub.enabled ? 'Enabled' : 'Disabled'}
           </Chip>
           <div>
             <h3 className="text-lg font-semibold">{sub.name}</h3>
             <p className="text-sm text-gray-500">
-              {sub.node_count} 个节点 · 更新于 {new Date(sub.updated_at).toLocaleString()}
+              {sub.node_count} nodes · Updated at {new Date(sub.updated_at).toLocaleString()}
             </p>
           </div>
         </div>
@@ -937,7 +937,7 @@ function SubscriptionCard({ subscription: sub, onRefresh, onEdit, onDelete, onTo
             onPress={onRefresh}
             isDisabled={loading}
           >
-            刷新
+            Refresh
           </Button>
           <Button
             size="sm"
@@ -945,7 +945,7 @@ function SubscriptionCard({ subscription: sub, onRefresh, onEdit, onDelete, onTo
             startContent={<Pencil className="w-4 h-4" />}
             onPress={onEdit}
           >
-            编辑
+            Edit
           </Button>
           <Button
             size="sm"
@@ -954,7 +954,7 @@ function SubscriptionCard({ subscription: sub, onRefresh, onEdit, onDelete, onTo
             startContent={<Trash2 className="w-4 h-4" />}
             onPress={onDelete}
           >
-            删除
+            Delete
           </Button>
           <Button
             isIconOnly
@@ -973,19 +973,19 @@ function SubscriptionCard({ subscription: sub, onRefresh, onEdit, onDelete, onTo
 
       {isExpanded && (
         <CardBody className="pt-0">
-          {/* 流量信息 */}
+          {/* Traffic Information */}
           {sub.traffic && (
             <div className="flex gap-4 text-sm mb-4">
-              <span>已用: {formatBytes(sub.traffic.used)}</span>
-              <span>剩余: {formatBytes(sub.traffic.remaining)}</span>
-              <span>总计: {formatBytes(sub.traffic.total)}</span>
+              <span>Used: {formatBytes(sub.traffic.used)}</span>
+              <span>Remaining: {formatBytes(sub.traffic.remaining)}</span>
+              <span>Total: {formatBytes(sub.traffic.total)}</span>
               {sub.expire_at && (
-                <span>到期: {new Date(sub.expire_at).toLocaleDateString()}</span>
+                <span>Expires: {new Date(sub.expire_at).toLocaleDateString()}</span>
               )}
             </div>
           )}
 
-          {/* 按国家分组的节点列表 */}
+          {/* Node list grouped by country */}
           <Accordion variant="bordered" selectionMode="multiple">
             {Object.entries(nodesByCountry).map(([country, data]) => (
               <AccordionItem

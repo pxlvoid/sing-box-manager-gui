@@ -8,7 +8,7 @@ import (
 //go:embed all:dist
 var distFS embed.FS
 
-// GetDistFS 返回前端构建产物的文件系统
+// GetDistFS returns the file system for the frontend build artifacts
 func GetDistFS() (fs.FS, error) {
 	return fs.Sub(distFS, "dist")
 }

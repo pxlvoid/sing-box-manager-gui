@@ -13,67 +13,67 @@ import (
 	"strings"
 )
 
-// downloadAndInstall 下载并安装内核
+// downloadAndInstall downloads and installs kernel
 func (m *Manager) downloadAndInstall(version string) {
 	defer func() {
 		if r := recover(); r != nil {
-			m.setDownloadComplete("error", fmt.Sprintf("下载过程发生错误: %v", r))
+			m.setDownloadComplete("error", fmt.Sprintf("Error occurred during download: %v", r))
 		}
 	}()
 
-	// 1. 获取 releases
-	m.updateProgress("preparing", 0, "正在获取版本信息...", 0, 0)
+	// 1. Fetch releases
+	m.updateProgress("preparing", 0, "Getting version information...", 0, 0)
 	releases, err := m.FetchReleases()
 	if err != nil {
-		m.setDownloadComplete("error", fmt.Sprintf("获取版本信息失败: %v", err))
+		m.setDownloadComplete("error", fmt.Sprintf("Failed to get version information: %v", err))
 		return
 	}
 
-	// 2. 获取对应平台的资源信息
+	// 2. Get resource info for corresponding platform
 	asset, err := m.getAssetInfo(releases, version)
 	if err != nil {
 		m.setDownloadComplete("error", err.Error())
 		return
 	}
 
-	// 3. 创建临时目录
+	// 3. Create temporary directory
 	tmpDir, err := os.MkdirTemp("", "singbox-download")
 	if err != nil {
-		m.setDownloadComplete("error", fmt.Sprintf("创建临时目录失败: %v", err))
+		m.setDownloadComplete("error", fmt.Sprintf("Failed to create temporary directory: %v", err))
 		return
 	}
 	defer os.RemoveAll(tmpDir)
 
-	// 4. 下载文件
+	// 4. Download file
 	downloadURL := m.buildDownloadURL(asset.BrowserDownloadURL)
 	tmpFile := filepath.Join(tmpDir, asset.Name)
 
-	m.updateProgress("downloading", 0, "正在下载...", 0, asset.Size)
+	m.updateProgress("downloading", 0, "Downloading...", 0, asset.Size)
 	if err := m.downloadFile(downloadURL, tmpFile, asset.Size); err != nil {
-		m.setDownloadComplete("error", fmt.Sprintf("下载失败: %v", err))
+		m.setDownloadComplete("error", fmt.Sprintf("Download failed: %v", err))
 		return
 	}
 
-	// 5. 解压文件
-	m.updateProgress("extracting", 80, "正在解压...", asset.Size, asset.Size)
+	// 5. Extract file
+	m.updateProgress("extracting", 80, "Extracting...", asset.Size, asset.Size)
 	binaryPath, err := m.extractArchive(tmpFile, tmpDir)
 	if err != nil {
-		m.setDownloadComplete("error", fmt.Sprintf("解压失败: %v", err))
+		m.setDownloadComplete("error", fmt.Sprintf("Extraction failed: %v", err))
 		return
 	}
 
-	// 6. 安装到目标路径
-	m.updateProgress("installing", 90, "正在安装...", asset.Size, asset.Size)
+	// 6. Install to target path
+	m.updateProgress("installing", 90, "Installing...", asset.Size, asset.Size)
 	if err := m.installBinary(binaryPath); err != nil {
-		m.setDownloadComplete("error", fmt.Sprintf("安装失败: %v", err))
+		m.setDownloadComplete("error", fmt.Sprintf("Installation failed: %v", err))
 		return
 	}
 
-	// 7. 完成
-	m.setDownloadComplete("completed", fmt.Sprintf("sing-box %s 安装成功", version))
+	// 7. Completed
+	m.setDownloadComplete("completed", fmt.Sprintf("sing-box %s installed successfully", version))
 }
 
-// downloadFile 下载文件
+// downloadFile downloads a file
 func (m *Manager) downloadFile(url, dest string, totalSize int64) error {
 	resp, err := http.Get(url)
 	if err != nil {
@@ -82,7 +82,7 @@ func (m *Manager) downloadFile(url, dest string, totalSize int64) error {
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("下载失败，HTTP 状态码: %d", resp.StatusCode)
+		return fmt.Errorf("Download failed, HTTP status code: %d", resp.StatusCode)
 	}
 
 	out, err := os.Create(dest)
@@ -103,9 +103,9 @@ func (m *Manager) downloadFile(url, dest string, totalSize int64) error {
 			}
 			downloaded += int64(n)
 
-			// 更新进度
-			progress := float64(downloaded) / float64(totalSize) * 80 // 下载阶段占 80%
-			m.updateProgress("downloading", progress, fmt.Sprintf("下载中 %.1f%%", progress/0.8), downloaded, totalSize)
+			// Update progress
+			progress := float64(downloaded) / float64(totalSize) * 80 // Download phase occupies 80%
+			m.updateProgress("downloading", progress, fmt.Sprintf("Downloading %.1f%%", progress/0.8), downloaded, totalSize)
 		}
 		if err == io.EOF {
 			break
@@ -118,17 +118,17 @@ func (m *Manager) downloadFile(url, dest string, totalSize int64) error {
 	return nil
 }
 
-// extractArchive 解压压缩包
+// extractArchive extracts archive
 func (m *Manager) extractArchive(archivePath, destDir string) (string, error) {
 	if strings.HasSuffix(archivePath, ".tar.gz") || strings.HasSuffix(archivePath, ".tgz") {
 		return m.extractTarGz(archivePath, destDir)
 	} else if strings.HasSuffix(archivePath, ".zip") {
 		return m.extractZip(archivePath, destDir)
 	}
-	return "", fmt.Errorf("不支持的压缩格式: %s", archivePath)
+	return "", fmt.Errorf("Unsupported archive format: %s", archivePath)
 }
 
-// extractTarGz 解压 tar.gz
+// extractTarGz extracts tar.gz
 func (m *Manager) extractTarGz(archivePath, destDir string) (string, error) {
 	file, err := os.Open(archivePath)
 	if err != nil {
@@ -159,7 +159,7 @@ func (m *Manager) extractTarGz(archivePath, destDir string) (string, error) {
 			return "", err
 		}
 
-		// 只提取 sing-box 二进制文件
+		// Only extract sing-box binary file
 		if header.Typeflag == tar.TypeReg && strings.HasSuffix(header.Name, binaryName) {
 			binaryPath = filepath.Join(destDir, binaryName)
 			outFile, err := os.Create(binaryPath)
@@ -177,13 +177,13 @@ func (m *Manager) extractTarGz(archivePath, destDir string) (string, error) {
 	}
 
 	if binaryPath == "" {
-		return "", fmt.Errorf("未在压缩包中找到 %s", binaryName)
+		return "", fmt.Errorf("Not found in archive: %s", binaryName)
 	}
 
 	return binaryPath, nil
 }
 
-// extractZip 解压 zip
+// extractZip extracts zip
 func (m *Manager) extractZip(archivePath, destDir string) (string, error) {
 	r, err := zip.OpenReader(archivePath)
 	if err != nil {
@@ -224,30 +224,30 @@ func (m *Manager) extractZip(archivePath, destDir string) (string, error) {
 	}
 
 	if binaryPath == "" {
-		return "", fmt.Errorf("未在压缩包中找到 %s", binaryName)
+		return "", fmt.Errorf("Not found in archive: %s", binaryName)
 	}
 
 	return binaryPath, nil
 }
 
-// installBinary 安装二进制文件
+// installBinary installs binary file
 func (m *Manager) installBinary(srcPath string) error {
 	destPath := m.binPath
 
-	// 确保目标目录存在
+	// Ensure target directory exists
 	destDir := filepath.Dir(destPath)
 	if err := os.MkdirAll(destDir, 0755); err != nil {
-		return fmt.Errorf("创建目录失败: %w", err)
+		return fmt.Errorf("Failed to create directory: %w", err)
 	}
 
-	// 如果目标文件已存在，先删除
+	// If target file exists, delete first
 	if _, err := os.Stat(destPath); err == nil {
 		if err := os.Remove(destPath); err != nil {
-			return fmt.Errorf("删除旧版本失败: %w", err)
+			return fmt.Errorf("Failed to delete old version: %w", err)
 		}
 	}
 
-	// 复制文件
+	// Copy file
 	src, err := os.Open(srcPath)
 	if err != nil {
 		return err
@@ -264,9 +264,9 @@ func (m *Manager) installBinary(srcPath string) error {
 		return err
 	}
 
-	// 设置可执行权限
+	// Set executable permission
 	if err := os.Chmod(destPath, 0755); err != nil {
-		return fmt.Errorf("设置权限失败: %w", err)
+		return fmt.Errorf("Failed to set permission: %w", err)
 	}
 
 	return nil

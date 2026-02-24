@@ -12,13 +12,13 @@ import (
 )
 
 const (
-	// 默认最大日志文件大小 10MB
+	// Default max log file size 10MB
 	DefaultMaxSize = 10 * 1024 * 1024
-	// 默认保留的日志文件数量
+	// Default number of log files to retain
 	DefaultMaxBackups = 3
 )
 
-// Logger 日志管理器
+// Logger manages log operations
 type Logger struct {
 	mu          sync.Mutex
 	file        *os.File
@@ -30,7 +30,7 @@ type Logger struct {
 	prefix      string
 }
 
-// LogManager 全局日志管理
+// LogManager handles global log management
 type LogManager struct {
 	dataDir       string
 	appLogger     *Logger
@@ -38,16 +38,16 @@ type LogManager struct {
 }
 
 var (
-	// 全局日志管理器实例
+	// Global log manager instance
 	manager *LogManager
 	once    sync.Once
 )
 
-// NewLogger 创建新的日志记录器
+// NewLogger creates a new logger
 func NewLogger(filePath string, prefix string) (*Logger, error) {
 	dir := filepath.Dir(filePath)
 	if err := os.MkdirAll(dir, 0755); err != nil {
-		return nil, fmt.Errorf("创建日志目录失败: %w", err)
+		return nil, fmt.Errorf("failed to create log directory: %w", err)
 	}
 
 	l := &Logger{
@@ -64,17 +64,17 @@ func NewLogger(filePath string, prefix string) (*Logger, error) {
 	return l, nil
 }
 
-// openFile 打开或创建日志文件
+// openFile opens or creates a log file
 func (l *Logger) openFile() error {
 	file, err := os.OpenFile(l.filePath, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0644)
 	if err != nil {
-		return fmt.Errorf("打开日志文件失败: %w", err)
+		return fmt.Errorf("failed to open log file: %w", err)
 	}
 
 	info, err := file.Stat()
 	if err != nil {
 		file.Close()
-		return fmt.Errorf("获取文件信息失败: %w", err)
+		return fmt.Errorf("failed to get file info: %w", err)
 	}
 
 	l.file = file
@@ -84,36 +84,36 @@ func (l *Logger) openFile() error {
 	return nil
 }
 
-// rotate 轮转日志文件
+// rotate rotates log files
 func (l *Logger) rotate() error {
 	if l.file != nil {
 		l.file.Close()
 	}
 
-	// 删除最旧的备份
+	// Delete oldest backup
 	oldestBackup := fmt.Sprintf("%s.%d", l.filePath, l.maxBackups)
 	os.Remove(oldestBackup)
 
-	// 移动现有备份
+	// Move existing backups
 	for i := l.maxBackups - 1; i >= 1; i-- {
 		oldPath := fmt.Sprintf("%s.%d", l.filePath, i)
 		newPath := fmt.Sprintf("%s.%d", l.filePath, i+1)
 		os.Rename(oldPath, newPath)
 	}
 
-	// 移动当前日志到 .1
+	// Move current log to .1
 	os.Rename(l.filePath, l.filePath+".1")
 
-	// 创建新文件
+	// Create new file
 	return l.openFile()
 }
 
-// Write 实现 io.Writer 接口
+// Write implements the io.Writer interface
 func (l *Logger) Write(p []byte) (n int, err error) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 
-	// 检查是否需要轮转
+	// Check if rotation is needed
 	if l.currentSize+int64(len(p)) > l.maxSize {
 		if err := l.rotate(); err != nil {
 			return 0, err
@@ -125,44 +125,44 @@ func (l *Logger) Write(p []byte) (n int, err error) {
 	return
 }
 
-// Printf 格式化日志输出
+// Printf outputs formatted log message
 func (l *Logger) Printf(format string, v ...interface{}) {
 	timestamp := time.Now().Format("2006/01/02 15:04:05")
 	msg := fmt.Sprintf(format, v...)
 	line := fmt.Sprintf("%s %s%s\n", timestamp, l.prefix, msg)
 
-	// 写入文件
+	// Write to file
 	l.Write([]byte(line))
 
-	// 同时输出到控制台
+	// Also output to console
 	fmt.Print(line)
 }
 
-// Println 输出一行日志
+// Println outputs a log line
 func (l *Logger) Println(v ...interface{}) {
 	timestamp := time.Now().Format("2006/01/02 15:04:05")
 	msg := fmt.Sprint(v...)
 	line := fmt.Sprintf("%s %s%s\n", timestamp, l.prefix, msg)
 
-	// 写入文件
+	// Write to file
 	l.Write([]byte(line))
 
-	// 同时输出到控制台
+	// Also output to console
 	fmt.Print(line)
 }
 
-// WriteRaw 写入原始日志行（不添加时间戳，用于 sing-box 输出）
-// 只写入文件，不输出到控制台，避免和程序日志混在一起
+// WriteRaw writes raw log lines (without timestamp, for sing-box output)
+// Only writes to file, does not output to console to avoid mixing with program logs
 func (l *Logger) WriteRaw(line string) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 
 	data := line + "\n"
 
-	// 检查是否需要轮转
+	// Check if rotation is needed
 	if l.currentSize+int64(len(data)) > l.maxSize {
 		if err := l.rotate(); err != nil {
-			fmt.Fprintf(os.Stderr, "日志轮转失败: %v\n", err)
+			fmt.Fprintf(os.Stderr, "log rotation failed: %v\n", err)
 			return
 		}
 	}
@@ -171,7 +171,7 @@ func (l *Logger) WriteRaw(line string) {
 	l.currentSize += int64(n)
 }
 
-// Close 关闭日志文件
+// Close closes the log file
 func (l *Logger) Close() error {
 	l.mu.Lock()
 	defer l.mu.Unlock()
@@ -182,31 +182,31 @@ func (l *Logger) Close() error {
 	return nil
 }
 
-// ReadLastLines 读取最后 n 行日志
+// ReadLastLines reads the last n lines from the log
 func (l *Logger) ReadLastLines(n int) ([]string, error) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 
-	// 同步文件
+	// Sync file
 	if l.file != nil {
 		l.file.Sync()
 	}
 
-	// 读取文件
+	// Read file
 	file, err := os.Open(l.filePath)
 	if err != nil {
 		if os.IsNotExist(err) {
 			return []string{}, nil
 		}
-		return nil, fmt.Errorf("打开日志文件失败: %w", err)
+		return nil, fmt.Errorf("failed to open log file: %w", err)
 	}
 	defer file.Close()
 
-	// 使用 ring buffer 来存储最后 n 行
+	// Use ring buffer to store last n lines
 	lines := make([]string, 0, n)
 	scanner := bufio.NewScanner(file)
 
-	// 增加 scanner 缓冲区大小以处理长行
+	// Increase scanner buffer size to handle long lines
 	buf := make([]byte, 64*1024)
 	scanner.Buffer(buf, 1024*1024)
 
@@ -218,18 +218,18 @@ func (l *Logger) ReadLastLines(n int) ([]string, error) {
 	}
 
 	if err := scanner.Err(); err != nil {
-		return nil, fmt.Errorf("读取日志失败: %w", err)
+		return nil, fmt.Errorf("failed to read logs: %w", err)
 	}
 
 	return lines, nil
 }
 
-// GetFilePath 获取日志文件路径
+// GetFilePath returns the log file path
 func (l *Logger) GetFilePath() string {
 	return l.filePath
 }
 
-// InitLogManager 初始化全局日志管理器
+// InitLogManager initializes the global log manager
 func InitLogManager(dataDir string) error {
 	var initErr error
 	once.Do(func() {
@@ -237,13 +237,13 @@ func InitLogManager(dataDir string) error {
 
 		appLogger, err := NewLogger(filepath.Join(logsDir, "sbm.log"), "[SBM] ")
 		if err != nil {
-			initErr = fmt.Errorf("初始化应用日志失败: %w", err)
+			initErr = fmt.Errorf("failed to initialize app logger: %w", err)
 			return
 		}
 
 		singboxLogger, err := NewLogger(filepath.Join(logsDir, "singbox.log"), "")
 		if err != nil {
-			initErr = fmt.Errorf("初始化 sing-box 日志失败: %w", err)
+			initErr = fmt.Errorf("failed to initialize sing-box logger: %w", err)
 			return
 		}
 
@@ -257,22 +257,22 @@ func InitLogManager(dataDir string) error {
 	return initErr
 }
 
-// GetLogManager 获取全局日志管理器
+// GetLogManager returns the global log manager
 func GetLogManager() *LogManager {
 	return manager
 }
 
-// AppLogger 获取应用日志记录器
+// AppLogger returns the app logger
 func (m *LogManager) AppLogger() *Logger {
 	return m.appLogger
 }
 
-// SingboxLogger 获取 sing-box 日志记录器
+// SingboxLogger returns the sing-box logger
 func (m *LogManager) SingboxLogger() *Logger {
 	return m.singboxLogger
 }
 
-// Printf 应用日志快捷方法
+// Printf app log shortcut method
 func Printf(format string, v ...interface{}) {
 	if manager != nil && manager.appLogger != nil {
 		manager.appLogger.Printf(format, v...)
@@ -281,7 +281,7 @@ func Printf(format string, v ...interface{}) {
 	}
 }
 
-// Println 应用日志快捷方法
+// Println app log shortcut method
 func Println(v ...interface{}) {
 	if manager != nil && manager.appLogger != nil {
 		manager.appLogger.Println(v...)
@@ -290,16 +290,16 @@ func Println(v ...interface{}) {
 	}
 }
 
-// SingboxWriter 返回一个可以用于 sing-box 输出的 Writer
+// SingboxWriter returns a Writer that can be used for sing-box output
 type SingboxWriter struct {
 	logger   *Logger
 	memLogs  *[]string
 	memMu    *sync.RWMutex
 	maxLogs  int
-	callback func(string) // 可选的回调函数
+	callback func(string) // Optional callback function
 }
 
-// NewSingboxWriter 创建 sing-box 输出写入器
+// NewSingboxWriter creates a sing-box output writer
 func NewSingboxWriter(logger *Logger, memLogs *[]string, memMu *sync.RWMutex, maxLogs int) *SingboxWriter {
 	return &SingboxWriter{
 		logger:  logger,
@@ -309,19 +309,19 @@ func NewSingboxWriter(logger *Logger, memLogs *[]string, memMu *sync.RWMutex, ma
 	}
 }
 
-// Write 实现 io.Writer 接口
+// Write implements the io.Writer interface
 func (w *SingboxWriter) Write(p []byte) (n int, err error) {
 	return len(p), nil
 }
 
-// WriteLine 写入一行日志
+// WriteLine writes a log line
 func (w *SingboxWriter) WriteLine(line string) {
-	// 写入文件
+	// Write to file
 	if w.logger != nil {
 		w.logger.WriteRaw(line)
 	}
 
-	// 写入内存
+	// Write to memory
 	if w.memLogs != nil && w.memMu != nil {
 		w.memMu.Lock()
 		*w.memLogs = append(*w.memLogs, line)
@@ -332,7 +332,7 @@ func (w *SingboxWriter) WriteLine(line string) {
 	}
 }
 
-// ReadAppLogs 读取应用日志
+// ReadAppLogs reads app logs
 func ReadAppLogs(lines int) ([]string, error) {
 	if manager == nil || manager.appLogger == nil {
 		return []string{}, nil
@@ -340,7 +340,7 @@ func ReadAppLogs(lines int) ([]string, error) {
 	return manager.appLogger.ReadLastLines(lines)
 }
 
-// ReadSingboxLogs 读取 sing-box 日志
+// ReadSingboxLogs reads sing-box logs
 func ReadSingboxLogs(lines int) ([]string, error) {
 	if manager == nil || manager.singboxLogger == nil {
 		return []string{}, nil
@@ -348,17 +348,17 @@ func ReadSingboxLogs(lines int) ([]string, error) {
 	return manager.singboxLogger.ReadLastLines(lines)
 }
 
-// MultiWriter 同时写入多个目标
+// MultiWriter writes to multiple targets simultaneously
 type MultiWriter struct {
 	writers []io.Writer
 }
 
-// NewMultiWriter 创建多目标写入器
+// NewMultiWriter creates a multi-target writer
 func NewMultiWriter(writers ...io.Writer) *MultiWriter {
 	return &MultiWriter{writers: writers}
 }
 
-// Write 写入所有目标
+// Write writes to all targets
 func (mw *MultiWriter) Write(p []byte) (n int, err error) {
 	for _, w := range mw.writers {
 		n, err = w.Write(p)

@@ -8,11 +8,11 @@ import (
 	"github.com/xiaobei/singbox-manager/internal/storage"
 )
 
-// Scheduler 定时任务调度器
+// Scheduler scheduled task scheduler
 type Scheduler struct {
 	store      *storage.JSONStore
 	subService *SubscriptionService
-	onUpdate   func() error // 订阅更新后的回调
+	onUpdate   func() error // Callback after subscription update
 
 	stopCh   chan struct{}
 	running  bool
@@ -20,7 +20,7 @@ type Scheduler struct {
 	mu       sync.Mutex
 }
 
-// NewScheduler 创建调度器
+// NewScheduler creates a scheduler
 func NewScheduler(store *storage.JSONStore, subService *SubscriptionService) *Scheduler {
 	return &Scheduler{
 		store:      store,
@@ -29,12 +29,12 @@ func NewScheduler(store *storage.JSONStore, subService *SubscriptionService) *Sc
 	}
 }
 
-// SetUpdateCallback 设置更新回调
+// SetUpdateCallback sets the update callback
 func (s *Scheduler) SetUpdateCallback(callback func() error) {
 	s.onUpdate = callback
 }
 
-// Start 启动调度器
+// Start starts the scheduler
 func (s *Scheduler) Start() {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -45,7 +45,7 @@ func (s *Scheduler) Start() {
 
 	settings := s.store.GetSettings()
 	if settings.SubscriptionInterval <= 0 {
-		log.Println("[Scheduler] 定时更新已禁用")
+		log.Println("[Scheduler] Scheduled updates disabled")
 		return
 	}
 
@@ -54,10 +54,10 @@ func (s *Scheduler) Start() {
 	s.stopCh = make(chan struct{})
 
 	go s.run()
-	log.Printf("[Scheduler] 已启动，更新间隔: %v\n", s.interval)
+	log.Printf("[Scheduler] Started, update interval: %v\n", s.interval)
 }
 
-// Stop 停止调度器
+// Stop stops the scheduler
 func (s *Scheduler) Stop() {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -68,23 +68,23 @@ func (s *Scheduler) Stop() {
 
 	close(s.stopCh)
 	s.running = false
-	log.Println("[Scheduler] 已停止")
+	log.Println("[Scheduler] Stopped")
 }
 
-// Restart 重启调度器（更新配置后调用）
+// Restart restarts the scheduler (call after updating config)
 func (s *Scheduler) Restart() {
 	s.Stop()
 	s.Start()
 }
 
-// IsRunning 检查是否运行中
+// IsRunning checks if the scheduler is running
 func (s *Scheduler) IsRunning() bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return s.running
 }
 
-// run 运行定时任务
+// run runs the scheduled task
 func (s *Scheduler) run() {
 	ticker := time.NewTicker(s.interval)
 	defer ticker.Stop()
@@ -99,28 +99,28 @@ func (s *Scheduler) run() {
 	}
 }
 
-// updateSubscriptions 更新所有订阅
+// updateSubscriptions updates all subscriptions
 func (s *Scheduler) updateSubscriptions() {
-	log.Println("[Scheduler] 开始自动更新订阅...")
+	log.Println("[Scheduler] Starting automatic subscription update...")
 
 	if err := s.subService.RefreshAll(); err != nil {
-		log.Printf("[Scheduler] 更新订阅失败: %v\n", err)
+		log.Printf("[Scheduler] Failed to update subscription: %v\n", err)
 		return
 	}
 
-	log.Println("[Scheduler] 订阅更新完成")
+	log.Println("[Scheduler] Subscription update completed")
 
-	// 调用更新回调（自动应用配置）
+	// Call update callback (auto-apply config)
 	if s.onUpdate != nil {
 		if err := s.onUpdate(); err != nil {
-			log.Printf("[Scheduler] 自动应用配置失败: %v\n", err)
+			log.Printf("[Scheduler] Failed to auto-apply config: %v\n", err)
 		} else {
-			log.Println("[Scheduler] 配置已自动应用")
+			log.Println("[Scheduler] Config auto-applied")
 		}
 	}
 }
 
-// GetNextUpdateTime 获取下次更新时间
+// GetNextUpdateTime gets the next update time
 func (s *Scheduler) GetNextUpdateTime() *time.Time {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -133,7 +133,7 @@ func (s *Scheduler) GetNextUpdateTime() *time.Time {
 	return &next
 }
 
-// GetInterval 获取更新间隔
+// GetInterval gets the update interval
 func (s *Scheduler) GetInterval() time.Duration {
 	s.mu.Lock()
 	defer s.mu.Unlock()

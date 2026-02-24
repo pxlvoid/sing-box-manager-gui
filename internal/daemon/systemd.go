@@ -29,7 +29,7 @@ Environment="HOME={{.HomeDir}}"
 WantedBy={{if .RunAtLoad}}default.target{{else}}multi-user.target{{end}}
 `
 
-// SystemdConfig systemd 配置
+// SystemdConfig systemd config
 type SystemdConfig struct {
 	SbmPath    string
 	DataDir    string
@@ -41,26 +41,26 @@ type SystemdConfig struct {
 	KeepAlive  bool
 }
 
-// SystemdManager systemd 管理器
+// SystemdManager systemd manager
 type SystemdManager struct {
 	serviceName string
 	servicePath string
 	userMode    bool
 }
 
-// NewSystemdManager 创建 systemd 管理器
+// NewSystemdManager Create systemd manager
 func NewSystemdManager() (*SystemdManager, error) {
 	if runtime.GOOS != "linux" {
-		return nil, fmt.Errorf("systemd 仅在 Linux 上支持")
+		return nil, fmt.Errorf("systemd is only supported on Linux")
 	}
 
 	serviceName := "singbox-manager.service"
 	homeDir, err := getUserHomeDir()
 	if err != nil {
-		return nil, fmt.Errorf("获取用户目录失败: %w", err)
+		return nil, fmt.Errorf("failed to get user directory: %w", err)
 	}
 
-	// 用户级服务路径
+	// User-level service path
 	servicePath := filepath.Join(homeDir, ".config", "systemd", "user", serviceName)
 
 	return &SystemdManager{
@@ -70,69 +70,69 @@ func NewSystemdManager() (*SystemdManager, error) {
 	}, nil
 }
 
-// Install 安装 systemd 服务
+// Install Install systemd service
 func (sm *SystemdManager) Install(config SystemdConfig) error {
 	if err := os.MkdirAll(config.LogPath, 0755); err != nil {
-		return fmt.Errorf("创建日志目录失败: %w", err)
+		return fmt.Errorf("failed to create log directory: %w", err)
 	}
 
 	if err := os.MkdirAll(filepath.Dir(sm.servicePath), 0755); err != nil {
-		return fmt.Errorf("创建 systemd 目录失败: %w", err)
+		return fmt.Errorf("failed to create systemd directory: %w", err)
 	}
 
 	tmpl, err := template.New("systemd").Parse(systemdTemplate)
 	if err != nil {
-		return fmt.Errorf("解析模板失败: %w", err)
+		return fmt.Errorf("failed to parse template: %w", err)
 	}
 
 	var buf bytes.Buffer
 	if err := tmpl.Execute(&buf, config); err != nil {
-		return fmt.Errorf("生成 service 文件失败: %w", err)
+		return fmt.Errorf("failed to generate service file: %w", err)
 	}
 
 	if err := os.WriteFile(sm.servicePath, buf.Bytes(), 0644); err != nil {
-		return fmt.Errorf("写入 service 文件失败: %w", err)
+		return fmt.Errorf("failed to write service file: %w", err)
 	}
 
-	// 重新加载 systemd 配置
+	// Reload systemd configuration
 	if err := sm.runSystemctl("daemon-reload"); err != nil {
-		return fmt.Errorf("重新加载配置失败: %w", err)
+		return fmt.Errorf("failed to reload configuration: %w", err)
 	}
 
-	// 启用服务（开机自启）
+	// Enable service (auto-start on boot)
 	if config.RunAtLoad {
 		if err := sm.runSystemctl("enable", sm.serviceName); err != nil {
-			return fmt.Errorf("启用服务失败: %w", err)
+			return fmt.Errorf("failed to enable service: %w", err)
 		}
 	}
 
 	return nil
 }
 
-// Uninstall 卸载 systemd 服务
+// Uninstall Uninstall systemd service
 func (sm *SystemdManager) Uninstall() error {
 	sm.Stop()
 	sm.runSystemctl("disable", sm.serviceName)
 
 	if err := os.Remove(sm.servicePath); err != nil && !os.IsNotExist(err) {
-		return fmt.Errorf("删除 service 文件失败: %w", err)
+		return fmt.Errorf("failed to delete service file: %w", err)
 	}
 
 	sm.runSystemctl("daemon-reload")
 	return nil
 }
 
-// Start 启动服务
+// Start Start service
 func (sm *SystemdManager) Start() error {
 	return sm.runSystemctl("start", sm.serviceName)
 }
 
-// Stop 停止服务
+// Stop Stop service
 func (sm *SystemdManager) Stop() error {
 	return sm.runSystemctl("stop", sm.serviceName)
 }
 
-// Restart 重启服务
+// Restart Restart service
 func (sm *SystemdManager) Restart() error {
 	sm.Stop()
 	time.Sleep(500 * time.Millisecond)
@@ -145,22 +145,22 @@ func (sm *SystemdManager) Restart() error {
 			return nil
 		}
 	}
-	return fmt.Errorf("服务重启失败：服务在 %v 内未能启动", time.Duration(maxRetries)*500*time.Millisecond)
+	return fmt.Errorf("service restart failed: service failed to start within %v", time.Duration(maxRetries)*500*time.Millisecond)
 }
 
-// IsInstalled 检查是否已安装
+// IsInstalled Check if installed
 func (sm *SystemdManager) IsInstalled() bool {
 	_, err := os.Stat(sm.servicePath)
 	return err == nil
 }
 
-// IsRunning 检查是否运行中
+// IsRunning Check if running
 func (sm *SystemdManager) IsRunning() bool {
 	err := sm.runSystemctl("is-active", "--quiet", sm.serviceName)
 	return err == nil
 }
 
-// GetServicePath 获取 service 文件路径
+// GetServicePath Get service file path
 func (sm *SystemdManager) GetServicePath() string {
 	return sm.servicePath
 }

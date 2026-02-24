@@ -25,7 +25,7 @@ export default function Logs() {
         setSingboxLogs(res.data.data || []);
       }
     } catch (error) {
-      console.error('获取日志失败:', error);
+      console.error('Failed to fetch logs:', error);
     } finally {
       setLoading(false);
     }
@@ -35,20 +35,20 @@ export default function Logs() {
     fetchLogs(activeTab);
   };
 
-  // 滚动到底部
+  // Scroll to bottom
   const scrollToBottom = () => {
     if (logContainerRef.current) {
       logContainerRef.current.scrollTop = logContainerRef.current.scrollHeight;
     }
   };
 
-  // 初始加载
+  // Initial load
   useEffect(() => {
     fetchLogs('sbm');
     fetchLogs('singbox');
   }, []);
 
-  // 自动刷新
+  // Auto refresh
   useEffect(() => {
     if (autoRefresh) {
       intervalRef.current = setInterval(() => {
@@ -64,7 +64,7 @@ export default function Logs() {
     };
   }, [autoRefresh, activeTab]);
 
-  // 日志更新后滚动到底部
+  // Scroll to bottom after logs update
   useEffect(() => {
     scrollToBottom();
   }, [sbmLogs, singboxLogs, activeTab]);
@@ -82,7 +82,7 @@ export default function Logs() {
   return (
     <div className="space-y-6">
       <div className="flex justify-between items-center">
-        <h1 className="text-2xl font-bold text-gray-800 dark:text-white">日志</h1>
+        <h1 className="text-2xl font-bold text-gray-800 dark:text-white">Logs</h1>
         <div className="flex items-center gap-4">
           <div className="flex items-center gap-2">
             {autoRefresh ? (
@@ -90,7 +90,7 @@ export default function Logs() {
             ) : (
               <Play className="w-4 h-4 text-gray-500" />
             )}
-            <span className="text-sm text-gray-500">自动刷新</span>
+            <span className="text-sm text-gray-500">Auto refresh</span>
             <Switch
               size="sm"
               isSelected={autoRefresh}
@@ -105,7 +105,7 @@ export default function Logs() {
             onPress={fetchCurrentLogs}
             isDisabled={loading}
           >
-            刷新
+            Refresh
           </Button>
           <Button
             size="sm"
@@ -114,7 +114,7 @@ export default function Logs() {
             startContent={<Trash2 className="w-4 h-4" />}
             onPress={handleClear}
           >
-            清空
+            Clear
           </Button>
         </div>
       </div>
@@ -124,14 +124,14 @@ export default function Logs() {
           <Tabs
             selectedKey={activeTab}
             onSelectionChange={(key) => setActiveTab(key as LogType)}
-            aria-label="日志类型"
+            aria-label="Log Type"
           >
             <Tab
               key="singbox"
               title={
                 <div className="flex items-center gap-2">
                   <Terminal className="w-4 h-4" />
-                  <span>sing-box 日志</span>
+                  <span>sing-box Logs</span>
                 </div>
               }
             />
@@ -140,7 +140,7 @@ export default function Logs() {
               title={
                 <div className="flex items-center gap-2">
                   <Server className="w-4 h-4" />
-                  <span>应用日志</span>
+                  <span>Application Logs</span>
                 </div>
               }
             />
@@ -153,7 +153,7 @@ export default function Logs() {
           >
             {currentLogs.length === 0 ? (
               <div className="text-gray-500 text-center py-8">
-                暂无日志
+                No logs
               </div>
             ) : (
               currentLogs.map((line, index) => (
@@ -176,10 +176,10 @@ export default function Logs() {
           </div>
           <div className="mt-2 text-sm text-gray-500 flex justify-between">
             <span>
-              共 {currentLogs.length} 行
+              {currentLogs.length} lines
             </span>
             <span>
-              {autoRefresh ? '每 5 秒自动刷新' : '自动刷新已暂停'}
+              {autoRefresh ? 'Auto refresh every 5 seconds' : 'Auto refresh paused'}
             </span>
           </div>
         </CardBody>

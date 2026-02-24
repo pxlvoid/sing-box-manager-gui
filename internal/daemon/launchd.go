@@ -44,35 +44,35 @@ const plistTemplate = `<?xml version="1.0" encoding="UTF-8"?>
 </dict>
 </plist>`
 
-// LaunchdConfig launchd 配置
+// LaunchdConfig launchd config
 type LaunchdConfig struct {
 	Label      string
-	SbmPath    string // sbm 可执行文件路径
-	DataDir    string // 数据目录
-	Port       string // Web 端口
+	SbmPath    string // sbm executable path
+	DataDir    string // data directory
+	Port       string // web port
 	LogPath    string
 	WorkingDir string
-	HomeDir    string // 用户主目录，用于设置 HOME 环境变量
+	HomeDir    string // user home directory for setting HOME environment variable
 	RunAtLoad  bool
 	KeepAlive  bool
 }
 
-// LaunchdManager launchd 管理器
+// LaunchdManager launchd manager
 type LaunchdManager struct {
 	label     string
 	plistPath string
 }
 
-// NewLaunchdManager 创建 launchd 管理器
+// NewLaunchdManager Create launchd manager
 func NewLaunchdManager() (*LaunchdManager, error) {
-	// 只在 macOS 上支持 launchd
+	// launchd is only supported on macOS
 	if runtime.GOOS != "darwin" {
-		return nil, fmt.Errorf("launchd 仅在 macOS 上支持")
+		return nil, fmt.Errorf("launchd is only supported on macOS")
 	}
 
 	homeDir, err := getUserHomeDir()
 	if err != nil {
-		return nil, fmt.Errorf("获取用户目录失败: %w", err)
+		return nil, fmt.Errorf("failed to get user directory: %w", err)
 	}
 
 	label := "com.singbox.manager"
@@ -84,144 +84,144 @@ func NewLaunchdManager() (*LaunchdManager, error) {
 	}, nil
 }
 
-// getUserHomeDir 获取用户主目录，支持多种方式
+// getUserHomeDir Get user home directory, supporting multiple methods
 func getUserHomeDir() (string, error) {
-	// 首先尝试使用 os.UserHomeDir()
+	// First try using os.UserHomeDir()
 	if homeDir, err := os.UserHomeDir(); err == nil && homeDir != "" {
 		return homeDir, nil
 	}
 
-	// 备用方案：使用 os/user 包（不依赖 $HOME 环境变量）
+	// Fallback: use os/user package (does not depend on $HOME environment variable)
 	if u, err := user.Current(); err == nil && u.HomeDir != "" {
 		return u.HomeDir, nil
 	}
 
-	return "", fmt.Errorf("无法获取用户主目录")
+	return "", fmt.Errorf("unable to get user home directory")
 }
 
-// Install 安装 launchd 服务
+// Install Install launchd service
 func (lm *LaunchdManager) Install(config LaunchdConfig) error {
-	// 设置默认值
+	// Set default value
 	if config.Label == "" {
 		config.Label = lm.label
 	}
 
-	// 确保日志目录存在
+	// Ensure log directory exists
 	if err := os.MkdirAll(config.LogPath, 0755); err != nil {
-		return fmt.Errorf("创建日志目录失败: %w", err)
+		return fmt.Errorf("failed to create log directory: %w", err)
 	}
 
-	// 确保 LaunchAgents 目录存在
+	// Ensure LaunchAgents directory exists
 	launchAgentsDir := filepath.Dir(lm.plistPath)
 	if err := os.MkdirAll(launchAgentsDir, 0755); err != nil {
-		return fmt.Errorf("创建 LaunchAgents 目录失败: %w", err)
+		return fmt.Errorf("failed to create LaunchAgents directory: %w", err)
 	}
 
-	// 生成 plist 文件
+	// Generate plist file
 	tmpl, err := template.New("plist").Parse(plistTemplate)
 	if err != nil {
-		return fmt.Errorf("解析模板失败: %w", err)
+		return fmt.Errorf("failed to parse template: %w", err)
 	}
 
 	var buf bytes.Buffer
 	if err := tmpl.Execute(&buf, config); err != nil {
-		return fmt.Errorf("生成 plist 失败: %w", err)
+		return fmt.Errorf("failed to generate plist: %w", err)
 	}
 
-	// 写入文件
+	// Write file
 	if err := os.WriteFile(lm.plistPath, buf.Bytes(), 0644); err != nil {
-		return fmt.Errorf("写入 plist 失败: %w", err)
+		return fmt.Errorf("failed to write plist: %w", err)
 	}
 
-	// 加载服务
+	// Load service
 	cmd := exec.Command("launchctl", "load", lm.plistPath)
 	if output, err := cmd.CombinedOutput(); err != nil {
-		return fmt.Errorf("加载服务失败: %s", string(output))
+		return fmt.Errorf("failed to load service: %s", string(output))
 	}
 
 	return nil
 }
 
-// Uninstall 卸载 launchd 服务
+// Uninstall Uninstall launchd service
 func (lm *LaunchdManager) Uninstall() error {
-	// 先停止服务
+	// Stop service first
 	lm.Stop()
 
-	// 卸载服务
+	// Unload service
 	cmd := exec.Command("launchctl", "unload", lm.plistPath)
-	cmd.Run() // 忽略错误，可能服务未加载
+	cmd.Run() // Ignore errors, service may not be loaded
 
-	// 删除 plist 文件
+	// Delete plist file
 	if err := os.Remove(lm.plistPath); err != nil && !os.IsNotExist(err) {
-		return fmt.Errorf("删除 plist 失败: %w", err)
+		return fmt.Errorf("failed to delete plist: %w", err)
 	}
 
 	return nil
 }
 
-// Start 启动服务
+// Start Start service
 func (lm *LaunchdManager) Start() error {
 	cmd := exec.Command("launchctl", "start", lm.label)
 	if output, err := cmd.CombinedOutput(); err != nil {
-		return fmt.Errorf("启动服务失败: %s", string(output))
+		return fmt.Errorf("failed to start service: %s", string(output))
 	}
 	return nil
 }
 
-// Stop 停止服务
+// Stop Stop service
 func (lm *LaunchdManager) Stop() error {
 	cmd := exec.Command("launchctl", "stop", lm.label)
 	if output, err := cmd.CombinedOutput(); err != nil {
-		return fmt.Errorf("停止服务失败: %s", string(output))
+		return fmt.Errorf("failed to stop service: %s", string(output))
 	}
 	return nil
 }
 
-// Restart 重启服务
+// Restart Restart service
 func (lm *LaunchdManager) Restart() error {
-	// 先停止服务（忽略错误，服务可能未运行）
+	// Stop service first (ignore errors, service may not be running)
 	lm.Stop()
 
-	// 等待短暂时间让服务完全停止
+	// Wait briefly for service to fully stop
 	time.Sleep(500 * time.Millisecond)
 
-	// 尝试启动服务（忽略命令错误，因为 KeepAlive 可能已经自动重启）
+	// Try to start service (ignore command errors, KeepAlive may have already restarted)
 	exec.Command("launchctl", "start", lm.label).Run()
 
-	// 使用重试机制检查服务是否启动成功
-	// sbm 是 web 服务，可能需要更多时间启动
+	// Use retry mechanism to check if service started successfully
+	// sbm is a web service and may need more time to start
 	maxRetries := 20
 	retryInterval := 500 * time.Millisecond
 
 	for i := 0; i < maxRetries; i++ {
 		time.Sleep(retryInterval)
 		if lm.IsRunning() {
-			return nil // 服务启动成功
+			return nil // Service started successfully
 		}
 	}
 
-	return fmt.Errorf("服务重启失败：服务在 %v 内未能启动", time.Duration(maxRetries)*retryInterval)
+	return fmt.Errorf("service restart failed: service failed to start within %v", time.Duration(maxRetries)*retryInterval)
 }
 
-// IsInstalled 检查是否已安装
+// IsInstalled Check if installed
 func (lm *LaunchdManager) IsInstalled() bool {
 	_, err := os.Stat(lm.plistPath)
 	return err == nil
 }
 
-// IsRunning 检查是否运行中
+// IsRunning Check if running
 func (lm *LaunchdManager) IsRunning() bool {
 	cmd := exec.Command("launchctl", "list", lm.label)
 	err := cmd.Run()
 	return err == nil
 }
 
-// GetPlistPath 获取 plist 文件路径
+// GetPlistPath Get plist file path
 func (lm *LaunchdManager) GetPlistPath() string {
 	return lm.plistPath
 }
 
-// GetLabel 获取服务标签
+// GetLabel Get service label
 func (lm *LaunchdManager) GetLabel() string {
 	return lm.label
 }

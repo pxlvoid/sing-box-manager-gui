@@ -5,36 +5,36 @@ import (
 	"strings"
 )
 
-// DecodeBase64 解码 Base64 字符串（支持标准和 URL 安全编码）
+// DecodeBase64 decodes a Base64 string (supports standard and URL-safe encoding)
 func DecodeBase64(s string) (string, error) {
-	// 去除空白字符
+	// Trim whitespace
 	s = strings.TrimSpace(s)
 
-	// 补齐 padding
+	// Pad to correct length
 	if m := len(s) % 4; m != 0 {
 		s += strings.Repeat("=", 4-m)
 	}
 
-	// 尝试标准 Base64 解码
+	// Try standard Base64 decoding
 	decoded, err := base64.StdEncoding.DecodeString(s)
 	if err == nil {
 		return string(decoded), nil
 	}
 
-	// 尝试 URL 安全 Base64 解码
+	// Try URL-safe Base64 decoding
 	decoded, err = base64.URLEncoding.DecodeString(s)
 	if err == nil {
 		return string(decoded), nil
 	}
 
-	// 尝试 RawStdEncoding（无 padding）
+	// Try RawStdEncoding (no padding)
 	s = strings.TrimRight(s, "=")
 	decoded, err = base64.RawStdEncoding.DecodeString(s)
 	if err == nil {
 		return string(decoded), nil
 	}
 
-	// 尝试 RawURLEncoding（无 padding）
+	// Try RawURLEncoding (no padding)
 	decoded, err = base64.RawURLEncoding.DecodeString(s)
 	if err != nil {
 		return "", err
@@ -43,20 +43,20 @@ func DecodeBase64(s string) (string, error) {
 	return string(decoded), nil
 }
 
-// EncodeBase64 编码为 Base64 字符串
+// EncodeBase64 encodes a string to Base64
 func EncodeBase64(s string) string {
 	return base64.StdEncoding.EncodeToString([]byte(s))
 }
 
-// IsBase64 判断字符串是否为 Base64 编码
+// IsBase64 checks if a string is Base64 encoded
 func IsBase64(s string) bool {
-	// 去除空白字符
+	// Trim whitespace
 	s = strings.TrimSpace(s)
 	if len(s) == 0 {
 		return false
 	}
 
-	// Base64 字符集
+	// Base64 character sets
 	base64Chars := "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/="
 	urlSafeChars := "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_="
 

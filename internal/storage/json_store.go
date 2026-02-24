@@ -8,31 +8,31 @@ import (
 	"sync"
 )
 
-// JSONStore JSON 文件存储实现
+// JSONStore implements JSON file storage
 type JSONStore struct {
 	dataDir string
 	mu      sync.RWMutex
 	data    *AppData
 }
 
-// NewJSONStore 创建新的 JSON 存储
+// NewJSONStore creates a new JSON store
 func NewJSONStore(dataDir string) (*JSONStore, error) {
 	store := &JSONStore{
 		dataDir: dataDir,
 	}
 
-	// 确保数据目录存在
+	// Ensure data directory exists
 	if err := os.MkdirAll(dataDir, 0755); err != nil {
-		return nil, fmt.Errorf("创建数据目录失败: %w", err)
+		return nil, fmt.Errorf("failed to create data directory: %w", err)
 	}
 
-	// 确保 generated 子目录存在
+	// Ensure generated subdirectory exists
 	generatedDir := filepath.Join(dataDir, "generated")
 	if err := os.MkdirAll(generatedDir, 0755); err != nil {
-		return nil, fmt.Errorf("创建 generated 目录失败: %w", err)
+		return nil, fmt.Errorf("failed to create generated directory: %w", err)
 	}
 
-	// 加载数据
+	// Load data
 	if err := store.load(); err != nil {
 		return nil, err
 	}
@@ -40,14 +40,14 @@ func NewJSONStore(dataDir string) (*JSONStore, error) {
 	return store, nil
 }
 
-// load 加载数据
+// load loads data from file
 func (s *JSONStore) load() error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
 	dataFile := filepath.Join(s.dataDir, "data.json")
 
-	// 如果文件不存在，初始化默认数据
+	// If file does not exist, initialize with default data
 	if _, err := os.Stat(dataFile); os.IsNotExist(err) {
 		s.data = &AppData{
 			Subscriptions: []Subscription{},
@@ -60,28 +60,28 @@ func (s *JSONStore) load() error {
 		return s.saveInternal()
 	}
 
-	// 读取文件
+	// Read file
 	data, err := os.ReadFile(dataFile)
 	if err != nil {
-		return fmt.Errorf("读取数据文件失败: %w", err)
+		return fmt.Errorf("failed to read data file: %w", err)
 	}
 
 	s.data = &AppData{}
 	if err := json.Unmarshal(data, s.data); err != nil {
-		return fmt.Errorf("解析数据文件失败: %w", err)
+		return fmt.Errorf("failed to parse data file: %w", err)
 	}
 
-	// 确保 Settings 不为空
+	// Ensure Settings is not empty
 	if s.data.Settings == nil {
 		s.data.Settings = DefaultSettings()
 	}
 
-	// 确保 RuleGroups 不为空
+	// Ensure RuleGroups is not empty
 	if len(s.data.RuleGroups) == 0 {
 		s.data.RuleGroups = DefaultRuleGroups()
 	}
 
-	// 迁移旧的路径格式（移除多余的 data/ 前缀）
+	// Migrate old path format (remove redundant data/ prefix)
 	needSave := false
 	if s.data.Settings.SingBoxPath == "data/bin/sing-box" {
 		s.data.Settings.SingBoxPath = "bin/sing-box"
@@ -98,39 +98,39 @@ func (s *JSONStore) load() error {
 	return nil
 }
 
-// saveInternal 内部保存方法（不加锁）
+// saveInternal internal save method (without locking)
 func (s *JSONStore) saveInternal() error {
 	dataFile := filepath.Join(s.dataDir, "data.json")
 
 	data, err := json.MarshalIndent(s.data, "", "  ")
 	if err != nil {
-		return fmt.Errorf("序列化数据失败: %w", err)
+		return fmt.Errorf("failed to serialize data: %w", err)
 	}
 
 	if err := os.WriteFile(dataFile, data, 0644); err != nil {
-		return fmt.Errorf("写入数据文件失败: %w", err)
+		return fmt.Errorf("failed to write data file: %w", err)
 	}
 
 	return nil
 }
 
-// Save 保存数据
+// Save saves data to file
 func (s *JSONStore) Save() error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return s.saveInternal()
 }
 
-// ==================== 订阅操作 ====================
+// ==================== Subscription Operations ====================
 
-// GetSubscriptions 获取所有订阅
+// GetSubscriptions returns all subscriptions
 func (s *JSONStore) GetSubscriptions() []Subscription {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	return s.data.Subscriptions
 }
 
-// GetSubscription 获取单个订阅
+// GetSubscription returns a single subscription
 func (s *JSONStore) GetSubscription(id string) *Subscription {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -143,7 +143,7 @@ func (s *JSONStore) GetSubscription(id string) *Subscription {
 	return nil
 }
 
-// AddSubscription 添加订阅
+// AddSubscription adds a subscription
 func (s *JSONStore) AddSubscription(sub Subscription) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -152,7 +152,7 @@ func (s *JSONStore) AddSubscription(sub Subscription) error {
 	return s.saveInternal()
 }
 
-// UpdateSubscription 更新订阅
+// UpdateSubscription updates a subscription
 func (s *JSONStore) UpdateSubscription(sub Subscription) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -163,10 +163,10 @@ func (s *JSONStore) UpdateSubscription(sub Subscription) error {
 			return s.saveInternal()
 		}
 	}
-	return fmt.Errorf("订阅不存在: %s", sub.ID)
+	return fmt.Errorf("subscription not found: %s", sub.ID)
 }
 
-// DeleteSubscription 删除订阅
+// DeleteSubscription deletes a subscription
 func (s *JSONStore) DeleteSubscription(id string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -177,19 +177,19 @@ func (s *JSONStore) DeleteSubscription(id string) error {
 			return s.saveInternal()
 		}
 	}
-	return fmt.Errorf("订阅不存在: %s", id)
+	return fmt.Errorf("subscription not found: %s", id)
 }
 
-// ==================== 过滤器操作 ====================
+// ==================== Filter Operations ====================
 
-// GetFilters 获取所有过滤器
+// GetFilters returns all filters
 func (s *JSONStore) GetFilters() []Filter {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	return s.data.Filters
 }
 
-// GetFilter 获取单个过滤器
+// GetFilter returns a single filter
 func (s *JSONStore) GetFilter(id string) *Filter {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -202,7 +202,7 @@ func (s *JSONStore) GetFilter(id string) *Filter {
 	return nil
 }
 
-// AddFilter 添加过滤器
+// AddFilter adds a filter
 func (s *JSONStore) AddFilter(filter Filter) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -211,7 +211,7 @@ func (s *JSONStore) AddFilter(filter Filter) error {
 	return s.saveInternal()
 }
 
-// UpdateFilter 更新过滤器
+// UpdateFilter updates a filter
 func (s *JSONStore) UpdateFilter(filter Filter) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -222,10 +222,10 @@ func (s *JSONStore) UpdateFilter(filter Filter) error {
 			return s.saveInternal()
 		}
 	}
-	return fmt.Errorf("过滤器不存在: %s", filter.ID)
+	return fmt.Errorf("filter not found: %s", filter.ID)
 }
 
-// DeleteFilter 删除过滤器
+// DeleteFilter deletes a filter
 func (s *JSONStore) DeleteFilter(id string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -236,19 +236,19 @@ func (s *JSONStore) DeleteFilter(id string) error {
 			return s.saveInternal()
 		}
 	}
-	return fmt.Errorf("过滤器不存在: %s", id)
+	return fmt.Errorf("filter not found: %s", id)
 }
 
-// ==================== 规则操作 ====================
+// ==================== Rule Operations ====================
 
-// GetRules 获取所有自定义规则
+// GetRules returns all custom rules
 func (s *JSONStore) GetRules() []Rule {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	return s.data.Rules
 }
 
-// AddRule 添加规则
+// AddRule adds a rule
 func (s *JSONStore) AddRule(rule Rule) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -257,7 +257,7 @@ func (s *JSONStore) AddRule(rule Rule) error {
 	return s.saveInternal()
 }
 
-// UpdateRule 更新规则
+// UpdateRule updates a rule
 func (s *JSONStore) UpdateRule(rule Rule) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -268,10 +268,10 @@ func (s *JSONStore) UpdateRule(rule Rule) error {
 			return s.saveInternal()
 		}
 	}
-	return fmt.Errorf("规则不存在: %s", rule.ID)
+	return fmt.Errorf("rule not found: %s", rule.ID)
 }
 
-// DeleteRule 删除规则
+// DeleteRule deletes a rule
 func (s *JSONStore) DeleteRule(id string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -282,19 +282,19 @@ func (s *JSONStore) DeleteRule(id string) error {
 			return s.saveInternal()
 		}
 	}
-	return fmt.Errorf("规则不存在: %s", id)
+	return fmt.Errorf("rule not found: %s", id)
 }
 
-// ==================== 规则组操作 ====================
+// ==================== Rule Group Operations ====================
 
-// GetRuleGroups 获取所有预设规则组
+// GetRuleGroups returns all preset rule groups
 func (s *JSONStore) GetRuleGroups() []RuleGroup {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	return s.data.RuleGroups
 }
 
-// UpdateRuleGroup 更新规则组
+// UpdateRuleGroup updates a rule group
 func (s *JSONStore) UpdateRuleGroup(ruleGroup RuleGroup) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -305,19 +305,19 @@ func (s *JSONStore) UpdateRuleGroup(ruleGroup RuleGroup) error {
 			return s.saveInternal()
 		}
 	}
-	return fmt.Errorf("规则组不存在: %s", ruleGroup.ID)
+	return fmt.Errorf("rule group not found: %s", ruleGroup.ID)
 }
 
-// ==================== 设置操作 ====================
+// ==================== Settings Operations ====================
 
-// GetSettings 获取设置
+// GetSettings returns settings
 func (s *JSONStore) GetSettings() *Settings {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	return s.data.Settings
 }
 
-// UpdateSettings 更新设置
+// UpdateSettings updates settings
 func (s *JSONStore) UpdateSettings(settings *Settings) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -326,16 +326,16 @@ func (s *JSONStore) UpdateSettings(settings *Settings) error {
 	return s.saveInternal()
 }
 
-// ==================== 手动节点操作 ====================
+// ==================== Manual Node Operations ====================
 
-// GetManualNodes 获取所有手动节点
+// GetManualNodes returns all manual nodes
 func (s *JSONStore) GetManualNodes() []ManualNode {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	return s.data.ManualNodes
 }
 
-// AddManualNode 添加手动节点
+// AddManualNode adds a manual node
 func (s *JSONStore) AddManualNode(node ManualNode) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -344,7 +344,7 @@ func (s *JSONStore) AddManualNode(node ManualNode) error {
 	return s.saveInternal()
 }
 
-// UpdateManualNode 更新手动节点
+// UpdateManualNode updates a manual node
 func (s *JSONStore) UpdateManualNode(node ManualNode) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -355,10 +355,10 @@ func (s *JSONStore) UpdateManualNode(node ManualNode) error {
 			return s.saveInternal()
 		}
 	}
-	return fmt.Errorf("手动节点不存在: %s", node.ID)
+	return fmt.Errorf("manual node not found: %s", node.ID)
 }
 
-// DeleteManualNode 删除手动节点
+// DeleteManualNode deletes a manual node
 func (s *JSONStore) DeleteManualNode(id string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -369,24 +369,24 @@ func (s *JSONStore) DeleteManualNode(id string) error {
 			return s.saveInternal()
 		}
 	}
-	return fmt.Errorf("手动节点不存在: %s", id)
+	return fmt.Errorf("manual node not found: %s", id)
 }
 
-// ==================== 辅助方法 ====================
+// ==================== Helper Methods ====================
 
-// GetAllNodes 获取所有启用的节点（订阅节点 + 手动节点）
+// GetAllNodes returns all enabled nodes (subscription nodes + manual nodes)
 func (s *JSONStore) GetAllNodes() []Node {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
 	var nodes []Node
-	// 添加订阅节点
+	// Add subscription nodes
 	for _, sub := range s.data.Subscriptions {
 		if sub.Enabled {
 			nodes = append(nodes, sub.Nodes...)
 		}
 	}
-	// 添加手动节点
+	// Add manual nodes
 	for _, mn := range s.data.ManualNodes {
 		if mn.Enabled {
 			nodes = append(nodes, mn.Node)
@@ -395,13 +395,13 @@ func (s *JSONStore) GetAllNodes() []Node {
 	return nodes
 }
 
-// GetNodesByCountry 按国家获取节点
+// GetNodesByCountry returns nodes by country
 func (s *JSONStore) GetNodesByCountry(countryCode string) []Node {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
 	var nodes []Node
-	// 订阅节点
+	// Subscription nodes
 	for _, sub := range s.data.Subscriptions {
 		if sub.Enabled {
 			for _, node := range sub.Nodes {
@@ -411,7 +411,7 @@ func (s *JSONStore) GetNodesByCountry(countryCode string) []Node {
 			}
 		}
 	}
-	// 手动节点
+	// Manual nodes
 	for _, mn := range s.data.ManualNodes {
 		if mn.Enabled && mn.Node.Country == countryCode {
 			nodes = append(nodes, mn.Node)
@@ -420,14 +420,14 @@ func (s *JSONStore) GetNodesByCountry(countryCode string) []Node {
 	return nodes
 }
 
-// GetCountryGroups 获取所有国家节点分组
+// GetCountryGroups returns all country node groups
 func (s *JSONStore) GetCountryGroups() []CountryGroup {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
 	countryCount := make(map[string]int)
 
-	// 统计订阅节点
+	// Count subscription nodes
 	for _, sub := range s.data.Subscriptions {
 		if sub.Enabled {
 			for _, node := range sub.Nodes {
@@ -437,7 +437,7 @@ func (s *JSONStore) GetCountryGroups() []CountryGroup {
 			}
 		}
 	}
-	// 统计手动节点
+	// Count manual nodes
 	for _, mn := range s.data.ManualNodes {
 		if mn.Enabled && mn.Node.Country != "" {
 			countryCount[mn.Node.Country]++
@@ -457,7 +457,7 @@ func (s *JSONStore) GetCountryGroups() []CountryGroup {
 	return groups
 }
 
-// GetDataDir 获取数据目录
+// GetDataDir returns the data directory
 func (s *JSONStore) GetDataDir() string {
 	return s.dataDir
 }

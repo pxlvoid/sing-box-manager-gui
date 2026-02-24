@@ -15,7 +15,7 @@ import (
 	"github.com/xiaobei/singbox-manager/internal/storage"
 )
 
-// KernelInfo 内核信息
+// KernelInfo represents kernel information
 type KernelInfo struct {
 	Installed bool   `json:"installed"`
 	Version   string `json:"version"`
@@ -24,16 +24,16 @@ type KernelInfo struct {
 	Arch      string `json:"arch"`
 }
 
-// DownloadProgress 下载进度
+// DownloadProgress represents download progress
 type DownloadProgress struct {
 	Status     string  `json:"status"`     // idle, downloading, extracting, installing, completed, error
 	Progress   float64 `json:"progress"`   // 0-100
-	Message    string  `json:"message"`    // 状态描述
-	Downloaded int64   `json:"downloaded"` // 已下载字节
-	Total      int64   `json:"total"`      // 总字节
+	Message    string  `json:"message"`    // Status description
+	Downloaded int64   `json:"downloaded"` // Downloaded bytes
+	Total      int64   `json:"total"`      // Total bytes
 }
 
-// GithubRelease GitHub 发布信息
+// GithubRelease represents GitHub release information
 type GithubRelease struct {
 	TagName    string        `json:"tag_name"`
 	Name       string        `json:"name"`
@@ -41,27 +41,27 @@ type GithubRelease struct {
 	Assets     []GithubAsset `json:"assets"`
 }
 
-// GithubAsset GitHub 资源文件
+// GithubAsset represents a GitHub release asset
 type GithubAsset struct {
 	Name               string `json:"name"`
 	Size               int64  `json:"size"`
 	BrowserDownloadURL string `json:"browser_download_url"`
 }
 
-// Manager 内核管理器
+// Manager handles kernel management
 type Manager struct {
 	dataDir     string
-	binPath     string                       // sing-box 二进制文件的绝对路径
+	binPath     string                       // absolute path to the sing-box binary
 	getSettings func() *storage.Settings
 	mu          sync.RWMutex
 	progress    *DownloadProgress
 	downloading bool
 }
 
-// NewManager 创建内核管理器
+// NewManager creates a kernel manager
 func NewManager(dataDir string, getSettings func() *storage.Settings) *Manager {
-	// 计算 sing-box 二进制文件的绝对路径
-	// dataDir 通常是 ~/.singbox-manager，我们把 sing-box 放在 dataDir/bin/sing-box
+	// Calculate absolute path for sing-box binary
+	// dataDir is typically ~/.singbox-manager, we place sing-box at dataDir/bin/sing-box
 	binPath := filepath.Join(dataDir, "bin", "sing-box")
 
 	return &Manager{
@@ -75,7 +75,7 @@ func NewManager(dataDir string, getSettings func() *storage.Settings) *Manager {
 	}
 }
 
-// GetInfo 获取内核信息
+// GetInfo returns kernel information
 func (m *Manager) GetInfo() *KernelInfo {
 	info := &KernelInfo{
 		Path: m.binPath,
@@ -83,7 +83,7 @@ func (m *Manager) GetInfo() *KernelInfo {
 		Arch: m.normalizeArch(runtime.GOARCH),
 	}
 
-	// 检查文件是否存在
+	// Check if file exists
 	if _, err := os.Stat(m.binPath); os.IsNotExist(err) {
 		info.Installed = false
 		return info
@@ -91,7 +91,7 @@ func (m *Manager) GetInfo() *KernelInfo {
 
 	info.Installed = true
 
-	// 获取版本
+	// Get version
 	version, err := m.getVersion(m.binPath)
 	if err == nil {
 		info.Version = version
@@ -100,12 +100,12 @@ func (m *Manager) GetInfo() *KernelInfo {
 	return info
 }
 
-// GetBinPath 获取 sing-box 二进制文件路径
+// GetBinPath returns the sing-box binary path
 func (m *Manager) GetBinPath() string {
 	return m.binPath
 }
 
-// getVersion 获取 sing-box 版本
+// getVersion gets the sing-box version
 func (m *Manager) getVersion(singboxPath string) (string, error) {
 	cmd := exec.Command(singboxPath, "version")
 	output, err := cmd.Output()
@@ -113,7 +113,7 @@ func (m *Manager) getVersion(singboxPath string) (string, error) {
 		return "", err
 	}
 
-	// 解析版本号，输出格式通常是: sing-box version 1.x.x
+	// Parse version number, output format is typically: sing-box version 1.x.x
 	lines := strings.Split(string(output), "\n")
 	if len(lines) > 0 {
 		parts := strings.Fields(lines[0])
@@ -122,43 +122,43 @@ func (m *Manager) getVersion(singboxPath string) (string, error) {
 				return parts[i+1], nil
 			}
 		}
-		// 如果没有找到 "version" 关键字，尝试返回第一行
+		// If "version" keyword not found, try returning the first line
 		return strings.TrimSpace(lines[0]), nil
 	}
 
-	return "", fmt.Errorf("无法解析版本号")
+	return "", fmt.Errorf("unable to parse version number")
 }
 
-// FetchReleases 获取 GitHub releases 列表
+// FetchReleases fetches GitHub releases list
 func (m *Manager) FetchReleases() ([]GithubRelease, error) {
 	settings := m.getSettings()
 	apiURL := "https://api.github.com/repos/SagerNet/sing-box/releases"
 
-	// 如果设置了代理，API 也使用代理
+	// If proxy is configured, API also uses proxy
 	if settings.GithubProxy != "" {
 		apiURL = settings.GithubProxy + apiURL
 	}
 
 	resp, err := http.Get(apiURL)
 	if err != nil {
-		return nil, fmt.Errorf("获取 releases 失败: %w", err)
+		return nil, fmt.Errorf("failed to fetch releases: %w", err)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode == 403 {
-		return nil, fmt.Errorf("GitHub API 请求被限制，请稍后重试或配置代理")
+		return nil, fmt.Errorf("GitHub API rate limited, please try again later or configure a proxy")
 	}
 
 	if resp.StatusCode != 200 {
-		return nil, fmt.Errorf("GitHub API 返回错误: %d", resp.StatusCode)
+		return nil, fmt.Errorf("GitHub API returned error: %d", resp.StatusCode)
 	}
 
 	var releases []GithubRelease
 	if err := json.NewDecoder(resp.Body).Decode(&releases); err != nil {
-		return nil, fmt.Errorf("解析 releases 失败: %w", err)
+		return nil, fmt.Errorf("failed to parse releases: %w", err)
 	}
 
-	// 过滤稳定版本（排除 alpha, beta, rc）
+	// Filter stable versions (exclude alpha, beta, rc)
 	stablePattern := regexp.MustCompile(`^v\d+\.\d+\.\d+$`)
 	stableReleases := make([]GithubRelease, 0)
 	for _, release := range releases {
@@ -170,7 +170,7 @@ func (m *Manager) FetchReleases() ([]GithubRelease, error) {
 	return stableReleases, nil
 }
 
-// GetLatestVersion 获取最新稳定版本号
+// GetLatestVersion gets the latest stable version
 func (m *Manager) GetLatestVersion() (string, error) {
 	releases, err := m.FetchReleases()
 	if err != nil {
@@ -178,47 +178,47 @@ func (m *Manager) GetLatestVersion() (string, error) {
 	}
 
 	if len(releases) == 0 {
-		return "", fmt.Errorf("未找到稳定版本")
+		return "", fmt.Errorf("no stable version found")
 	}
 
 	return releases[0].TagName, nil
 }
 
-// StartDownload 开始下载指定版本
+// StartDownload starts downloading a specific version
 func (m *Manager) StartDownload(version string) error {
 	m.mu.Lock()
 	if m.downloading {
 		m.mu.Unlock()
-		return fmt.Errorf("已有下载任务正在进行")
+		return fmt.Errorf("a download is already in progress")
 	}
 	m.downloading = true
 	m.progress = &DownloadProgress{
 		Status:  "preparing",
-		Message: "正在准备下载...",
+		Message: "Preparing download...",
 	}
 	m.mu.Unlock()
 
-	// 异步执行下载
+	// Execute download asynchronously
 	go m.downloadAndInstall(version)
 
 	return nil
 }
 
-// GetProgress 获取下载进度
+// GetProgress returns download progress
 func (m *Manager) GetProgress() *DownloadProgress {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 	return m.progress
 }
 
-// IsDownloading 检查是否正在下载
+// IsDownloading checks if a download is in progress
 func (m *Manager) IsDownloading() bool {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 	return m.downloading
 }
 
-// updateProgress 更新进度
+// updateProgress updates progress
 func (m *Manager) updateProgress(status string, progress float64, message string, downloaded, total int64) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -231,7 +231,7 @@ func (m *Manager) updateProgress(status string, progress float64, message string
 	}
 }
 
-// setDownloadComplete 设置下载完成
+// setDownloadComplete marks download as complete
 func (m *Manager) setDownloadComplete(status string, message string) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -243,9 +243,9 @@ func (m *Manager) setDownloadComplete(status string, message string) {
 	}
 }
 
-// getAssetInfo 获取对应平台的资源信息
+// getAssetInfo gets asset info for the current platform
 func (m *Manager) getAssetInfo(releases []GithubRelease, version string) (*GithubAsset, error) {
-	// 查找对应版本
+	// Find matching version
 	var targetRelease *GithubRelease
 	for i := range releases {
 		if releases[i].TagName == version {
@@ -255,26 +255,26 @@ func (m *Manager) getAssetInfo(releases []GithubRelease, version string) (*Githu
 	}
 
 	if targetRelease == nil {
-		return nil, fmt.Errorf("未找到版本 %s", version)
+		return nil, fmt.Errorf("version %s not found", version)
 	}
 
-	// 构建资源文件名
+	// Build asset filename
 	assetName := m.buildAssetName(version)
 	if assetName == "" {
-		return nil, fmt.Errorf("不支持的平台: %s/%s", runtime.GOOS, runtime.GOARCH)
+		return nil, fmt.Errorf("unsupported platform: %s/%s", runtime.GOOS, runtime.GOARCH)
 	}
 
-	// 查找对应资源
+	// Find matching asset
 	for i := range targetRelease.Assets {
 		if targetRelease.Assets[i].Name == assetName {
 			return &targetRelease.Assets[i], nil
 		}
 	}
 
-	return nil, fmt.Errorf("未找到适用于 %s/%s 的版本", runtime.GOOS, runtime.GOARCH)
+	return nil, fmt.Errorf("no compatible version found for %s/%s", runtime.GOOS, runtime.GOARCH)
 }
 
-// buildAssetName 构建资源文件名
+// buildAssetName builds the asset filename
 func (m *Manager) buildAssetName(version string) string {
 	os := runtime.GOOS
 	arch := m.normalizeArch(runtime.GOARCH)
@@ -292,7 +292,7 @@ func (m *Manager) buildAssetName(version string) string {
 	}
 }
 
-// normalizeArch 规范化架构名称
+// normalizeArch normalizes architecture names
 func (m *Manager) normalizeArch(arch string) string {
 	switch arch {
 	case "amd64":
@@ -306,7 +306,7 @@ func (m *Manager) normalizeArch(arch string) string {
 	}
 }
 
-// buildDownloadURL 构建下载 URL（支持代理）
+// buildDownloadURL builds download URL (with proxy support)
 func (m *Manager) buildDownloadURL(originalURL string) string {
 	settings := m.getSettings()
 	if settings.GithubProxy != "" {

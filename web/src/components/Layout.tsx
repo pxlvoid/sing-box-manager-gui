@@ -4,11 +4,11 @@ import { LayoutDashboard, Globe, FileText, Settings, Activity, ScrollText } from
 import { useStore } from '../store';
 
 const menuItems = [
-  { path: '/', icon: LayoutDashboard, label: '仪表盘' },
-  { path: '/subscriptions', icon: Globe, label: '节点' },
-  { path: '/rules', icon: FileText, label: '规则' },
-  { path: '/logs', icon: ScrollText, label: '日志' },
-  { path: '/settings', icon: Settings, label: '设置' },
+  { path: '/', icon: LayoutDashboard, label: 'Dashboard' },
+  { path: '/subscriptions', icon: Globe, label: 'Nodes' },
+  { path: '/rules', icon: FileText, label: 'Rules' },
+  { path: '/logs', icon: ScrollText, label: 'Logs' },
+  { path: '/settings', icon: Settings, label: 'Settings' },
 ];
 
 interface LayoutProps {
@@ -28,11 +28,9 @@ export default function Layout({ children }: LayoutProps) {
     }
   }, []);
 
-  const clashApiPort = settings?.clash_api_port || 9091;
-
   return (
     <div className="flex min-h-screen bg-gray-50 dark:bg-gray-900">
-      {/* 侧边栏 */}
+      {/* Sidebar */}
       <aside className="w-64 bg-white dark:bg-gray-800 border-r border-gray-200 dark:border-gray-700 fixed h-full overflow-y-auto">
         <div className="p-6">
           <h1 className="text-xl font-bold text-gray-800 dark:text-white flex items-center gap-2">
@@ -63,27 +61,8 @@ export default function Layout({ children }: LayoutProps) {
           })}
         </nav>
 
-        {/* 底部链接 */}
+        {/* Bottom links */}
         <div className="sticky bottom-4 left-4 right-4 mt-auto pt-4">
-          <a
-            href={(() => {
-              const baseUrl = `http://127.0.0.1:${clashApiPort}/ui/`;
-              const params = new URLSearchParams({
-                hostname: '127.0.0.1',
-                port: String(clashApiPort),
-                label: 'SingBox Manager'
-              });
-              if (settings?.clash_api_secret) {
-                params.set('secret', settings.clash_api_secret);
-              }
-              return `${baseUrl}?${params.toString()}`;
-            })()}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="flex items-center justify-center gap-2 px-4 py-2 text-sm text-gray-500 dark:text-gray-400 hover:text-primary transition-colors"
-          >
-            打开 Zashboard
-          </a>
           {serviceStatus?.sbm_version && (
             <p className="text-center text-xs text-gray-400 dark:text-gray-500 mt-2">
               v{serviceStatus.sbm_version}
@@ -92,7 +71,7 @@ export default function Layout({ children }: LayoutProps) {
         </div>
       </aside>
 
-      {/* 主内容区 */}
+      {/* Main content area */}
       <main className="flex-1 p-8 overflow-auto ml-64">
         {children}
       </main>

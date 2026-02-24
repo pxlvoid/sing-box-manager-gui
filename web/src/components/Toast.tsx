@@ -26,14 +26,14 @@ export const useToast = create<ToastStore>((set) => ({
   removeToast: (id) => set((state) => ({ toasts: state.toasts.filter((t) => t.id !== id) })),
 }));
 
-// 便捷方法
+// Convenience methods
 export const toast = {
   success: (message: string) => useToast.getState().addToast({ type: 'success', message }),
   error: (message: string, duration = 5000) => useToast.getState().addToast({ type: 'error', message, duration }),
   info: (message: string) => useToast.getState().addToast({ type: 'info', message }),
 };
 
-// Toast 单个项目组件
+// Toast single item component
 const ToastItem = ({ toast, onClose }: { toast: Toast; onClose: () => void }) => {
   const icons = {
     success: <CheckCircle className="w-5 h-5 text-green-500" />,
@@ -69,7 +69,7 @@ const ToastItem = ({ toast, onClose }: { toast: Toast; onClose: () => void }) =>
   );
 };
 
-// Toast 容器组件
+// Toast container component
 export const ToastContainer = () => {
   const { toasts, removeToast } = useToast();
 
