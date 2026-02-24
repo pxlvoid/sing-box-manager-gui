@@ -151,6 +151,10 @@ export default function Subscriptions() {
   const { isOpen: isFilterOpen, onOpen: onFilterOpen, onClose: onFilterClose } = useDisclosure();
   const { isOpen: isExportOpen, onOpen: onExportOpen, onClose: onExportClose } = useDisclosure();
   const { isOpen: isImportOpen, onOpen: onImportOpen, onClose: onImportClose } = useDisclosure();
+  const { isOpen: isCountryOpen, onOpen: onCountryOpen, onClose: onCountryClose } = useDisclosure();
+  const [selectedCountry, setSelectedCountry] = useState<{ code: string; name: string; emoji: string } | null>(null);
+  const [countryNodes, setCountryNodes] = useState<Node[]>([]);
+  const [countryNodesLoading, setCountryNodesLoading] = useState(false);
   const [name, setName] = useState('');
   const [url, setUrl] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -607,6 +611,22 @@ export default function Subscriptions() {
     await toggleFilter(filter.id, !filter.enabled);
   };
 
+  const handleCountryClick = async (group: { code: string; name: string; emoji: string }) => {
+    setSelectedCountry(group);
+    setCountryNodes([]);
+    setCountryNodesLoading(true);
+    onCountryOpen();
+    try {
+      const res = await nodeApi.getByCountry(group.code);
+      setCountryNodes(res.data.data || []);
+    } catch (error) {
+      console.error('Failed to fetch nodes for country:', error);
+      toast.error('Failed to load nodes');
+    } finally {
+      setCountryNodesLoading(false);
+    }
+  };
+
   return (
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
@@ -987,7 +1007,12 @@ export default function Subscriptions() {
           ) : (
             <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 mt-4">
               {countryGroups.map((group) => (
-                <Card key={group.code} className="hover:shadow-md transition-shadow">
+                <Card
+                  key={group.code}
+                  isPressable
+                  className="hover:shadow-md transition-shadow cursor-pointer"
+                  onPress={() => handleCountryClick(group)}
+                >
                   <CardBody className="flex flex-row items-center gap-3">
                     <span className="text-3xl">{group.emoji}</span>
                     <div>
@@ -1994,6 +2019,63 @@ export default function Subscriptions() {
           <ModalFooter>
             <Button variant="flat" onPress={onImportClose} isDisabled={importing}>Cancel</Button>
             <Button color="primary" onPress={handleConfirmImport} isLoading={importing}>Import</Button>
+          </ModalFooter>
+        </ModalContent>
+      </Modal>
+
+      {/* Country Nodes Modal */}
+      <Modal isOpen={isCountryOpen} onClose={onCountryClose} size="2xl" scrollBehavior="inside">
+        <ModalContent>
+          <ModalHeader>
+            <div className="flex items-center gap-2">
+              <span className="text-2xl">{selectedCountry?.emoji}</span>
+              <span>{selectedCountry?.name}</span>
+              <Chip size="sm" variant="flat">{countryNodes.length}</Chip>
+            </div>
+          </ModalHeader>
+          <ModalBody>
+            {countryNodesLoading ? (
+              <div className="flex justify-center py-8">
+                <Spinner size="lg" />
+              </div>
+            ) : countryNodes.length === 0 ? (
+              <p className="text-center text-gray-500 py-8">No nodes found</p>
+            ) : (
+              <div className="grid grid-cols-1 gap-2">
+                {countryNodes.map((node, idx) => (
+                  <div
+                    key={idx}
+                    className="flex items-center gap-2 p-2 bg-gray-50 dark:bg-gray-800 rounded text-sm"
+                  >
+                    <span className="truncate flex-1 min-w-0">
+                      <span className="block truncate">{node.tag}</span>
+                      <NodeHealthChips tag={node.tag} healthResults={healthResults} healthMode={healthMode} />
+                    </span>
+                    <Chip size="sm" variant="flat">
+                      {node.type}
+                    </Chip>
+                    <span className="text-xs text-gray-400 hidden sm:inline">{node.server}:{node.server_port}</span>
+                    <Button
+                      isIconOnly
+                      size="sm"
+                      variant="light"
+                      color="warning"
+                      onPress={() => checkSingleNodeHealth(node.tag)}
+                      isDisabled={healthCheckingNodes.includes(node.tag)}
+                    >
+                      {healthCheckingNodes.includes(node.tag) ? (
+                        <Spinner size="sm" />
+                      ) : (
+                        <Activity className="w-3 h-3" />
+                      )}
+                    </Button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </ModalBody>
+          <ModalFooter>
+            <Button variant="flat" onPress={onCountryClose}>Close</Button>
           </ModalFooter>
         </ModalContent>
       </Modal>
