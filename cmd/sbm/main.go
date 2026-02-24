@@ -73,13 +73,13 @@ func main() {
 	// Initialize launchd manager
 	launchdManager, err := daemon.NewLaunchdManager()
 	if err != nil {
-		logger.Printf("Failed to initialize launchd manager: %v", err)
+		logger.Printf("[INFO] Launchd manager not available: %v", err)
 	}
 
 	// Initialize systemd manager
 	systemdManager, err := daemon.NewSystemdManager()
 	if err != nil {
-		logger.Printf("Failed to initialize systemd manager: %v", err)
+		logger.Printf("[INFO] Systemd manager not available: %v", err)
 	}
 
 	// Create API server
