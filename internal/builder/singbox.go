@@ -446,7 +446,7 @@ func (b *ConfigBuilder) buildInbounds() []Inbound {
 	}
 
 	// Shadowsocks inbound
-	if b.settings.ShadowsocksPort > 0 {
+	if b.settings.ShadowsocksPort > 0 && b.settings.ShadowsocksMethod != "" {
 		inbounds = append(inbounds, Inbound{
 			Type:       "shadowsocks",
 			Tag:        "shadowsocks-in",
