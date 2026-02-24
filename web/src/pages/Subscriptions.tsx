@@ -370,17 +370,18 @@ export default function Subscriptions() {
   }, [unifiedNodes, sourceFilter, searchQuery, healthFilter, sortConfig, healthResults, healthMode]);
 
   const unifiedTotalPages = Math.max(1, Math.ceil(filteredAndSortedNodes.length / UNIFIED_PAGE_SIZE));
+  const safePage = Math.min(unifiedPage, unifiedTotalPages);
   const paginatedNodes = filteredAndSortedNodes.slice(
-    (unifiedPage - 1) * UNIFIED_PAGE_SIZE,
-    unifiedPage * UNIFIED_PAGE_SIZE
+    (safePage - 1) * UNIFIED_PAGE_SIZE,
+    safePage * UNIFIED_PAGE_SIZE
   );
 
   // Selection state
   const [selectedNodes, setSelectedNodes] = useState<Set<string>>(new Set());
 
   const selectedUnified = useMemo(() =>
-    paginatedNodes.filter(n => selectedNodes.has(n.key)),
-    [paginatedNodes, selectedNodes]
+    filteredAndSortedNodes.filter(n => selectedNodes.has(n.key)),
+    [filteredAndSortedNodes, selectedNodes]
   );
   const selectedManualNodes = useMemo(() =>
     selectedUnified.filter(n => n.source === 'manual'),
@@ -1184,7 +1185,7 @@ export default function Subscriptions() {
                       <Pagination
                         size="sm"
                         total={unifiedTotalPages}
-                        page={unifiedPage}
+                        page={safePage}
                         onChange={setUnifiedPage}
                       />
                     </div>
