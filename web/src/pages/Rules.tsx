@@ -433,14 +433,14 @@ export default function Rules() {
               return (
                 <div
                   key={group.id}
-                  className="flex items-center justify-between p-4 bg-gray-50 dark:bg-gray-800 rounded-lg"
+                  className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 p-4 bg-gray-50 dark:bg-gray-800 rounded-lg"
                 >
                   <div className="flex items-center gap-3 min-w-0 flex-1">
                     <div className="p-2 bg-white dark:bg-gray-700 rounded-lg shrink-0">
                       {iconMap[group.id] || <Globe className="w-5 h-5" />}
                     </div>
                     <div className="min-w-0">
-                      <div className="flex items-center gap-1.5">
+                      <div className="flex items-center gap-1.5 flex-wrap">
                         <h3 className="font-medium truncate">{group.name}</h3>
                         {modified && (
                           <Chip size="sm" variant="dot" color="warning" className="shrink-0">
@@ -467,7 +467,7 @@ export default function Rules() {
                       </div>
                     </div>
                   </div>
-                  <div className="flex items-center gap-2 shrink-0">
+                  <div className="flex items-center gap-2 shrink-0 self-end sm:self-auto">
                     {modified && (
                       <Tooltip content="Reset to default">
                         <Button
@@ -493,7 +493,7 @@ export default function Rules() {
                     </Tooltip>
                     <Select
                       size="sm"
-                      className="w-32"
+                      className="w-28 sm:w-32"
                       selectedKeys={[group.outbound]}
                       onChange={(e) => handleOutboundChange(group, e.target.value)}
                       aria-label="Select outbound"
@@ -518,7 +518,7 @@ export default function Rules() {
 
       {/* Custom Rules */}
       <Card>
-        <CardHeader className="flex justify-between items-start">
+        <CardHeader className="flex flex-col sm:flex-row justify-between items-start gap-3">
           <div className="flex-col gap-1">
             <h2 className="text-lg font-semibold">Custom Rules</h2>
             <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
@@ -546,10 +546,10 @@ export default function Rules() {
                 .map((rule) => (
                   <div
                     key={rule.id}
-                    className="flex items-center justify-between p-4 bg-gray-50 dark:bg-gray-800 rounded-lg"
+                    className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 p-4 bg-gray-50 dark:bg-gray-800 rounded-lg"
                   >
-                    <div className="flex-1">
-                      <div className="flex items-center gap-2">
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 flex-wrap">
                         <h3 className="font-medium">{rule.name}</h3>
                         <Chip size="sm" variant="flat" color="secondary">
                           {ruleTypeOptions.find((t) => t.value === rule.rule_type)?.label.split(' ')[0] || rule.rule_type}
@@ -581,7 +581,7 @@ export default function Rules() {
                         )}
                       </div>
                     </div>
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-2 shrink-0 self-end sm:self-auto">
                       <Chip size="sm" variant="flat">
                         Priority: {rule.priority}
                       </Chip>

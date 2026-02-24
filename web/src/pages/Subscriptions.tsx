@@ -520,27 +520,32 @@ export default function Subscriptions() {
 
   return (
     <div className="space-y-6">
-      <div className="flex justify-between items-center">
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
         <h1 className="text-2xl font-bold text-gray-800 dark:text-white">Node Management</h1>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
           <Button
             color="warning"
             variant="flat"
+            size="sm"
             startContent={healthChecking ? <Spinner size="sm" /> : <Activity className="w-4 h-4" />}
             onPress={() => checkAllNodesHealth()}
             isDisabled={healthChecking}
           >
-            Check All
+            <span className="hidden sm:inline">Check All</span>
+            <span className="sm:hidden">Check</span>
           </Button>
           <Button
             variant="flat"
+            size="sm"
             startContent={<Download className="w-4 h-4" />}
             onPress={handlePrepareExport}
           >
-            Export All
+            <span className="hidden sm:inline">Export All</span>
+            <span className="sm:hidden">Export</span>
           </Button>
           <Button
             variant="flat"
+            size="sm"
             startContent={<ClipboardPaste className="w-4 h-4" />}
             onPress={handlePrepareImport}
           >
@@ -549,33 +554,41 @@ export default function Subscriptions() {
           <Button
             color="secondary"
             variant="flat"
+            size="sm"
             startContent={<FilterIcon className="w-4 h-4" />}
             onPress={handleOpenAddFilter}
           >
-            Add Filter
+            <span className="hidden sm:inline">Add Filter</span>
+            <span className="sm:hidden">Filter</span>
           </Button>
           <Button
             color="primary"
             variant="flat"
+            size="sm"
             startContent={<Plus className="w-4 h-4" />}
             onPress={handleOpenAddNode}
           >
-            Add Node
+            <span className="hidden sm:inline">Add Node</span>
+            <span className="sm:hidden">Node</span>
           </Button>
           <Button
             color="primary"
             variant="flat"
+            size="sm"
             startContent={<List className="w-4 h-4" />}
             onPress={handleOpenBulkAdd}
           >
-            Bulk Add
+            <span className="hidden sm:inline">Bulk Add</span>
+            <span className="sm:hidden">Bulk</span>
           </Button>
           <Button
             color="primary"
+            size="sm"
             startContent={<Plus className="w-4 h-4" />}
             onPress={handleOpenAddSubscription}
           >
-            Add Subscription
+            <span className="hidden sm:inline">Add Subscription</span>
+            <span className="sm:hidden">Sub</span>
           </Button>
         </div>
       </div>
@@ -583,7 +596,7 @@ export default function Subscriptions() {
       {unsupportedNodes.length > 0 && (
         <Card className="border border-warning-200 bg-warning-50 dark:bg-warning-50/10">
           <CardBody>
-            <div className="flex justify-between items-start">
+            <div className="flex flex-col sm:flex-row justify-between items-start gap-3">
               <div className="flex gap-3">
                 <AlertTriangle className="w-5 h-5 text-warning-600 mt-0.5 shrink-0" />
                 <div className="flex-1">
@@ -701,12 +714,12 @@ export default function Subscriptions() {
                   : manualNodes.filter(n => n.group_tag === selectedGroupTag)
               ).map((mn) => (
                 <Card key={mn.id}>
-                  <CardBody className="flex flex-row items-center justify-between">
-                    <div className="flex items-center gap-3">
+                  <CardBody className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+                    <div className="flex items-center gap-3 min-w-0">
                       <span className="text-xl">{mn.node.country_emoji || '🌐'}</span>
-                      <div>
-                        <div className="flex items-center gap-2">
-                          <h3 className="font-medium">{mn.node.tag}</h3>
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <h3 className="font-medium truncate">{mn.node.tag}</h3>
                           {mn.group_tag && (
                             <Chip size="sm" variant="flat" color="secondary">{mn.group_tag}</Chip>
                           )}
@@ -716,10 +729,10 @@ export default function Subscriptions() {
                             </Chip>
                           )}
                         </div>
-                        <p className="text-xs text-gray-500">{mn.node.type} • {mn.node.server}:{mn.node.server_port}</p>
+                        <p className="text-xs text-gray-500 truncate">{mn.node.type} • {mn.node.server}:{mn.node.server_port}</p>
                       </div>
                     </div>
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-2 shrink-0 self-end sm:self-auto">
                       <NodeHealthChips tag={mn.node.tag} healthResults={healthResults} healthMode={healthMode} />
                       <Button
                         isIconOnly
@@ -813,11 +826,11 @@ export default function Subscriptions() {
             <div className="space-y-3 mt-4">
               {filters.map((filter) => (
                 <Card key={filter.id}>
-                  <CardBody className="flex flex-row items-center justify-between">
-                    <div className="flex items-center gap-3">
-                      <FilterIcon className="w-5 h-5 text-secondary" />
-                      <div>
-                        <h3 className="font-medium">{filter.name}</h3>
+                  <CardBody className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+                    <div className="flex items-center gap-3 min-w-0">
+                      <FilterIcon className="w-5 h-5 text-secondary shrink-0" />
+                      <div className="min-w-0">
+                        <h3 className="font-medium truncate">{filter.name}</h3>
                         <div className="flex flex-wrap gap-1 mt-1">
                           {filter.include_countries?.length > 0 && (
                             <Chip size="sm" variant="flat" color="success">
@@ -844,7 +857,7 @@ export default function Subscriptions() {
                         </div>
                       </div>
                     </div>
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-2 shrink-0 self-end sm:self-auto">
                       <Button
                         isIconOnly
                         size="sm"
@@ -1476,14 +1489,14 @@ function SubscriptionCard({ subscription: sub, onRefresh, onEdit, onDelete, onTo
   return (
     <Card>
       <CardHeader
-        className="flex justify-between items-start cursor-pointer"
+        className="flex flex-col sm:flex-row justify-between items-start gap-3 cursor-pointer"
         onClick={(e) => {
           // If clicking a button, don't trigger expand
           if ((e.target as HTMLElement).closest('button')) return;
           setIsExpanded(!isExpanded);
         }}
       >
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-3 min-w-0">
           <Chip
             color={sub.enabled ? 'success' : 'default'}
             variant="flat"
@@ -1491,14 +1504,14 @@ function SubscriptionCard({ subscription: sub, onRefresh, onEdit, onDelete, onTo
           >
             {sub.enabled ? 'Enabled' : 'Disabled'}
           </Chip>
-          <div>
-            <h3 className="text-lg font-semibold">{sub.name}</h3>
+          <div className="min-w-0">
+            <h3 className="text-lg font-semibold truncate">{sub.name}</h3>
             <p className="text-sm text-gray-500">
               {sub.node_count} nodes · Updated at {new Date(sub.updated_at).toLocaleString()}
             </p>
           </div>
         </div>
-        <div className="flex gap-2 items-center">
+        <div className="flex flex-wrap gap-2 items-center self-end sm:self-auto shrink-0">
           <Button
             size="sm"
             variant="flat"
@@ -1544,7 +1557,7 @@ function SubscriptionCard({ subscription: sub, onRefresh, onEdit, onDelete, onTo
         <CardBody className="pt-0">
           {/* Traffic Information */}
           {sub.traffic && (
-            <div className="flex gap-4 text-sm mb-4">
+            <div className="flex flex-wrap gap-x-4 gap-y-1 text-sm mb-4">
               <span>Used: {formatBytes(sub.traffic.used)}</span>
               <span>Remaining: {formatBytes(sub.traffic.remaining)}</span>
               <span>Total: {formatBytes(sub.traffic.total)}</span>

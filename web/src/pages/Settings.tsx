@@ -359,7 +359,7 @@ export default function Settings() {
 
   return (
     <div className="space-y-6">
-      <div className="flex justify-between items-center">
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
         <h1 className="text-2xl font-bold text-gray-800 dark:text-white">Settings</h1>
         <Button
           color="primary"
@@ -378,7 +378,7 @@ export default function Settings() {
         </CardHeader>
         <CardBody className="space-y-4">
           {/* Kernel Status */}
-          <div className="flex items-center justify-between p-4 rounded-lg bg-default-100">
+          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 p-4 rounded-lg bg-default-100">
             <div className="flex items-center gap-3">
               {kernelInfo?.installed ? (
                 <>
@@ -439,7 +439,7 @@ export default function Settings() {
           <div>
             <h3 className="font-medium mb-2">Mixed (HTTP+SOCKS5)</h3>
             <div className="space-y-3">
-              <div className="flex gap-3">
+              <div className="flex flex-col sm:flex-row gap-3">
                 <Input
                   type="number"
                   label="Port"
@@ -463,7 +463,7 @@ export default function Settings() {
           <div className="pt-4 border-t border-divider">
             <h3 className="font-medium mb-2">SOCKS5</h3>
             <div className="space-y-3">
-              <div className="flex gap-3">
+              <div className="flex flex-col sm:flex-row gap-3">
                 <Input
                   type="number"
                   label="Port"
@@ -491,7 +491,7 @@ export default function Settings() {
                     />
                   </div>
                   {formData.socks_auth && (
-                    <div className="flex gap-3">
+                    <div className="flex flex-col sm:flex-row gap-3">
                       <Input
                         label="Username"
                         size="sm"
@@ -516,7 +516,7 @@ export default function Settings() {
           <div className="pt-4 border-t border-divider">
             <h3 className="font-medium mb-2">HTTP</h3>
             <div className="space-y-3">
-              <div className="flex gap-3">
+              <div className="flex flex-col sm:flex-row gap-3">
                 <Input
                   type="number"
                   label="Port"
@@ -544,7 +544,7 @@ export default function Settings() {
                     />
                   </div>
                   {formData.http_auth && (
-                    <div className="flex gap-3">
+                    <div className="flex flex-col sm:flex-row gap-3">
                       <Input
                         label="Username"
                         size="sm"
@@ -569,7 +569,7 @@ export default function Settings() {
           <div className="pt-4 border-t border-divider">
             <h3 className="font-medium mb-2">Shadowsocks</h3>
             <div className="space-y-3">
-              <div className="flex gap-3">
+              <div className="flex flex-col sm:flex-row gap-3">
                 <Input
                   type="number"
                   label="Port"
@@ -902,7 +902,7 @@ export default function Settings() {
             <p className="text-sm text-gray-500 mb-4">
               Installing the background service allows the sbm manager to run in the background. The web management interface remains accessible after closing the terminal. The service will auto-start on boot and automatically restart after crashes.
             </p>
-            <div className="flex gap-2">
+            <div className="flex flex-wrap gap-2">
               {daemonStatus?.installed ? (
                 <>
                   <Button

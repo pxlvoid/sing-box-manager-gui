@@ -81,9 +81,9 @@ export default function Logs() {
 
   return (
     <div className="space-y-6">
-      <div className="flex justify-between items-center">
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
         <h1 className="text-2xl font-bold text-gray-800 dark:text-white">Logs</h1>
-        <div className="flex items-center gap-4">
+        <div className="flex flex-wrap items-center gap-3 sm:gap-4">
           <div className="flex items-center gap-2">
             {autoRefresh ? (
               <Pause className="w-4 h-4 text-gray-500" />
@@ -149,7 +149,7 @@ export default function Logs() {
         <CardBody>
           <div
             ref={logContainerRef}
-            className="bg-gray-900 text-gray-100 rounded-lg p-4 h-[600px] overflow-auto font-mono text-sm"
+            className="bg-gray-900 text-gray-100 rounded-lg p-3 sm:p-4 h-[400px] sm:h-[600px] overflow-auto font-mono text-xs sm:text-sm"
           >
             {currentLogs.length === 0 ? (
               <div className="text-gray-500 text-center py-8">
