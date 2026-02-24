@@ -1,6 +1,18 @@
 import { create } from 'zustand';
-import { subscriptionApi, filterApi, ruleApi, ruleGroupApi, settingsApi, serviceApi, nodeApi, manualNodeApi, monitorApi } from '../api';
+import { subscriptionApi, filterApi, ruleApi, ruleGroupApi, settingsApi, serviceApi, nodeApi, manualNodeApi, monitorApi, proxyApi } from '../api';
 import { toast } from '../components/Toast';
+
+export interface NodeHealthResult {
+  alive: boolean;
+  tcp_latency_ms: number;
+  groups: Record<string, number>;
+}
+
+export interface UnsupportedNodeInfo {
+  tag: string;
+  error: string;
+  detected_at: string;
+}
 
 // Type definitions
 export interface Subscription {
@@ -33,6 +45,7 @@ export interface ManualNode {
   id: string;
   node: Node;
   enabled: boolean;
+  group_tag?: string;
 }
 
 export interface CountryGroup {
@@ -92,20 +105,24 @@ export interface Settings {
   singbox_path: string;
   config_path: string;
   mixed_port: number;
+  mixed_address: string;
   tun_enabled: boolean;
   allow_lan: boolean;              // Allow LAN access
 
   socks_port: number;
+  socks_address: string;
   socks_auth: boolean;
   socks_username: string;
   socks_password: string;
 
   http_port: number;
+  http_address: string;
   http_auth: boolean;
   http_username: string;
   http_password: string;
 
   shadowsocks_port: number;
+  shadowsocks_address: string;
   shadowsocks_method: string;
   shadowsocks_password: string;
   proxy_dns: string;
@@ -129,6 +146,13 @@ export interface ServiceStatus {
   sbm_version: string;
 }
 
+export interface ProxyGroup {
+  name: string;
+  type: string;
+  now: string;
+  all: string[];
+}
+
 export interface ProcessStats {
   pid: number;
   cpu_percent: number;
@@ -148,9 +172,26 @@ interface AppState {
   filters: Filter[];
   rules: Rule[];
   ruleGroups: RuleGroup[];
+  defaultRuleGroups: RuleGroup[];
   settings: Settings | null;
   serviceStatus: ServiceStatus | null;
   systemInfo: SystemInfo | null;
+
+  // Group tags
+  manualNodeTags: string[];
+  selectedGroupTag: string | null;
+
+  // Health check state
+  healthResults: Record<string, NodeHealthResult>;
+  healthMode: 'clash_api' | 'clash_api_temp' | 'tcp' | null;
+  healthChecking: boolean;
+  healthCheckingNodes: string[];
+
+  // Proxy groups (from Clash API)
+  proxyGroups: ProxyGroup[];
+
+  // Unsupported nodes
+  unsupportedNodes: UnsupportedNodeInfo[];
 
   // Loading state
   loading: boolean;
@@ -162,9 +203,12 @@ interface AppState {
   fetchFilters: () => Promise<void>;
   fetchRules: () => Promise<void>;
   fetchRuleGroups: () => Promise<void>;
+  fetchDefaultRuleGroups: () => Promise<void>;
   fetchSettings: () => Promise<void>;
   fetchServiceStatus: () => Promise<void>;
   fetchSystemInfo: () => Promise<void>;
+  fetchManualNodeTags: () => Promise<void>;
+  setSelectedGroupTag: (tag: string | null) => void;
 
   addSubscription: (name: string, url: string) => Promise<void>;
   updateSubscription: (id: string, name: string, url: string) => Promise<void>;
@@ -173,7 +217,7 @@ interface AppState {
   toggleSubscription: (id: string, enabled: boolean) => Promise<void>;
 
   // Manual node operations
-  addManualNodesBulk: (nodes: Omit<ManualNode, 'id'>[]) => Promise<void>;
+  addManualNodesBulk: (nodes: Omit<ManualNode, 'id'>[], groupTag?: string) => Promise<void>;
   addManualNode: (node: Omit<ManualNode, 'id'>) => Promise<void>;
   updateManualNode: (id: string, node: Partial<ManualNode>) => Promise<void>;
   deleteManualNode: (id: string) => Promise<void>;
@@ -183,6 +227,8 @@ interface AppState {
   // Rule group operations
   toggleRuleGroup: (id: string, enabled: boolean) => Promise<void>;
   updateRuleGroupOutbound: (id: string, outbound: string) => Promise<void>;
+  updateRuleGroup: (id: string, data: Partial<RuleGroup>) => Promise<void>;
+  resetRuleGroup: (id: string) => Promise<void>;
 
   // Custom rule operations
   addRule: (rule: Omit<Rule, 'id'>) => Promise<void>;
@@ -194,6 +240,19 @@ interface AppState {
   updateFilter: (id: string, filter: Partial<Filter>) => Promise<void>;
   deleteFilter: (id: string) => Promise<void>;
   toggleFilter: (id: string, enabled: boolean) => Promise<void>;
+
+  // Health check operations
+  checkAllNodesHealth: (tags?: string[]) => Promise<void>;
+  checkSingleNodeHealth: (tag: string) => Promise<void>;
+
+  // Unsupported nodes operations
+  fetchUnsupportedNodes: () => Promise<void>;
+  recheckUnsupportedNodes: () => Promise<void>;
+  deleteUnsupportedNodes: (tags?: string[]) => Promise<void>;
+
+  // Proxy group operations
+  fetchProxyGroups: () => Promise<void>;
+  switchProxy: (group: string, selected: string) => Promise<void>;
 }
 
 export const useStore = create<AppState>((set, get) => ({
@@ -203,9 +262,18 @@ export const useStore = create<AppState>((set, get) => ({
   filters: [],
   rules: [],
   ruleGroups: [],
+  defaultRuleGroups: [],
   settings: null,
   serviceStatus: null,
   systemInfo: null,
+  manualNodeTags: [],
+  selectedGroupTag: null,
+  healthResults: {},
+  healthMode: null,
+  healthChecking: false,
+  healthCheckingNodes: [],
+  proxyGroups: [],
+  unsupportedNodes: [],
   loading: false,
 
   fetchSubscriptions: async () => {
@@ -262,6 +330,15 @@ export const useStore = create<AppState>((set, get) => ({
     }
   },
 
+  fetchDefaultRuleGroups: async () => {
+    try {
+      const res = await ruleGroupApi.getDefaults();
+      set({ defaultRuleGroups: res.data.data || [] });
+    } catch (error) {
+      console.error('Failed to fetch default rule groups:', error);
+    }
+  },
+
   fetchSettings: async () => {
     try {
       const res = await settingsApi.get();
@@ -287,6 +364,19 @@ export const useStore = create<AppState>((set, get) => ({
     } catch (error) {
       console.error('Failed to fetch system info:', error);
     }
+  },
+
+  fetchManualNodeTags: async () => {
+    try {
+      const res = await manualNodeApi.getTags();
+      set({ manualNodeTags: res.data.data || [] });
+    } catch (error) {
+      console.error('Failed to fetch manual node tags:', error);
+    }
+  },
+
+  setSelectedGroupTag: (tag: string | null) => {
+    set({ selectedGroupTag: tag });
   },
 
   addSubscription: async (name: string, url: string) => {
@@ -367,11 +457,12 @@ export const useStore = create<AppState>((set, get) => ({
     }
   },
 
-  addManualNodesBulk: async (nodes: Omit<ManualNode, 'id'>[]) => {
+  addManualNodesBulk: async (nodes: Omit<ManualNode, 'id'>[], groupTag?: string) => {
     try {
-      const res = await manualNodeApi.addBulk(nodes);
+      const res = await manualNodeApi.addBulk(nodes, groupTag);
       await get().fetchManualNodes();
       await get().fetchCountryGroups();
+      await get().fetchManualNodeTags();
       if (res.data.warning) {
         toast.info(res.data.warning);
       } else {
@@ -389,6 +480,7 @@ export const useStore = create<AppState>((set, get) => ({
       const res = await manualNodeApi.add(node);
       await get().fetchManualNodes();
       await get().fetchCountryGroups();
+      await get().fetchManualNodeTags();
       if (res.data.warning) {
         toast.info(res.data.warning);
       } else {
@@ -406,6 +498,7 @@ export const useStore = create<AppState>((set, get) => ({
       const res = await manualNodeApi.update(id, node);
       await get().fetchManualNodes();
       await get().fetchCountryGroups();
+      await get().fetchManualNodeTags();
       if (res.data.warning) {
         toast.info(res.data.warning);
       } else {
@@ -423,6 +516,7 @@ export const useStore = create<AppState>((set, get) => ({
       const res = await manualNodeApi.delete(id);
       await get().fetchManualNodes();
       await get().fetchCountryGroups();
+      await get().fetchManualNodeTags();
       if (res.data.warning) {
         toast.info(res.data.warning);
       } else {
@@ -481,6 +575,35 @@ export const useStore = create<AppState>((set, get) => ({
         console.error('Failed to update rule group outbound:', error);
         toast.error(error.response?.data?.error || 'Failed to update rule group outbound');
       }
+    }
+  },
+
+  updateRuleGroup: async (id: string, data: Partial<RuleGroup>) => {
+    const ruleGroup = get().ruleGroups.find(r => r.id === id);
+    if (ruleGroup) {
+      try {
+        const res = await ruleGroupApi.update(id, { ...ruleGroup, ...data });
+        await get().fetchRuleGroups();
+        if (res.data.warning) {
+          toast.info(res.data.warning);
+        } else {
+          toast.success('Rule group updated');
+        }
+      } catch (error: any) {
+        console.error('Failed to update rule group:', error);
+        toast.error(error.response?.data?.error || 'Failed to update rule group');
+      }
+    }
+  },
+
+  resetRuleGroup: async (id: string) => {
+    try {
+      await ruleGroupApi.reset(id);
+      await get().fetchRuleGroups();
+      toast.success('Rule group reset to default');
+    } catch (error: any) {
+      console.error('Failed to reset rule group:', error);
+      toast.error(error.response?.data?.error || 'Failed to reset rule group');
     }
   },
 
@@ -578,6 +701,96 @@ export const useStore = create<AppState>((set, get) => ({
         console.error('Failed to toggle filter:', error);
         toast.error(error.response?.data?.error || 'Failed to toggle filter');
       }
+    }
+  },
+
+  checkAllNodesHealth: async (tags?: string[]) => {
+    set({ healthChecking: true });
+    try {
+      const res = await nodeApi.healthCheck(tags);
+      set({
+        healthResults: { ...get().healthResults, ...res.data.data },
+        healthMode: res.data.mode,
+      });
+      toast.success('Health check completed');
+    } catch (error: any) {
+      console.error('Failed to check nodes health:', error);
+      toast.error(error.response?.data?.error || 'Health check failed');
+    } finally {
+      set({ healthChecking: false });
+    }
+  },
+
+  checkSingleNodeHealth: async (tag: string) => {
+    set({ healthCheckingNodes: [...get().healthCheckingNodes, tag] });
+    try {
+      const res = await nodeApi.healthCheckSingle(tag);
+      set({
+        healthResults: { ...get().healthResults, ...res.data.data },
+        healthMode: res.data.mode,
+      });
+    } catch (error: any) {
+      console.error('Failed to check node health:', error);
+      toast.error(error.response?.data?.error || 'Health check failed');
+    } finally {
+      set({ healthCheckingNodes: get().healthCheckingNodes.filter(t => t !== tag) });
+    }
+  },
+
+  fetchUnsupportedNodes: async () => {
+    try {
+      const res = await nodeApi.getUnsupported();
+      set({ unsupportedNodes: res.data.data || [] });
+    } catch (error) {
+      console.error('Failed to fetch unsupported nodes:', error);
+    }
+  },
+
+  recheckUnsupportedNodes: async () => {
+    try {
+      const res = await nodeApi.recheckUnsupported();
+      set({ unsupportedNodes: res.data.data || [] });
+      toast.success(res.data.message || 'Recheck completed');
+    } catch (error: any) {
+      console.error('Failed to recheck unsupported nodes:', error);
+      toast.error(error.response?.data?.error || 'Recheck failed');
+    }
+  },
+
+  deleteUnsupportedNodes: async (tags?: string[]) => {
+    try {
+      const res = await nodeApi.deleteUnsupported(tags);
+      toast.success(res.data.message || 'Nodes deleted');
+      // Refresh all related data
+      await Promise.all([
+        get().fetchUnsupportedNodes(),
+        get().fetchSubscriptions(),
+        get().fetchManualNodes(),
+        get().fetchCountryGroups(),
+      ]);
+    } catch (error: any) {
+      console.error('Failed to delete unsupported nodes:', error);
+      toast.error(error.response?.data?.error || 'Failed to delete nodes');
+    }
+  },
+
+  fetchProxyGroups: async () => {
+    try {
+      const res = await proxyApi.getGroups();
+      set({ proxyGroups: res.data.data || [] });
+    } catch (error) {
+      console.error('Failed to fetch proxy groups:', error);
+    }
+  },
+
+  switchProxy: async (group: string, selected: string) => {
+    try {
+      await proxyApi.switchGroup(group, selected);
+      await get().fetchProxyGroups();
+      toast.success(`Switched to ${selected}`);
+    } catch (error: any) {
+      console.error('Failed to switch proxy:', error);
+      toast.error(error.response?.data?.error || 'Failed to switch proxy');
     }
   },
 }));

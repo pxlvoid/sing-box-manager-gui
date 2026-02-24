@@ -35,9 +35,10 @@ type Node struct {
 
 // ManualNode represents a manually added node
 type ManualNode struct {
-	ID      string `json:"id"`
-	Node    Node   `json:"node"`
-	Enabled bool   `json:"enabled"`
+	ID       string `json:"id"`
+	Node     Node   `json:"node"`
+	Enabled  bool   `json:"enabled"`
+	GroupTag string `json:"group_tag,omitempty"`
 }
 
 // CountryGroup represents a country-based node group
@@ -106,24 +107,28 @@ type Settings struct {
 	ConfigPath  string `json:"config_path"`
 
 	// inbound configuration
-	MixedPort  int  `json:"mixed_port"`  // HTTP/SOCKS5 mixed port
-	TunEnabled bool `json:"tun_enabled"` // TUN mode
-	AllowLAN   bool `json:"allow_lan"`   // allow LAN access
+	MixedPort    int    `json:"mixed_port"`    // HTTP/SOCKS5 mixed port
+	MixedAddress string `json:"mixed_address"` // external address for proxy link
+	TunEnabled   bool   `json:"tun_enabled"`   // TUN mode
+	AllowLAN     bool   `json:"allow_lan"`     // allow LAN access
 
 	// SOCKS5 inbound
 	SocksPort     int    `json:"socks_port"`
+	SocksAddress  string `json:"socks_address"` // external address for proxy link
 	SocksAuth     bool   `json:"socks_auth"`
 	SocksUsername string `json:"socks_username,omitempty"`
 	SocksPassword string `json:"socks_password,omitempty"`
 
 	// HTTP inbound
 	HttpPort     int    `json:"http_port"`
+	HttpAddress  string `json:"http_address"` // external address for proxy link
 	HttpAuth     bool   `json:"http_auth"`
 	HttpUsername string `json:"http_username,omitempty"`
 	HttpPassword string `json:"http_password,omitempty"`
 
 	// Shadowsocks inbound
 	ShadowsocksPort     int    `json:"shadowsocks_port"`
+	ShadowsocksAddress  string `json:"shadowsocks_address"` // external address for proxy link
 	ShadowsocksMethod   string `json:"shadowsocks_method"`
 	ShadowsocksPassword string `json:"shadowsocks_password"`
 
@@ -162,8 +167,8 @@ func DefaultSettings() *Settings {
 		AllowLAN:             false, // LAN access disabled by default
 		SocksPort:            0,     // disabled by default
 		HttpPort:             0,     // disabled by default
-		ShadowsocksPort:     0,     // disabled by default
-		ShadowsocksMethod:   "aes-256-gcm",
+		ShadowsocksPort:     8388,
+		ShadowsocksMethod:   "chacha20-ietf-poly1305",
 		ProxyDNS:             "https://1.1.1.1/dns-query",
 		DirectDNS:            "https://dns.alidns.com/dns-query",
 		WebPort:              9090,
@@ -202,7 +207,6 @@ func DefaultRuleGroups() []RuleGroup {
 		{ID: "spotify", Name: "Spotify", SiteRules: []string{"spotify"}, Outbound: "Proxy", Enabled: false},
 		{ID: "apple", Name: "Apple", SiteRules: []string{"apple"}, Outbound: "DIRECT", Enabled: true},
 		{ID: "microsoft", Name: "Microsoft", SiteRules: []string{"microsoft"}, Outbound: "DIRECT", Enabled: true},
-		{ID: "cn", Name: "China", SiteRules: []string{"geolocation-cn"}, IPRules: []string{"cn"}, Outbound: "DIRECT", Enabled: true},
 		{ID: "private", Name: "Private Network", SiteRules: []string{"private"}, IPRules: []string{"private"}, Outbound: "DIRECT", Enabled: true},
 	}
 }

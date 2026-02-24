@@ -483,6 +483,13 @@ func (pm *ProcessManager) addLog(line string) {
 	}
 }
 
+// GetSingBoxPath returns the path to the sing-box binary.
+func (pm *ProcessManager) GetSingBoxPath() string {
+	pm.mu.RLock()
+	defer pm.mu.RUnlock()
+	return pm.singboxPath
+}
+
 // SetPaths Set paths
 func (pm *ProcessManager) SetPaths(singboxPath, configPath string) {
 	pm.mu.Lock()

@@ -34,7 +34,9 @@ export const ruleApi = {
 // Rule group API
 export const ruleGroupApi = {
   getAll: () => api.get('/rule-groups'),
+  getDefaults: () => api.get('/rule-groups/defaults'),
   update: (id: string, data: any) => api.put(`/rule-groups/${id}`, data),
+  reset: (id: string) => api.post(`/rule-groups/${id}/reset`),
 };
 
 // Ruleset validation API
@@ -97,15 +99,25 @@ export const nodeApi = {
   getByCountry: (code: string) => api.get(`/nodes/country/${code}`),
   parse: (url: string) => api.post('/nodes/parse', { url }),
   parseBulk: (urls: string[]) => api.post('/nodes/parse-bulk', { urls }),
+  healthCheck: (tags?: string[]) =>
+    api.post('/nodes/health-check', { tags }, { timeout: 60000 }),
+  healthCheckSingle: (tag: string) =>
+    api.post('/nodes/health-check-single', { tag }, { timeout: 15000 }),
+  getUnsupported: () => api.get('/nodes/unsupported'),
+  recheckUnsupported: () => api.post('/nodes/unsupported/recheck'),
+  clearUnsupported: () => api.delete('/nodes/unsupported'),
+  deleteUnsupported: (tags?: string[]) => api.post('/nodes/unsupported/delete', { tags }),
 };
 
 // Manual node API
 export const manualNodeApi = {
   getAll: () => api.get('/manual-nodes'),
   add: (data: any) => api.post('/manual-nodes', data),
-  addBulk: (nodes: any[]) => api.post('/manual-nodes/bulk', { nodes }),
+  addBulk: (nodes: any[], groupTag?: string) => api.post('/manual-nodes/bulk', { nodes, group_tag: groupTag }),
+  getTags: () => api.get('/manual-nodes/tags'),
   update: (id: string, data: any) => api.put(`/manual-nodes/${id}`, data),
   delete: (id: string) => api.delete(`/manual-nodes/${id}`),
+  export: (ids?: string[]) => api.post('/manual-nodes/export', ids ? { ids } : {}),
 };
 
 // Kernel management API
@@ -114,6 +126,13 @@ export const kernelApi = {
   getReleases: () => api.get('/kernel/releases'),
   download: (version: string) => api.post('/kernel/download', { version }),
   getProgress: () => api.get('/kernel/progress'),
+};
+
+// Proxy group API (Clash API proxy)
+export const proxyApi = {
+  getGroups: () => api.get('/proxy/groups'),
+  switchGroup: (group: string, selected: string) =>
+    api.put(`/proxy/groups/${encodeURIComponent(group)}`, { name: selected }),
 };
 
 export default api;

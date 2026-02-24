@@ -142,11 +142,12 @@ type CacheFileConfig struct {
 
 // ConfigBuilder builds sing-box configuration
 type ConfigBuilder struct {
-	settings   *storage.Settings
-	nodes      []storage.Node
-	filters    []storage.Filter
-	rules      []storage.Rule
-	ruleGroups []storage.RuleGroup
+	settings    *storage.Settings
+	nodes       []storage.Node
+	filters     []storage.Filter
+	rules       []storage.Rule
+	ruleGroups  []storage.RuleGroup
+	excludeTags map[string]bool
 }
 
 // NewConfigBuilder creates a new configuration builder
@@ -160,6 +161,18 @@ func NewConfigBuilder(settings *storage.Settings, nodes []storage.Node, filters 
 	}
 }
 
+// NewConfigBuilderWithExclusions creates a new configuration builder that excludes specific nodes by tag
+func NewConfigBuilderWithExclusions(settings *storage.Settings, nodes []storage.Node, filters []storage.Filter, rules []storage.Rule, ruleGroups []storage.RuleGroup, excludeTags map[string]bool) *ConfigBuilder {
+	return &ConfigBuilder{
+		settings:    settings,
+		nodes:       nodes,
+		filters:     filters,
+		rules:       rules,
+		ruleGroups:  ruleGroups,
+		excludeTags: excludeTags,
+	}
+}
+
 // buildRuleSetURL builds rule set URL (with GitHub proxy support)
 func (b *ConfigBuilder) buildRuleSetURL(originalURL string) string {
 	if b.settings.GithubProxy != "" {
@@ -170,12 +183,13 @@ func (b *ConfigBuilder) buildRuleSetURL(originalURL string) string {
 
 // Build builds the sing-box configuration
 func (b *ConfigBuilder) Build() (*SingBoxConfig, error) {
+	outbounds, _ := b.buildOutboundsWithMap()
 	config := &SingBoxConfig{
 		Log:       b.buildLog(),
 		DNS:       b.buildDNS(),
 		NTP:       b.buildNTP(),
 		Inbounds:  b.buildInbounds(),
-		Outbounds: b.buildOutbounds(),
+		Outbounds: outbounds,
 		Route:     b.buildRoute(),
 	}
 
@@ -200,6 +214,30 @@ func (b *ConfigBuilder) BuildJSON() (string, error) {
 	}
 
 	return string(data), nil
+}
+
+// BuildJSONWithNodeMap builds the JSON string and returns a map from outbound index to node tag
+func (b *ConfigBuilder) BuildJSONWithNodeMap() (string, map[int]string, error) {
+	outbounds, indexToTag := b.buildOutboundsWithMap()
+	config := &SingBoxConfig{
+		Log:       b.buildLog(),
+		DNS:       b.buildDNS(),
+		NTP:       b.buildNTP(),
+		Inbounds:  b.buildInbounds(),
+		Outbounds: outbounds,
+		Route:     b.buildRoute(),
+	}
+
+	if b.settings.ClashAPIPort > 0 {
+		config.Experimental = b.buildExperimental()
+	}
+
+	data, err := json.MarshalIndent(config, "", "  ")
+	if err != nil {
+		return "", nil, fmt.Errorf("failed to serialize config: %w", err)
+	}
+
+	return string(data), indexToTag, nil
 }
 
 // buildLog builds log configuration
@@ -274,15 +312,6 @@ func (b *ConfigBuilder) buildDNS() *DNSConfig {
 
 	// Base DNS rules
 	rules := []DNSRule{
-		{
-			RuleSet: []string{"geosite-category-ads-all"},
-			Action:  "reject",
-		},
-		{
-			RuleSet: []string{"geosite-geolocation-cn"},
-			Server:  "dns_direct",
-			Action:  "route",
-		},
 		{
 			QueryType: []string{"A", "AAAA"},
 			Server:    "dns_fakeip",
@@ -417,7 +446,7 @@ func (b *ConfigBuilder) buildInbounds() []Inbound {
 	}
 
 	// Shadowsocks inbound
-	if b.settings.ShadowsocksPort > 0 {
+	if b.settings.ShadowsocksPort > 0 && b.settings.ShadowsocksMethod != "" {
 		inbounds = append(inbounds, Inbound{
 			Type:       "shadowsocks",
 			Tag:        "shadowsocks-in",
@@ -448,8 +477,9 @@ func (b *ConfigBuilder) buildInbounds() []Inbound {
 	return inbounds
 }
 
-// buildOutbounds builds outbound configuration
-func (b *ConfigBuilder) buildOutbounds() []Outbound {
+// buildOutboundsWithMap builds outbound configuration and returns a map from outbound index to node tag
+func (b *ConfigBuilder) buildOutboundsWithMap() ([]Outbound, map[int]string) {
+	indexToTag := make(map[int]string)
 	outbounds := []Outbound{
 		{"type": "direct", "tag": "DIRECT"},
 		{"type": "block", "tag": "REJECT"},
@@ -461,22 +491,27 @@ func (b *ConfigBuilder) buildOutbounds() []Outbound {
 	nodeTagSet := make(map[string]bool)
 	countryNodes := make(map[string][]string) // Country code -> node tag list
 
-	// Add all nodes
+	// Add all nodes (skip duplicates and excluded tags)
 	for _, node := range b.nodes {
+		if b.excludeTags != nil && b.excludeTags[node.Tag] {
+			continue
+		}
+		// Skip duplicate tags — sing-box doesn't allow duplicate outbound tags
+		if nodeTagSet[node.Tag] {
+			continue
+		}
+		indexToTag[len(outbounds)] = node.Tag
 		outbound := b.nodeToOutbound(node)
 		outbounds = append(outbounds, outbound)
-		tag := node.Tag
-		if !nodeTagSet[tag] {
-			allNodeTags = append(allNodeTags, tag)
-			nodeTagSet[tag] = true
-		}
+		allNodeTags = append(allNodeTags, node.Tag)
+		nodeTagSet[node.Tag] = true
 
 		// Group by country
 		if node.Country != "" {
-			countryNodes[node.Country] = append(countryNodes[node.Country], tag)
+			countryNodes[node.Country] = append(countryNodes[node.Country], node.Tag)
 		} else {
 			// Unrecognized country nodes go into "OTHER" group
-			countryNodes["OTHER"] = append(countryNodes["OTHER"], tag)
+			countryNodes["OTHER"] = append(countryNodes["OTHER"], node.Tag)
 		}
 	}
 
@@ -492,6 +527,9 @@ func (b *ConfigBuilder) buildOutbounds() []Outbound {
 		// Filter nodes based on filter criteria
 		var filteredTags []string
 		for _, node := range b.nodes {
+			if b.excludeTags != nil && b.excludeTags[node.Tag] {
+				continue
+			}
 			if b.matchFilter(node, filter) {
 				filteredTags = append(filteredTags, node.Tag)
 			}
@@ -621,11 +659,16 @@ func (b *ConfigBuilder) buildOutbounds() []Outbound {
 		"default":   b.settings.FinalOutbound,
 	})
 
-	return outbounds
+	return outbounds, indexToTag
 }
 
 // nodeToOutbound converts a node to outbound configuration
 func (b *ConfigBuilder) nodeToOutbound(node storage.Node) Outbound {
+	return NodeToOutbound(node)
+}
+
+// NodeToOutbound converts a storage.Node to an Outbound config entry.
+func NodeToOutbound(node storage.Node) Outbound {
 	outbound := Outbound{
 		"tag":         node.Tag,
 		"type":        node.Type,
@@ -636,6 +679,11 @@ func (b *ConfigBuilder) nodeToOutbound(node storage.Node) Outbound {
 	// Copy Extra fields
 	for k, v := range node.Extra {
 		outbound[k] = v
+	}
+
+	// Remove fields from transport that sing-box doesn't support
+	if transport, ok := outbound["transport"].(map[string]interface{}); ok {
+		delete(transport, "mode")
 	}
 
 	return outbound

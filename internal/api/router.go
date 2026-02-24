@@ -3,15 +3,21 @@ package api
 import (
 	"crypto/rand"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
+	"io"
 	"io/fs"
+	"net"
 	"net/http"
 	"os"
+	"os/exec"
 	"os/user"
 	"path/filepath"
 	"runtime"
+	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/gin-contrib/cors"
@@ -38,6 +44,13 @@ func generateRandomSecret(length int) string {
 	return hex.EncodeToString(bytes)[:length]
 }
 
+// UnsupportedNodeInfo represents a node that failed sing-box config validation
+type UnsupportedNodeInfo struct {
+	Tag   string    `json:"tag"`
+	Error string    `json:"error"`
+	Time  time.Time `json:"detected_at"`
+}
+
 // Server represents the API server
 type Server struct {
 	store          *storage.JSONStore
@@ -51,6 +64,9 @@ type Server struct {
 	sbmPath        string // sbm executable path
 	port           int    // Web service port
 	version        string // sbm version
+
+	unsupportedNodes   map[string]UnsupportedNodeInfo
+	unsupportedNodesMu sync.RWMutex
 }
 
 // NewServer creates an API server
@@ -63,17 +79,18 @@ func NewServer(store *storage.JSONStore, processManager *daemon.ProcessManager, 
 	kernelManager := kernel.NewManager(store.GetDataDir(), store.GetSettings)
 
 	s := &Server{
-		store:          store,
-		subService:     subService,
-		processManager: processManager,
-		launchdManager: launchdManager,
-		systemdManager: systemdManager,
-		kernelManager:  kernelManager,
-		scheduler:      service.NewScheduler(store, subService),
-		router:         gin.Default(),
-		sbmPath:        sbmPath,
-		port:           port,
-		version:        version,
+		store:            store,
+		subService:       subService,
+		processManager:   processManager,
+		launchdManager:   launchdManager,
+		systemdManager:   systemdManager,
+		kernelManager:    kernelManager,
+		scheduler:        service.NewScheduler(store, subService),
+		router:           gin.Default(),
+		sbmPath:          sbmPath,
+		port:             port,
+		version:          version,
+		unsupportedNodes: make(map[string]UnsupportedNodeInfo),
 	}
 
 	// Set scheduler update callback
@@ -130,7 +147,9 @@ func (s *Server) setupRoutes() {
 
 		// Rule group management
 		api.GET("/rule-groups", s.getRuleGroups)
+		api.GET("/rule-groups/defaults", s.getDefaultRuleGroups)
 		api.PUT("/rule-groups/:id", s.updateRuleGroup)
+		api.POST("/rule-groups/:id/reset", s.resetRuleGroup)
 
 		// Rule set validation
 		api.GET("/ruleset/validate", s.validateRuleSet)
@@ -184,19 +203,31 @@ func (s *Server) setupRoutes() {
 		api.GET("/nodes/country/:code", s.getNodesByCountry)
 		api.POST("/nodes/parse", s.parseNodeURL)
 		api.POST("/nodes/parse-bulk", s.parseNodeURLsBulk)
+		api.POST("/nodes/health-check", s.healthCheckNodes)
+		api.POST("/nodes/health-check-single", s.healthCheckSingleNode)
+		api.GET("/nodes/unsupported", s.getUnsupportedNodes)
+		api.POST("/nodes/unsupported/recheck", s.recheckUnsupportedNodes)
+		api.DELETE("/nodes/unsupported", s.clearUnsupportedNodes)
+		api.POST("/nodes/unsupported/delete", s.deleteUnsupportedNodes)
 
 		// Manual nodes
 		api.GET("/manual-nodes", s.getManualNodes)
+		api.GET("/manual-nodes/tags", s.getManualNodeTags)
 		api.POST("/manual-nodes", s.addManualNode)
 		api.POST("/manual-nodes/bulk", s.addManualNodesBulk)
 		api.PUT("/manual-nodes/:id", s.updateManualNode)
 		api.DELETE("/manual-nodes/:id", s.deleteManualNode)
+		api.POST("/manual-nodes/export", s.exportManualNodes)
 
 		// Kernel management
 		api.GET("/kernel/info", s.getKernelInfo)
 		api.GET("/kernel/releases", s.getKernelReleases)
 		api.POST("/kernel/download", s.startKernelDownload)
 		api.GET("/kernel/progress", s.getKernelProgress)
+
+		// Proxy group management (Clash API proxy)
+		api.GET("/proxy/groups", s.getProxyGroups)
+		api.PUT("/proxy/groups/:name", s.switchProxyGroup)
 	}
 
 	// Static file service (frontend, using embedded file system)
@@ -505,6 +536,50 @@ func (s *Server) updateRuleGroup(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"message": "Updated successfully"})
 }
 
+func (s *Server) getDefaultRuleGroups(c *gin.Context) {
+	c.JSON(http.StatusOK, gin.H{"data": storage.DefaultRuleGroups()})
+}
+
+func (s *Server) resetRuleGroup(c *gin.Context) {
+	id := c.Param("id")
+
+	// Find default rule group by ID
+	var defaultGroup *storage.RuleGroup
+	for _, dg := range storage.DefaultRuleGroups() {
+		if dg.ID == id {
+			defaultGroup = &dg
+			break
+		}
+	}
+
+	if defaultGroup == nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "No default rule group found for ID: " + id})
+		return
+	}
+
+	// Keep current enabled and outbound, reset name/site_rules/ip_rules
+	current := s.store.GetRuleGroups()
+	for _, rg := range current {
+		if rg.ID == id {
+			defaultGroup.Enabled = rg.Enabled
+			defaultGroup.Outbound = rg.Outbound
+			break
+		}
+	}
+
+	if err := s.store.UpdateRuleGroup(*defaultGroup); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	if err := s.autoApplyConfig(); err != nil {
+		c.JSON(http.StatusOK, gin.H{"message": "Reset successfully, but auto-apply config failed: " + err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": "Reset successfully"})
+}
+
 // ==================== Rule Set Validation API ====================
 
 func (s *Server) validateRuleSet(c *gin.Context) {
@@ -660,7 +735,7 @@ func (s *Server) previewConfig(c *gin.Context) {
 }
 
 func (s *Server) applyConfig(c *gin.Context) {
-	configJSON, err := s.buildConfig()
+	configJSON, newUnsupported, err := s.buildAndValidateConfig()
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -673,12 +748,6 @@ func (s *Server) applyConfig(c *gin.Context) {
 		return
 	}
 
-	// Check config
-	if err := s.processManager.Check(); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-
 	// Restart service
 	if s.processManager.IsRunning() {
 		if err := s.processManager.Restart(); err != nil {
@@ -687,7 +756,16 @@ func (s *Server) applyConfig(c *gin.Context) {
 		}
 	}
 
-	c.JSON(http.StatusOK, gin.H{"message": "Config applied"})
+	response := gin.H{"message": "Config applied"}
+	if len(newUnsupported) > 0 {
+		tags := make([]string, len(newUnsupported))
+		for i, u := range newUnsupported {
+			tags[i] = u.Tag
+		}
+		response["warning"] = fmt.Sprintf("%d unsupported node(s) excluded: %s", len(newUnsupported), strings.Join(tags, ", "))
+		response["unsupported_nodes"] = newUnsupported
+	}
+	c.JSON(http.StatusOK, response)
 }
 
 func (s *Server) buildConfig() (string, error) {
@@ -699,6 +777,135 @@ func (s *Server) buildConfig() (string, error) {
 
 	b := builder.NewConfigBuilder(settings, nodes, filters, rules, ruleGroups)
 	return b.BuildJSON()
+}
+
+// buildAndValidateConfig generates config, validates it with sing-box check,
+// and iteratively removes unsupported nodes until validation passes.
+func (s *Server) buildAndValidateConfig() (string, []UnsupportedNodeInfo, error) {
+	settings := s.store.GetSettings()
+	nodes := s.store.GetAllNodes()
+	filters := s.store.GetFilters()
+	rules := s.store.GetRules()
+	ruleGroups := s.store.GetRuleGroups()
+
+	excludeTags := make(map[string]bool)
+
+	// Copy currently known unsupported nodes into exclusion set
+	s.unsupportedNodesMu.RLock()
+	for tag := range s.unsupportedNodes {
+		excludeTags[tag] = true
+	}
+	s.unsupportedNodesMu.RUnlock()
+
+	var newUnsupported []UnsupportedNodeInfo
+	const maxIterations = 50
+
+	singboxPath := s.processManager.GetSingBoxPath()
+
+	for i := 0; i < maxIterations; i++ {
+		b := builder.NewConfigBuilderWithExclusions(settings, nodes, filters, rules, ruleGroups, excludeTags)
+		configJSON, indexToTag, err := b.BuildJSONWithNodeMap()
+		if err != nil {
+			return "", nil, err
+		}
+
+		// Write to temp file for validation
+		tmpFile, err := os.CreateTemp("", "sbm-validate-*.json")
+		if err != nil {
+			return "", nil, fmt.Errorf("failed to create temp file: %w", err)
+		}
+		tmpPath := tmpFile.Name()
+
+		if _, err := tmpFile.WriteString(configJSON); err != nil {
+			tmpFile.Close()
+			os.Remove(tmpPath)
+			return "", nil, fmt.Errorf("failed to write temp config: %w", err)
+		}
+		tmpFile.Close()
+
+		// Run sing-box check
+		checkCmd := exec.Command(singboxPath, "check", "-c", tmpPath)
+		output, checkErr := checkCmd.CombinedOutput()
+		os.Remove(tmpPath)
+
+		if checkErr == nil {
+			// Config is valid — store new unsupported nodes
+			if len(newUnsupported) > 0 {
+				s.unsupportedNodesMu.Lock()
+				for _, info := range newUnsupported {
+					s.unsupportedNodes[info.Tag] = info
+				}
+				s.unsupportedNodesMu.Unlock()
+
+				// Log excluded nodes
+				tags := make([]string, len(newUnsupported))
+				for i, u := range newUnsupported {
+					tags[i] = u.Tag
+				}
+				logger.Printf("[config] Excluded %d unsupported node(s): %s", len(newUnsupported), strings.Join(tags, ", "))
+			}
+			return configJSON, newUnsupported, nil
+		}
+
+		// Parse errors
+		checkErrors := builder.ParseCheckErrors(string(output))
+		if !checkErrors.HasErrors() {
+			// Unrecognized error, cannot auto-fix
+			return "", nil, fmt.Errorf("config check failed: %s", string(output))
+		}
+
+		// Build reverse map: tag -> list of outbound indices (for duplicate detection)
+		tagToIndices := make(map[string][]int)
+		for idx, tag := range indexToTag {
+			tagToIndices[tag] = append(tagToIndices[tag], idx)
+		}
+
+		foundNew := false
+
+		// Handle outbound index errors (outbounds[N].field: message)
+		for _, oe := range checkErrors.OutboundErrors {
+			tag, ok := indexToTag[oe.Index]
+			if !ok {
+				// Error in a non-node outbound (group/selector), cannot auto-fix
+				return "", nil, fmt.Errorf("config check failed: %s", string(output))
+			}
+			if !excludeTags[tag] {
+				excludeTags[tag] = true
+				info := UnsupportedNodeInfo{
+					Tag:   tag,
+					Error: oe.Message,
+					Time:  time.Now(),
+				}
+				newUnsupported = append(newUnsupported, info)
+				foundNew = true
+			}
+		}
+
+		// Handle duplicate tag errors (duplicate outbound/endpoint tag: <tag>)
+		// Node-level duplicates are already handled in the builder (deduplication).
+		// If this error still occurs, it's a conflict with a group/selector tag.
+		for _, dte := range checkErrors.DuplicateTagErrors {
+			// Try to find and exclude the node with conflicting tag
+			if _, isNodeTag := tagToIndices[dte.Tag]; isNodeTag {
+				if !excludeTags[dte.Tag] {
+					excludeTags[dte.Tag] = true
+					info := UnsupportedNodeInfo{
+						Tag:   dte.Tag,
+						Error: fmt.Sprintf("duplicate outbound tag: %s", dte.Tag),
+						Time:  time.Now(),
+					}
+					newUnsupported = append(newUnsupported, info)
+					foundNew = true
+				}
+			}
+		}
+
+		if !foundNew {
+			return "", nil, fmt.Errorf("config check failed: %s", string(output))
+		}
+	}
+
+	return "", nil, fmt.Errorf("config validation exceeded max iterations (%d)", maxIterations)
 }
 
 func (s *Server) saveConfigFile(path, content string) error {
@@ -720,8 +927,8 @@ func (s *Server) autoApplyConfig() error {
 		return nil
 	}
 
-	// Generate config
-	configJSON, err := s.buildConfig()
+	// Generate and validate config
+	configJSON, _, err := s.buildAndValidateConfig()
 	if err != nil {
 		return err
 	}
@@ -737,6 +944,94 @@ func (s *Server) autoApplyConfig() error {
 	}
 
 	return nil
+}
+
+// ==================== Unsupported Nodes API ====================
+
+func (s *Server) getUnsupportedNodes(c *gin.Context) {
+	s.unsupportedNodesMu.RLock()
+	defer s.unsupportedNodesMu.RUnlock()
+
+	nodes := make([]UnsupportedNodeInfo, 0, len(s.unsupportedNodes))
+	for _, info := range s.unsupportedNodes {
+		nodes = append(nodes, info)
+	}
+	c.JSON(http.StatusOK, gin.H{"data": nodes})
+}
+
+func (s *Server) recheckUnsupportedNodes(c *gin.Context) {
+	// Clear unsupported list
+	s.unsupportedNodesMu.Lock()
+	s.unsupportedNodes = make(map[string]UnsupportedNodeInfo)
+	s.unsupportedNodesMu.Unlock()
+
+	// Re-validate config
+	configJSON, newUnsupported, err := s.buildAndValidateConfig()
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	// Save the validated config
+	settings := s.store.GetSettings()
+	if err := s.saveConfigFile(s.resolvePath(settings.ConfigPath), configJSON); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	// Return updated list
+	s.unsupportedNodesMu.RLock()
+	defer s.unsupportedNodesMu.RUnlock()
+	nodes := make([]UnsupportedNodeInfo, 0, len(s.unsupportedNodes))
+	for _, info := range s.unsupportedNodes {
+		nodes = append(nodes, info)
+	}
+	c.JSON(http.StatusOK, gin.H{"data": nodes, "message": fmt.Sprintf("Recheck completed, %d unsupported node(s)", len(newUnsupported))})
+}
+
+func (s *Server) clearUnsupportedNodes(c *gin.Context) {
+	s.unsupportedNodesMu.Lock()
+	s.unsupportedNodes = make(map[string]UnsupportedNodeInfo)
+	s.unsupportedNodesMu.Unlock()
+	c.JSON(http.StatusOK, gin.H{"message": "Cleared"})
+}
+
+// deleteUnsupportedNodes permanently removes unsupported nodes from subscriptions and manual nodes
+func (s *Server) deleteUnsupportedNodes(c *gin.Context) {
+	var req struct {
+		Tags []string `json:"tags"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil || len(req.Tags) == 0 {
+		// If no tags specified, delete all unsupported
+		s.unsupportedNodesMu.RLock()
+		for tag := range s.unsupportedNodes {
+			req.Tags = append(req.Tags, tag)
+		}
+		s.unsupportedNodesMu.RUnlock()
+	}
+
+	if len(req.Tags) == 0 {
+		c.JSON(http.StatusOK, gin.H{"message": "No unsupported nodes to delete", "removed": 0})
+		return
+	}
+
+	removed, err := s.store.RemoveNodesByTags(req.Tags)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	// Clear them from unsupported list
+	s.unsupportedNodesMu.Lock()
+	for _, tag := range req.Tags {
+		delete(s.unsupportedNodes, tag)
+	}
+	s.unsupportedNodesMu.Unlock()
+
+	c.JSON(http.StatusOK, gin.H{
+		"message": fmt.Sprintf("Removed %d node(s)", removed),
+		"removed": removed,
+	})
 }
 
 // ==================== Service API ====================
@@ -1324,6 +1619,404 @@ func (s *Server) parseNodeURLsBulk(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"data": results})
 }
 
+// ==================== Health Check API ====================
+
+// NodeHealthResult represents health check result for a single node
+type NodeHealthResult struct {
+	Alive        bool           `json:"alive"`
+	TCPLatencyMs int64          `json:"tcp_latency_ms"`
+	Groups       map[string]int `json:"groups"`
+}
+
+// matchFilter checks if a node matches a filter (duplicated from builder for API layer)
+func matchFilter(node storage.Node, filter storage.Filter) bool {
+	name := strings.ToLower(node.Tag)
+
+	if len(filter.IncludeCountries) > 0 {
+		matched := false
+		for _, country := range filter.IncludeCountries {
+			if strings.EqualFold(node.Country, country) {
+				matched = true
+				break
+			}
+		}
+		if !matched {
+			return false
+		}
+	}
+
+	for _, country := range filter.ExcludeCountries {
+		if strings.EqualFold(node.Country, country) {
+			return false
+		}
+	}
+
+	if len(filter.Include) > 0 {
+		matched := false
+		for _, keyword := range filter.Include {
+			if strings.Contains(name, strings.ToLower(keyword)) {
+				matched = true
+				break
+			}
+		}
+		if !matched {
+			return false
+		}
+	}
+
+	for _, keyword := range filter.Exclude {
+		if strings.Contains(name, strings.ToLower(keyword)) {
+			return false
+		}
+	}
+
+	return true
+}
+
+func (s *Server) tcpCheck(server string, port int) (alive bool, latencyMs int64) {
+	addr := net.JoinHostPort(server, strconv.Itoa(port))
+	start := time.Now()
+	conn, err := net.DialTimeout("tcp", addr, 5*time.Second)
+	if err != nil {
+		return false, 0
+	}
+	conn.Close()
+	return true, time.Since(start).Milliseconds()
+}
+
+func (s *Server) clashProxyDelay(port int, secret, nodeTag string) int {
+	client := &http.Client{Timeout: 7 * time.Second}
+	url := fmt.Sprintf("http://127.0.0.1:%d/proxies/%s/delay?url=https://www.gstatic.com/generate_204&timeout=5000", port, nodeTag)
+
+	req, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		return 0
+	}
+	if secret != "" {
+		req.Header.Set("Authorization", "Bearer "+secret)
+	}
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return 0
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return 0
+	}
+
+	var result struct {
+		Delay int `json:"delay"`
+	}
+	if err := json.Unmarshal(body, &result); err != nil {
+		return 0
+	}
+	return result.Delay
+}
+
+// buildHealthCheckConfig builds a minimal sing-box config for health checking.
+// It contains only outbounds (DIRECT + node outbounds + Proxy urltest) and Clash API.
+func buildHealthCheckConfig(nodes []storage.Node, clashAPIPort int) *builder.SingBoxConfig {
+	outbounds := []builder.Outbound{
+		{"type": "direct", "tag": "DIRECT"},
+		{"type": "block", "tag": "REJECT"},
+	}
+
+	var nodeTags []string
+	for _, n := range nodes {
+		outbounds = append(outbounds, builder.NodeToOutbound(n))
+		nodeTags = append(nodeTags, n.Tag)
+	}
+
+	// Proxy urltest group over all nodes
+	if len(nodeTags) > 0 {
+		outbounds = append(outbounds, builder.Outbound{
+			"type":       "urltest",
+			"tag":        "Proxy",
+			"outbounds":  nodeTags,
+			"url":        "https://www.gstatic.com/generate_204",
+			"interval":   "5m",
+			"tolerance":  50,
+		})
+	}
+
+	return &builder.SingBoxConfig{
+		Log: &builder.LogConfig{Level: "warn", Timestamp: true},
+		Outbounds: outbounds,
+		Experimental: &builder.ExperimentalConfig{
+			ClashAPI: &builder.ClashAPIConfig{
+				ExternalController: fmt.Sprintf("127.0.0.1:%d", clashAPIPort),
+				DefaultMode:        "rule",
+			},
+		},
+	}
+}
+
+// getFreePort finds and returns a free TCP port on localhost.
+func getFreePort() (int, error) {
+	l, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		return 0, err
+	}
+	port := l.Addr().(*net.TCPAddr).Port
+	l.Close()
+	return port, nil
+}
+
+// performHealthCheckWithTempSingbox starts a temporary sing-box instance,
+// runs Clash API health checks, then stops and cleans up.
+func (s *Server) performHealthCheckWithTempSingbox(nodes []storage.Node) (map[string]*NodeHealthResult, error) {
+	singboxPath := s.processManager.GetSingBoxPath()
+	if _, err := os.Stat(singboxPath); os.IsNotExist(err) {
+		return nil, fmt.Errorf("sing-box binary not found: %s", singboxPath)
+	}
+
+	// Find a free port for the temporary Clash API
+	port, err := getFreePort()
+	if err != nil {
+		return nil, fmt.Errorf("failed to find free port: %w", err)
+	}
+
+	// Build minimal config
+	cfg := buildHealthCheckConfig(nodes, port)
+	cfgJSON, err := json.MarshalIndent(cfg, "", "  ")
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal config: %w", err)
+	}
+
+	// Write to temp file
+	tmpFile, err := os.CreateTemp("", "sbm-healthcheck-*.json")
+	if err != nil {
+		return nil, fmt.Errorf("failed to create temp file: %w", err)
+	}
+	tmpPath := tmpFile.Name()
+	defer os.Remove(tmpPath)
+
+	if _, err := tmpFile.Write(cfgJSON); err != nil {
+		tmpFile.Close()
+		return nil, fmt.Errorf("failed to write config: %w", err)
+	}
+	tmpFile.Close()
+
+	// Start temporary sing-box
+	logger.Printf("[health-check] Starting temporary sing-box on port %d for %d nodes", port, len(nodes))
+	cmd := exec.Command(singboxPath, "run", "-c", tmpPath)
+
+	// Pipe sing-box output to singbox log (visible in web panel)
+	var singboxLogger *logger.Logger
+	if logManager := logger.GetLogManager(); logManager != nil {
+		singboxLogger = logManager.SingboxLogger()
+	}
+	if singboxLogger != nil {
+		cmd.Stdout = singboxLogger
+		cmd.Stderr = singboxLogger
+	}
+
+	if err := cmd.Start(); err != nil {
+		return nil, fmt.Errorf("failed to start sing-box: %w", err)
+	}
+	logger.Printf("[health-check] Temporary sing-box started, PID: %d", cmd.Process.Pid)
+
+	// Ensure cleanup
+	defer func() {
+		cmd.Process.Kill()
+		cmd.Wait()
+		logger.Printf("[health-check] Temporary sing-box stopped")
+	}()
+
+	// Wait for Clash API to become ready (poll every 100ms, timeout 5s)
+	ready := false
+	client := &http.Client{Timeout: 1 * time.Second}
+	for i := 0; i < 50; i++ {
+		time.Sleep(100 * time.Millisecond)
+		resp, err := client.Get(fmt.Sprintf("http://127.0.0.1:%d/", port))
+		if err == nil {
+			resp.Body.Close()
+			ready = true
+			logger.Printf("[health-check] Clash API ready after %dms", (i+1)*100)
+			break
+		}
+	}
+	if !ready {
+		logger.Printf("[health-check] Clash API did not become ready within 5s")
+		return nil, fmt.Errorf("temporary sing-box did not become ready within 5s")
+	}
+
+	// Run Clash API health checks in parallel
+	results := make(map[string]*NodeHealthResult)
+	var mu sync.Mutex
+	sem := make(chan struct{}, 50)
+	var wg sync.WaitGroup
+
+	for _, node := range nodes {
+		wg.Add(1)
+		go func(n storage.Node) {
+			defer wg.Done()
+			sem <- struct{}{}
+			defer func() { <-sem }()
+
+			result := &NodeHealthResult{
+				Groups: make(map[string]int),
+			}
+
+			// TCP check
+			alive, tcpLatency := s.tcpCheck(n.Server, n.ServerPort)
+			result.Alive = alive
+			result.TCPLatencyMs = tcpLatency
+
+			// Clash API delay check via temporary instance
+			delay := s.clashProxyDelay(port, "", n.Tag)
+			if delay > 0 {
+				result.Alive = true
+			}
+			result.Groups["Proxy"] = delay
+
+			mu.Lock()
+			results[n.Tag] = result
+			mu.Unlock()
+		}(node)
+	}
+
+	wg.Wait()
+	logger.Printf("[health-check] Health check completed for %d nodes", len(nodes))
+	return results, nil
+}
+
+func (s *Server) performHealthCheck(nodes []storage.Node) (map[string]*NodeHealthResult, string) {
+	results := make(map[string]*NodeHealthResult)
+	var mu sync.Mutex
+
+	isRunning := s.processManager.IsRunning()
+
+	// When sing-box is not running, try temporary instance for real proxy checks
+	if !isRunning {
+		tempResults, err := s.performHealthCheckWithTempSingbox(nodes)
+		if err != nil {
+			logger.Printf("Temporary sing-box health check failed, falling back to TCP: %v", err)
+		} else {
+			return tempResults, "clash_api_temp"
+		}
+	}
+
+	mode := "tcp"
+	if isRunning {
+		mode = "clash_api"
+	}
+
+	settings := s.store.GetSettings()
+	filters := s.store.GetFilters()
+
+	// Semaphore for concurrency limit
+	sem := make(chan struct{}, 50)
+	var wg sync.WaitGroup
+
+	for _, node := range nodes {
+		wg.Add(1)
+		go func(n storage.Node) {
+			defer wg.Done()
+			sem <- struct{}{}
+			defer func() { <-sem }()
+
+			result := &NodeHealthResult{
+				Groups: make(map[string]int),
+			}
+
+			// TCP check
+			alive, tcpLatency := s.tcpCheck(n.Server, n.ServerPort)
+			result.Alive = alive
+			result.TCPLatencyMs = tcpLatency
+
+			// Clash API check
+			if isRunning {
+				// Check delay through each matching enabled filter
+				for _, filter := range filters {
+					if !filter.Enabled {
+						continue
+					}
+					if matchFilter(n, filter) {
+						delay := s.clashProxyDelay(settings.ClashAPIPort, settings.ClashAPISecret, n.Tag)
+						if delay > 0 {
+							result.Alive = true
+						}
+						result.Groups[filter.Name] = delay
+					}
+				}
+
+				// Also check via main Proxy group
+				delay := s.clashProxyDelay(settings.ClashAPIPort, settings.ClashAPISecret, n.Tag)
+				if delay > 0 {
+					result.Alive = true
+					result.Groups["Proxy"] = delay
+				}
+			}
+
+			mu.Lock()
+			results[n.Tag] = result
+			mu.Unlock()
+		}(node)
+	}
+
+	wg.Wait()
+	return results, mode
+}
+
+func (s *Server) healthCheckNodes(c *gin.Context) {
+	var req struct {
+		Tags []string `json:"tags"`
+	}
+	c.ShouldBindJSON(&req)
+
+	allNodes := s.store.GetAllNodes()
+
+	var nodes []storage.Node
+	if len(req.Tags) > 0 {
+		tagSet := make(map[string]bool)
+		for _, t := range req.Tags {
+			tagSet[t] = true
+		}
+		for _, n := range allNodes {
+			if tagSet[n.Tag] {
+				nodes = append(nodes, n)
+			}
+		}
+	} else {
+		nodes = allNodes
+	}
+
+	results, mode := s.performHealthCheck(nodes)
+	c.JSON(http.StatusOK, gin.H{"data": results, "mode": mode})
+}
+
+func (s *Server) healthCheckSingleNode(c *gin.Context) {
+	var req struct {
+		Tag string `json:"tag" binding:"required"`
+	}
+
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	allNodes := s.store.GetAllNodes()
+	var nodes []storage.Node
+	for _, n := range allNodes {
+		if n.Tag == req.Tag {
+			nodes = append(nodes, n)
+			break
+		}
+	}
+
+	if len(nodes) == 0 {
+		c.JSON(http.StatusNotFound, gin.H{"error": "node not found"})
+		return
+	}
+
+	results, mode := s.performHealthCheck(nodes)
+	c.JSON(http.StatusOK, gin.H{"data": results, "mode": mode})
+}
+
 // ==================== Manual Node API ====================
 
 func (s *Server) getManualNodes(c *gin.Context) {
@@ -1357,7 +2050,8 @@ func (s *Server) addManualNode(c *gin.Context) {
 
 func (s *Server) addManualNodesBulk(c *gin.Context) {
 	var req struct {
-		Nodes []storage.ManualNode `json:"nodes" binding:"required"`
+		Nodes    []storage.ManualNode `json:"nodes" binding:"required"`
+		GroupTag string               `json:"group_tag"`
 	}
 
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -1367,6 +2061,9 @@ func (s *Server) addManualNodesBulk(c *gin.Context) {
 
 	for i := range req.Nodes {
 		req.Nodes[i].ID = uuid.New().String()
+		if req.GroupTag != "" && req.Nodes[i].GroupTag == "" {
+			req.Nodes[i].GroupTag = req.GroupTag
+		}
 		if err := s.store.AddManualNode(req.Nodes[i]); err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 			return
@@ -1380,6 +2077,22 @@ func (s *Server) addManualNodesBulk(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{"data": req.Nodes})
+}
+
+func (s *Server) getManualNodeTags(c *gin.Context) {
+	nodes := s.store.GetManualNodes()
+	tagSet := make(map[string]bool)
+	for _, mn := range nodes {
+		if mn.GroupTag != "" {
+			tagSet[mn.GroupTag] = true
+		}
+	}
+	tags := make([]string, 0, len(tagSet))
+	for t := range tagSet {
+		tags = append(tags, t)
+	}
+	sort.Strings(tags)
+	c.JSON(http.StatusOK, gin.H{"data": tags})
 }
 
 func (s *Server) updateManualNode(c *gin.Context) {
@@ -1421,6 +2134,41 @@ func (s *Server) deleteManualNode(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{"message": "Deleted successfully"})
+}
+
+func (s *Server) exportManualNodes(c *gin.Context) {
+	var req struct {
+		IDs []string `json:"ids"`
+	}
+	_ = c.ShouldBindJSON(&req)
+
+	nodes := s.store.GetManualNodes()
+
+	// If specific IDs provided, filter
+	if len(req.IDs) > 0 {
+		idSet := make(map[string]bool, len(req.IDs))
+		for _, id := range req.IDs {
+			idSet[id] = true
+		}
+		filtered := make([]storage.ManualNode, 0, len(req.IDs))
+		for _, mn := range nodes {
+			if idSet[mn.ID] {
+				filtered = append(filtered, mn)
+			}
+		}
+		nodes = filtered
+	}
+
+	urls := make([]string, 0, len(nodes))
+	for _, mn := range nodes {
+		u, err := parser.SerializeNode(&mn.Node)
+		if err != nil {
+			continue
+		}
+		urls = append(urls, u)
+	}
+
+	c.JSON(http.StatusOK, gin.H{"data": urls})
 }
 
 // ==================== Kernel Management API ====================
@@ -1475,4 +2223,140 @@ func (s *Server) startKernelDownload(c *gin.Context) {
 func (s *Server) getKernelProgress(c *gin.Context) {
 	progress := s.kernelManager.GetProgress()
 	c.JSON(http.StatusOK, gin.H{"data": progress})
+}
+
+// ==================== Proxy Group Management (Clash API) ====================
+
+func (s *Server) getProxyGroups(c *gin.Context) {
+	if !s.processManager.IsRunning() {
+		c.JSON(http.StatusOK, gin.H{"data": nil})
+		return
+	}
+
+	settings := s.store.GetSettings()
+	if settings.ClashAPIPort == 0 {
+		c.JSON(http.StatusOK, gin.H{"data": nil})
+		return
+	}
+
+	client := &http.Client{Timeout: 5 * time.Second}
+	url := fmt.Sprintf("http://127.0.0.1:%d/proxies", settings.ClashAPIPort)
+	req, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	if settings.ClashAPISecret != "" {
+		req.Header.Set("Authorization", "Bearer "+settings.ClashAPISecret)
+	}
+
+	resp, err := client.Do(req)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to connect to Clash API: " + err.Error()})
+		return
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	var clashResp struct {
+		Proxies map[string]struct {
+			Type    string   `json:"type"`
+			Now     string   `json:"now"`
+			All     []string `json:"all"`
+			History []struct {
+				Delay int `json:"delay"`
+			} `json:"history"`
+		} `json:"proxies"`
+	}
+	if err := json.Unmarshal(body, &clashResp); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to parse Clash API response: " + err.Error()})
+		return
+	}
+
+	type ProxyGroup struct {
+		Name string   `json:"name"`
+		Type string   `json:"type"`
+		Now  string   `json:"now"`
+		All  []string `json:"all"`
+	}
+
+	var groups []ProxyGroup
+	for name, proxy := range clashResp.Proxies {
+		if proxy.Type == "Selector" || proxy.Type == "selector" {
+			groups = append(groups, ProxyGroup{
+				Name: name,
+				Type: proxy.Type,
+				Now:  proxy.Now,
+				All:  proxy.All,
+			})
+		}
+	}
+
+	// Sort: "Proxy" first, then alphabetical
+	sort.Slice(groups, func(i, j int) bool {
+		if groups[i].Name == "Proxy" {
+			return true
+		}
+		if groups[j].Name == "Proxy" {
+			return false
+		}
+		return groups[i].Name < groups[j].Name
+	})
+
+	c.JSON(http.StatusOK, gin.H{"data": groups})
+}
+
+func (s *Server) switchProxyGroup(c *gin.Context) {
+	if !s.processManager.IsRunning() {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "sing-box is not running"})
+		return
+	}
+
+	groupName := c.Param("name")
+	var req struct {
+		Name string `json:"name" binding:"required"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	settings := s.store.GetSettings()
+	if settings.ClashAPIPort == 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Clash API port is not configured"})
+		return
+	}
+
+	client := &http.Client{Timeout: 5 * time.Second}
+	reqBody, _ := json.Marshal(map[string]string{"name": req.Name})
+	url := fmt.Sprintf("http://127.0.0.1:%d/proxies/%s", settings.ClashAPIPort, groupName)
+	httpReq, err := http.NewRequest("PUT", url, strings.NewReader(string(reqBody)))
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	httpReq.Header.Set("Content-Type", "application/json")
+	if settings.ClashAPISecret != "" {
+		httpReq.Header.Set("Authorization", "Bearer "+settings.ClashAPISecret)
+	}
+
+	resp, err := client.Do(httpReq)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to connect to Clash API: " + err.Error()})
+		return
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusNoContent && resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Clash API error: " + string(body)})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": "Proxy switched"})
 }

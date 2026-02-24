@@ -359,7 +359,7 @@ export default function Settings() {
 
   return (
     <div className="space-y-6">
-      <div className="flex justify-between items-center">
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
         <h1 className="text-2xl font-bold text-gray-800 dark:text-white">Settings</h1>
         <Button
           color="primary"
@@ -378,7 +378,7 @@ export default function Settings() {
         </CardHeader>
         <CardBody className="space-y-4">
           {/* Kernel Status */}
-          <div className="flex items-center justify-between p-4 rounded-lg bg-default-100">
+          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 p-4 rounded-lg bg-default-100">
             <div className="flex items-center gap-3">
               {kernelInfo?.installed ? (
                 <>
@@ -438,28 +438,48 @@ export default function Settings() {
           {/* Mixed Inbound */}
           <div>
             <h3 className="font-medium mb-2">Mixed (HTTP+SOCKS5)</h3>
-            <Input
-              type="number"
-              label="Port"
-              placeholder="2080"
-              description="HTTP+SOCKS5 on one port. Set to 0 to disable."
-              value={String(formData.mixed_port)}
-              onChange={(e) => setFormData({ ...formData, mixed_port: parseInt(e.target.value) || 0 })}
-            />
+            <div className="space-y-3">
+              <div className="flex flex-col sm:flex-row gap-3">
+                <Input
+                  type="number"
+                  label="Port"
+                  placeholder="2080"
+                  description="HTTP+SOCKS5 on one port. Set to 0 to disable."
+                  value={String(formData.mixed_port)}
+                  onChange={(e) => setFormData({ ...formData, mixed_port: parseInt(e.target.value) || 0 })}
+                />
+                <Input
+                  label="Address"
+                  placeholder="example.com"
+                  description="Server address for proxy link"
+                  value={formData.mixed_address || ''}
+                  onChange={(e) => setFormData({ ...formData, mixed_address: e.target.value })}
+                />
+              </div>
+            </div>
           </div>
 
           {/* SOCKS5 Inbound */}
           <div className="pt-4 border-t border-divider">
             <h3 className="font-medium mb-2">SOCKS5</h3>
             <div className="space-y-3">
-              <Input
-                type="number"
-                label="Port"
-                placeholder="0"
-                description="Set to 0 to disable"
-                value={String(formData.socks_port)}
-                onChange={(e) => setFormData({ ...formData, socks_port: parseInt(e.target.value) || 0 })}
-              />
+              <div className="flex flex-col sm:flex-row gap-3">
+                <Input
+                  type="number"
+                  label="Port"
+                  placeholder="0"
+                  description="Set to 0 to disable"
+                  value={String(formData.socks_port)}
+                  onChange={(e) => setFormData({ ...formData, socks_port: parseInt(e.target.value) || 0 })}
+                />
+                <Input
+                  label="Address"
+                  placeholder="example.com"
+                  description="Server address for proxy link"
+                  value={formData.socks_address || ''}
+                  onChange={(e) => setFormData({ ...formData, socks_address: e.target.value })}
+                />
+              </div>
               {formData.socks_port > 0 && (
                 <>
                   <div className="flex items-center justify-between">
@@ -471,7 +491,7 @@ export default function Settings() {
                     />
                   </div>
                   {formData.socks_auth && (
-                    <div className="flex gap-3">
+                    <div className="flex flex-col sm:flex-row gap-3">
                       <Input
                         label="Username"
                         size="sm"
@@ -496,14 +516,23 @@ export default function Settings() {
           <div className="pt-4 border-t border-divider">
             <h3 className="font-medium mb-2">HTTP</h3>
             <div className="space-y-3">
-              <Input
-                type="number"
-                label="Port"
-                placeholder="0"
-                description="Set to 0 to disable"
-                value={String(formData.http_port)}
-                onChange={(e) => setFormData({ ...formData, http_port: parseInt(e.target.value) || 0 })}
-              />
+              <div className="flex flex-col sm:flex-row gap-3">
+                <Input
+                  type="number"
+                  label="Port"
+                  placeholder="0"
+                  description="Set to 0 to disable"
+                  value={String(formData.http_port)}
+                  onChange={(e) => setFormData({ ...formData, http_port: parseInt(e.target.value) || 0 })}
+                />
+                <Input
+                  label="Address"
+                  placeholder="example.com"
+                  description="Server address for proxy link"
+                  value={formData.http_address || ''}
+                  onChange={(e) => setFormData({ ...formData, http_address: e.target.value })}
+                />
+              </div>
               {formData.http_port > 0 && (
                 <>
                   <div className="flex items-center justify-between">
@@ -515,7 +544,7 @@ export default function Settings() {
                     />
                   </div>
                   {formData.http_auth && (
-                    <div className="flex gap-3">
+                    <div className="flex flex-col sm:flex-row gap-3">
                       <Input
                         label="Username"
                         size="sm"
@@ -540,14 +569,23 @@ export default function Settings() {
           <div className="pt-4 border-t border-divider">
             <h3 className="font-medium mb-2">Shadowsocks</h3>
             <div className="space-y-3">
-              <Input
-                type="number"
-                label="Port"
-                placeholder="0"
-                description="Set to 0 to disable"
-                value={String(formData.shadowsocks_port)}
-                onChange={(e) => setFormData({ ...formData, shadowsocks_port: parseInt(e.target.value) || 0 })}
-              />
+              <div className="flex flex-col sm:flex-row gap-3">
+                <Input
+                  type="number"
+                  label="Port"
+                  placeholder="0"
+                  description="Set to 0 to disable"
+                  value={String(formData.shadowsocks_port)}
+                  onChange={(e) => setFormData({ ...formData, shadowsocks_port: parseInt(e.target.value) || 0 })}
+                />
+                <Input
+                  label="Address"
+                  placeholder="example.com"
+                  description="Server address for proxy link"
+                  value={formData.shadowsocks_address || ''}
+                  onChange={(e) => setFormData({ ...formData, shadowsocks_address: e.target.value })}
+                />
+              </div>
               {formData.shadowsocks_port > 0 && (
                 <>
                   <Select
@@ -864,7 +902,7 @@ export default function Settings() {
             <p className="text-sm text-gray-500 mb-4">
               Installing the background service allows the sbm manager to run in the background. The web management interface remains accessible after closing the terminal. The service will auto-start on boot and automatically restart after crashes.
             </p>
-            <div className="flex gap-2">
+            <div className="flex flex-wrap gap-2">
               {daemonStatus?.installed ? (
                 <>
                   <Button

@@ -1,12 +1,14 @@
 import { useEffect, useState } from 'react';
-import { Card, CardBody, CardHeader, Button, Chip, Modal, ModalContent, ModalHeader, ModalBody, ModalFooter, Tooltip } from '@nextui-org/react';
-import { Play, Square, RefreshCw, Cpu, HardDrive, Wifi, Info, Activity } from 'lucide-react';
+import { Card, CardBody, CardHeader, Button, Chip, Modal, ModalContent, ModalHeader, ModalBody, ModalFooter, Tooltip, Select, SelectItem } from '@nextui-org/react';
+import { Play, Square, RefreshCw, Cpu, HardDrive, Wifi, Info, Activity, Copy, ClipboardCheck, Link, Globe } from 'lucide-react';
 import { useStore } from '../store';
 import { serviceApi, configApi } from '../api';
 import { toast } from '../components/Toast';
 
 export default function Dashboard() {
-  const { serviceStatus, subscriptions, systemInfo, fetchServiceStatus, fetchSubscriptions, fetchSystemInfo } = useStore();
+  const { serviceStatus, subscriptions, manualNodes, systemInfo, settings, proxyGroups, fetchServiceStatus, fetchSubscriptions, fetchManualNodes, fetchSystemInfo, fetchSettings, fetchUnsupportedNodes, fetchProxyGroups, switchProxy } = useStore();
+
+  const [copiedLink, setCopiedLink] = useState<string | null>(null);
 
   // Error modal state
   const [errorModal, setErrorModal] = useState<{
@@ -32,12 +34,16 @@ export default function Dashboard() {
   useEffect(() => {
     fetchServiceStatus();
     fetchSubscriptions();
+    fetchManualNodes();
     fetchSystemInfo();
+    fetchSettings();
+    fetchProxyGroups();
 
-    // Refresh status and system info every 5 seconds
+    // Refresh status, system info, and proxy groups every 5 seconds
     const interval = setInterval(() => {
       fetchServiceStatus();
       fetchSystemInfo();
+      fetchProxyGroups();
     }, 5000);
     return () => clearInterval(interval);
   }, []);
@@ -74,16 +80,76 @@ export default function Dashboard() {
 
   const handleApplyConfig = async () => {
     try {
-      await configApi.apply();
+      const res = await configApi.apply();
       await fetchServiceStatus();
-      toast.success('Configuration applied');
+      await fetchUnsupportedNodes();
+      if (res.data.warning) {
+        toast.info(res.data.warning);
+      } else {
+        toast.success('Configuration applied');
+      }
     } catch (error) {
       showError('Failed to apply configuration', error);
     }
   };
 
-  const totalNodes = subscriptions.reduce((sum, sub) => sum + sub.node_count, 0);
+  const handleCopyLink = async (key: string, link: string) => {
+    try {
+      await navigator.clipboard.writeText(link);
+      setCopiedLink(key);
+      setTimeout(() => setCopiedLink(null), 2000);
+    } catch (error) {
+      console.error('Failed to copy:', error);
+    }
+  };
+
+  const proxyLinks: { key: string; label: string; link: string }[] = [];
+  if (settings) {
+    if (settings.mixed_port > 0 && settings.mixed_address) {
+      proxyLinks.push({
+        key: 'mixed-socks',
+        label: 'Mixed SOCKS5',
+        link: `socks5://${settings.mixed_address}:${settings.mixed_port}`,
+      });
+      proxyLinks.push({
+        key: 'mixed-http',
+        label: 'Mixed HTTP',
+        link: `http://${settings.mixed_address}:${settings.mixed_port}`,
+      });
+    }
+    if (settings.socks_port > 0 && settings.socks_address) {
+      const auth = settings.socks_auth && settings.socks_username
+        ? `${settings.socks_username}:${settings.socks_password}@`
+        : '';
+      proxyLinks.push({
+        key: 'socks',
+        label: 'SOCKS5',
+        link: `socks5://${auth}${settings.socks_address}:${settings.socks_port}`,
+      });
+    }
+    if (settings.http_port > 0 && settings.http_address) {
+      const auth = settings.http_auth && settings.http_username
+        ? `${settings.http_username}:${settings.http_password}@`
+        : '';
+      proxyLinks.push({
+        key: 'http',
+        label: 'HTTP',
+        link: `http://${auth}${settings.http_address}:${settings.http_port}`,
+      });
+    }
+    if (settings.shadowsocks_port > 0 && settings.shadowsocks_address && settings.shadowsocks_password) {
+      const encoded = btoa(`${settings.shadowsocks_method}:${settings.shadowsocks_password}`);
+      proxyLinks.push({
+        key: 'ss',
+        label: 'Shadowsocks',
+        link: `ss://${encoded}@${settings.shadowsocks_address}:${settings.shadowsocks_port}#SBM`,
+      });
+    }
+  }
+
+  const totalNodes = subscriptions.reduce((sum, sub) => sum + sub.node_count, 0) + manualNodes.length;
   const enabledSubs = subscriptions.filter(sub => sub.enabled).length;
+  const enabledManualNodes = manualNodes.filter(mn => mn.enabled).length;
 
   return (
     <div className="space-y-6">
@@ -91,7 +157,7 @@ export default function Dashboard() {
 
       {/* Service status card */}
       <Card>
-        <CardHeader className="flex justify-between items-center">
+        <CardHeader className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
           <div className="flex items-center gap-3">
             <h2 className="text-lg font-semibold">sing-box Service</h2>
             <Chip
@@ -102,7 +168,7 @@ export default function Dashboard() {
               {serviceStatus?.running ? 'Running' : 'Stopped'}
             </Chip>
           </div>
-          <div className="flex gap-2">
+          <div className="flex flex-wrap gap-2">
             {serviceStatus?.running ? (
               <>
                 <Button
@@ -144,7 +210,7 @@ export default function Dashboard() {
           </div>
         </CardHeader>
         <CardBody>
-          <div className="grid grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
             <div>
               <p className="text-sm text-gray-500">Version</p>
               <div className="flex items-center gap-1">
@@ -179,8 +245,96 @@ export default function Dashboard() {
         </CardBody>
       </Card>
 
+      {/* Active Proxy */}
+      {serviceStatus?.running && proxyGroups.length > 0 && (
+        <Card>
+          <CardHeader>
+            <div className="flex items-center gap-2">
+              <Globe className="w-5 h-5" />
+              <h2 className="text-lg font-semibold">Active Proxy</h2>
+            </div>
+          </CardHeader>
+          <CardBody>
+            <div className="space-y-3">
+              {proxyGroups.map((group) => (
+                <div
+                  key={group.name}
+                  className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 p-3 bg-gray-50 dark:bg-gray-800 rounded-lg"
+                >
+                  <div className="flex items-center gap-2 min-w-0">
+                    <span className="font-medium text-sm whitespace-nowrap">{group.name}</span>
+                  </div>
+                  <Select
+                    size="sm"
+                    selectedKeys={[group.now]}
+                    onChange={(e) => {
+                      if (e.target.value) {
+                        switchProxy(group.name, e.target.value);
+                      }
+                    }}
+                    className="w-full sm:w-64"
+                    aria-label={`Select proxy for ${group.name}`}
+                  >
+                    {group.all.map((item) => (
+                      <SelectItem key={item}>{item}</SelectItem>
+                    ))}
+                  </Select>
+                </div>
+              ))}
+            </div>
+          </CardBody>
+        </Card>
+      )}
+
+      {/* Proxy Links */}
+      {proxyLinks.length === 0 ? (
+        <Card>
+          <CardBody className="flex flex-row items-center gap-2 py-3">
+            <Link className="w-5 h-5 text-gray-400" />
+            <span className="font-semibold">Proxy Links</span>
+            <span className="text-gray-500 text-sm">— Set proxy addresses in Settings to generate links.</span>
+          </CardBody>
+        </Card>
+      ) : (
+        <Card>
+          <CardHeader>
+            <div className="flex items-center gap-2">
+              <Link className="w-5 h-5" />
+              <h2 className="text-lg font-semibold">Proxy Links</h2>
+            </div>
+          </CardHeader>
+          <CardBody>
+            <div className="space-y-2">
+              {proxyLinks.map((item) => (
+                <div
+                  key={item.key}
+                  className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 p-3 bg-gray-50 dark:bg-gray-800 rounded-lg"
+                >
+                  <div className="flex items-center gap-3 min-w-0 w-full sm:w-auto">
+                    <Chip size="sm" variant="flat" color="primary">{item.label}</Chip>
+                    <code className="text-sm text-gray-600 dark:text-gray-300 truncate">{item.link}</code>
+                  </div>
+                  <Button
+                    size="sm"
+                    variant="light"
+                    isIconOnly
+                    onPress={() => handleCopyLink(item.key, item.link)}
+                  >
+                    {copiedLink === item.key ? (
+                      <ClipboardCheck className="w-4 h-4 text-success" />
+                    ) : (
+                      <Copy className="w-4 h-4" />
+                    )}
+                  </Button>
+                </div>
+              ))}
+            </div>
+          </CardBody>
+        </Card>
+      )}
+
       {/* Statistics cards */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
         <Card>
           <CardBody className="flex flex-row items-center gap-4">
             <div className="p-3 bg-blue-100 dark:bg-blue-900 rounded-lg">
@@ -189,6 +343,18 @@ export default function Dashboard() {
             <div>
               <p className="text-sm text-gray-500">Subscriptions</p>
               <p className="text-2xl font-bold">{enabledSubs} / {subscriptions.length}</p>
+            </div>
+          </CardBody>
+        </Card>
+
+        <Card>
+          <CardBody className="flex flex-row items-center gap-4">
+            <div className="p-3 bg-cyan-100 dark:bg-cyan-900 rounded-lg">
+              <HardDrive className="w-6 h-6 text-cyan-600 dark:text-cyan-300" />
+            </div>
+            <div>
+              <p className="text-sm text-gray-500">Manual Nodes</p>
+              <p className="text-2xl font-bold">{enabledManualNodes} / {manualNodes.length}</p>
             </div>
           </CardBody>
         </Card>
@@ -263,7 +429,7 @@ export default function Dashboard() {
               {subscriptions.map((sub) => (
                 <div
                   key={sub.id}
-                  className="flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-800 rounded-lg"
+                  className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 p-3 bg-gray-50 dark:bg-gray-800 rounded-lg"
                 >
                   <div className="flex items-center gap-3">
                     <Chip
@@ -279,6 +445,43 @@ export default function Dashboard() {
                   </div>
                   <span className="text-sm text-gray-400">
                     Updated {new Date(sub.updated_at).toLocaleString()}
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
+        </CardBody>
+      </Card>
+
+      {/* Manual nodes list preview */}
+      <Card>
+        <CardHeader>
+          <h2 className="text-lg font-semibold">Manual Nodes Overview</h2>
+        </CardHeader>
+        <CardBody>
+          {manualNodes.length === 0 ? (
+            <p className="text-gray-500 text-center py-4">No manual nodes yet. Go to the Nodes page to add one.</p>
+          ) : (
+            <div className="space-y-3">
+              {manualNodes.map((mn) => (
+                <div
+                  key={mn.id}
+                  className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 p-3 bg-gray-50 dark:bg-gray-800 rounded-lg"
+                >
+                  <div className="flex items-center gap-3">
+                    <Chip
+                      size="sm"
+                      color={mn.enabled ? 'success' : 'default'}
+                      variant="dot"
+                    >
+                      {mn.node.country_emoji && `${mn.node.country_emoji} `}{mn.node.tag}
+                    </Chip>
+                    <span className="text-sm text-gray-500">
+                      {mn.node.type}
+                    </span>
+                  </div>
+                  <span className="text-sm text-gray-400 truncate max-w-full">
+                    {mn.node.server}:{mn.node.server_port}
                   </span>
                 </div>
               ))}
