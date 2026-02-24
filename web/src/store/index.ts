@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { subscriptionApi, filterApi, ruleApi, ruleGroupApi, settingsApi, serviceApi, nodeApi, manualNodeApi, monitorApi, proxyApi } from '../api';
+import { subscriptionApi, filterApi, ruleApi, ruleGroupApi, settingsApi, serviceApi, nodeApi, manualNodeApi, monitorApi, proxyApi, probeApi } from '../api';
 import { toast } from '../components/Toast';
 
 export interface NodeHealthResult {
@@ -12,8 +12,8 @@ export interface NodeSiteCheckResult {
   sites: Record<string, number>;
 }
 
-export type HealthCheckMode = 'clash_api' | 'clash_api_temp';
-export type SiteCheckMode = 'clash_api' | 'clash_api_temp';
+export type HealthCheckMode = 'clash_api' | 'clash_api_temp' | 'probe';
+export type SiteCheckMode = 'clash_api' | 'clash_api_temp' | 'probe';
 
 export interface TimedHealthMeasurement {
   timestamp: string;
@@ -71,8 +71,8 @@ function loadMeasurementCache(): MeasurementCache {
     return {
       healthResults: isObject(parsed.healthResults) ? parsed.healthResults : {},
       siteCheckResults: isObject(parsed.siteCheckResults) ? parsed.siteCheckResults : {},
-      healthMode: parsed.healthMode === 'clash_api' || parsed.healthMode === 'clash_api_temp' ? parsed.healthMode : null,
-      siteCheckMode: parsed.siteCheckMode === 'clash_api' || parsed.siteCheckMode === 'clash_api_temp' ? parsed.siteCheckMode : null,
+      healthMode: ['clash_api', 'clash_api_temp', 'probe'].includes(parsed.healthMode) ? parsed.healthMode : null,
+      siteCheckMode: ['clash_api', 'clash_api_temp', 'probe'].includes(parsed.siteCheckMode) ? parsed.siteCheckMode : null,
       healthHistory: isObject(parsed.healthHistory) ? parsed.healthHistory : {},
       siteCheckHistory: isObject(parsed.siteCheckHistory) ? parsed.siteCheckHistory : {},
     };
@@ -267,6 +267,14 @@ export interface ProxyGroup {
   all: string[];
 }
 
+export interface ProbeStatus {
+  running: boolean;
+  port: number;
+  pid: number;
+  node_count: number;
+  started_at?: string;
+}
+
 export interface ProcessStats {
   pid: number;
   cpu_percent: number;
@@ -289,6 +297,7 @@ interface AppState {
   defaultRuleGroups: RuleGroup[];
   settings: Settings | null;
   serviceStatus: ServiceStatus | null;
+  probeStatus: ProbeStatus | null;
   systemInfo: SystemInfo | null;
 
   // Group tags
@@ -326,6 +335,8 @@ interface AppState {
   fetchDefaultRuleGroups: () => Promise<void>;
   fetchSettings: () => Promise<void>;
   fetchServiceStatus: () => Promise<void>;
+  fetchProbeStatus: () => Promise<void>;
+  stopProbe: () => Promise<void>;
   fetchSystemInfo: () => Promise<void>;
   fetchManualNodeTags: () => Promise<void>;
   setSelectedGroupTag: (tag: string | null) => void;
@@ -389,6 +400,7 @@ export const useStore = create<AppState>((set, get) => ({
   defaultRuleGroups: [],
   settings: null,
   serviceStatus: null,
+  probeStatus: null,
   systemInfo: null,
   manualNodeTags: [],
   selectedGroupTag: null,
@@ -484,6 +496,26 @@ export const useStore = create<AppState>((set, get) => ({
       set({ serviceStatus: res.data.data });
     } catch (error) {
       console.error('Failed to fetch service status:', error);
+    }
+  },
+
+  fetchProbeStatus: async () => {
+    try {
+      const res = await probeApi.status();
+      set({ probeStatus: res.data.data });
+    } catch (error) {
+      console.error('Failed to fetch probe status:', error);
+    }
+  },
+
+  stopProbe: async () => {
+    try {
+      await probeApi.stop();
+      set({ probeStatus: { running: false, port: 0, pid: 0, node_count: 0 } });
+      toast.success('Probe stopped');
+    } catch (error: any) {
+      console.error('Failed to stop probe:', error);
+      toast.error(error.response?.data?.error || 'Failed to stop probe');
     }
   },
 

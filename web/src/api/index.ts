@@ -131,6 +131,12 @@ export const kernelApi = {
   getProgress: () => api.get('/kernel/progress'),
 };
 
+// Probe API
+export const probeApi = {
+  status: () => api.get('/probe/status'),
+  stop: () => api.post('/probe/stop'),
+};
+
 // Proxy group API (Clash API proxy)
 export const proxyApi = {
   getGroups: () => api.get('/proxy/groups'),
