@@ -110,6 +110,23 @@ type Settings struct {
 	TunEnabled bool `json:"tun_enabled"` // TUN mode
 	AllowLAN   bool `json:"allow_lan"`   // allow LAN access
 
+	// SOCKS5 inbound
+	SocksPort     int    `json:"socks_port"`
+	SocksAuth     bool   `json:"socks_auth"`
+	SocksUsername string `json:"socks_username,omitempty"`
+	SocksPassword string `json:"socks_password,omitempty"`
+
+	// HTTP inbound
+	HttpPort     int    `json:"http_port"`
+	HttpAuth     bool   `json:"http_auth"`
+	HttpUsername string `json:"http_username,omitempty"`
+	HttpPassword string `json:"http_password,omitempty"`
+
+	// Shadowsocks inbound
+	ShadowsocksPort     int    `json:"shadowsocks_port"`
+	ShadowsocksMethod   string `json:"shadowsocks_method"`
+	ShadowsocksPassword string `json:"shadowsocks_password"`
+
 	// DNS configuration
 	ProxyDNS  string      `json:"proxy_dns"`        // proxy DNS
 	DirectDNS string      `json:"direct_dns"`       // direct DNS
@@ -143,6 +160,10 @@ func DefaultSettings() *Settings {
 		MixedPort:            2080,
 		TunEnabled:           true,
 		AllowLAN:             false, // LAN access disabled by default
+		SocksPort:            0,     // disabled by default
+		HttpPort:             0,     // disabled by default
+		ShadowsocksPort:     0,     // disabled by default
+		ShadowsocksMethod:   "aes-256-gcm",
 		ProxyDNS:             "https://1.1.1.1/dns-query",
 		DirectDNS:            "https://dns.alidns.com/dns-query",
 		WebPort:              9090,
