@@ -12,10 +12,119 @@ export interface NodeSiteCheckResult {
   sites: Record<string, number>;
 }
 
+export type HealthCheckMode = 'clash_api' | 'clash_api_temp';
+export type SiteCheckMode = 'clash_api' | 'clash_api_temp';
+
+export interface TimedHealthMeasurement {
+  timestamp: string;
+  mode: HealthCheckMode | null;
+  result: NodeHealthResult;
+}
+
+export interface TimedSiteMeasurement {
+  timestamp: string;
+  mode: SiteCheckMode | null;
+  result: NodeSiteCheckResult;
+}
+
 export interface UnsupportedNodeInfo {
   tag: string;
   error: string;
   detected_at: string;
+}
+
+const MEASUREMENT_STORAGE_KEY = 'sbm.measurements.v1';
+const MAX_MEASUREMENTS_PER_NODE = 20;
+
+interface MeasurementCache {
+  healthResults: Record<string, NodeHealthResult>;
+  siteCheckResults: Record<string, NodeSiteCheckResult>;
+  healthMode: HealthCheckMode | null;
+  siteCheckMode: SiteCheckMode | null;
+  healthHistory: Record<string, TimedHealthMeasurement[]>;
+  siteCheckHistory: Record<string, TimedSiteMeasurement[]>;
+}
+
+const EMPTY_MEASUREMENT_CACHE: MeasurementCache = {
+  healthResults: {},
+  siteCheckResults: {},
+  healthMode: null,
+  siteCheckMode: null,
+  healthHistory: {},
+  siteCheckHistory: {},
+};
+
+function isObject(value: unknown): value is Record<string, any> {
+  return !!value && typeof value === 'object' && !Array.isArray(value);
+}
+
+function loadMeasurementCache(): MeasurementCache {
+  if (typeof window === 'undefined') return EMPTY_MEASUREMENT_CACHE;
+
+  try {
+    const raw = window.localStorage.getItem(MEASUREMENT_STORAGE_KEY);
+    if (!raw) return EMPTY_MEASUREMENT_CACHE;
+
+    const parsed = JSON.parse(raw);
+    if (!isObject(parsed)) return EMPTY_MEASUREMENT_CACHE;
+
+    return {
+      healthResults: isObject(parsed.healthResults) ? parsed.healthResults : {},
+      siteCheckResults: isObject(parsed.siteCheckResults) ? parsed.siteCheckResults : {},
+      healthMode: parsed.healthMode === 'clash_api' || parsed.healthMode === 'clash_api_temp' ? parsed.healthMode : null,
+      siteCheckMode: parsed.siteCheckMode === 'clash_api' || parsed.siteCheckMode === 'clash_api_temp' ? parsed.siteCheckMode : null,
+      healthHistory: isObject(parsed.healthHistory) ? parsed.healthHistory : {},
+      siteCheckHistory: isObject(parsed.siteCheckHistory) ? parsed.siteCheckHistory : {},
+    };
+  } catch {
+    return EMPTY_MEASUREMENT_CACHE;
+  }
+}
+
+function saveMeasurementCache(cache: MeasurementCache): void {
+  if (typeof window === 'undefined') return;
+
+  try {
+    window.localStorage.setItem(MEASUREMENT_STORAGE_KEY, JSON.stringify(cache));
+  } catch {
+    // Ignore quota or serialization errors.
+  }
+}
+
+function appendHealthHistory(
+  current: Record<string, TimedHealthMeasurement[]>,
+  updates: Record<string, NodeHealthResult>,
+  mode: HealthCheckMode | null
+): Record<string, TimedHealthMeasurement[]> {
+  if (!updates || Object.keys(updates).length === 0) return current;
+
+  const now = new Date().toISOString();
+  const next: Record<string, TimedHealthMeasurement[]> = { ...current };
+
+  for (const [tag, result] of Object.entries(updates)) {
+    const prev = next[tag] || [];
+    next[tag] = [{ timestamp: now, mode, result }, ...prev].slice(0, MAX_MEASUREMENTS_PER_NODE);
+  }
+
+  return next;
+}
+
+function appendSiteHistory(
+  current: Record<string, TimedSiteMeasurement[]>,
+  updates: Record<string, NodeSiteCheckResult>,
+  mode: SiteCheckMode | null
+): Record<string, TimedSiteMeasurement[]> {
+  if (!updates || Object.keys(updates).length === 0) return current;
+
+  const now = new Date().toISOString();
+  const next: Record<string, TimedSiteMeasurement[]> = { ...current };
+
+  for (const [tag, result] of Object.entries(updates)) {
+    const prev = next[tag] || [];
+    next[tag] = [{ timestamp: now, mode, result }, ...prev].slice(0, MAX_MEASUREMENTS_PER_NODE);
+  }
+
+  return next;
 }
 
 // Type definitions
@@ -187,13 +296,15 @@ interface AppState {
 
   // Health check state
   healthResults: Record<string, NodeHealthResult>;
-  healthMode: 'clash_api' | 'clash_api_temp' | 'tcp' | null;
+  healthMode: HealthCheckMode | null;
   healthChecking: boolean;
   healthCheckingNodes: string[];
+  healthHistory: Record<string, TimedHealthMeasurement[]>;
   siteCheckResults: Record<string, NodeSiteCheckResult>;
-  siteCheckMode: 'clash_api' | 'clash_api_temp' | null;
+  siteCheckMode: SiteCheckMode | null;
   siteChecking: boolean;
   siteCheckingNodes: string[];
+  siteCheckHistory: Record<string, TimedSiteMeasurement[]>;
 
   // Proxy groups (from Clash API)
   proxyGroups: ProxyGroup[];
@@ -265,6 +376,8 @@ interface AppState {
   switchProxy: (group: string, selected: string) => Promise<void>;
 }
 
+const measurementCache = loadMeasurementCache();
+
 export const useStore = create<AppState>((set, get) => ({
   subscriptions: [],
   manualNodes: [],
@@ -278,14 +391,16 @@ export const useStore = create<AppState>((set, get) => ({
   systemInfo: null,
   manualNodeTags: [],
   selectedGroupTag: null,
-  healthResults: {},
-  healthMode: null,
+  healthResults: measurementCache.healthResults,
+  healthMode: measurementCache.healthMode,
   healthChecking: false,
   healthCheckingNodes: [],
-  siteCheckResults: {},
-  siteCheckMode: null,
+  healthHistory: measurementCache.healthHistory,
+  siteCheckResults: measurementCache.siteCheckResults,
+  siteCheckMode: measurementCache.siteCheckMode,
   siteChecking: false,
   siteCheckingNodes: [],
+  siteCheckHistory: measurementCache.siteCheckHistory,
   proxyGroups: [],
   unsupportedNodes: [],
   loading: false,
@@ -722,9 +837,23 @@ export const useStore = create<AppState>((set, get) => ({
     set({ healthChecking: true });
     try {
       const res = await nodeApi.healthCheck(tags);
+      const updates = (res.data.data || {}) as Record<string, NodeHealthResult>;
+      const mode = (res.data.mode || null) as HealthCheckMode | null;
+      const state = get();
+      const healthResults = { ...state.healthResults, ...updates };
+      const healthHistory = appendHealthHistory(state.healthHistory, updates, mode);
       set({
-        healthResults: { ...get().healthResults, ...res.data.data },
-        healthMode: res.data.mode,
+        healthResults,
+        healthHistory,
+        healthMode: mode,
+      });
+      saveMeasurementCache({
+        healthResults,
+        siteCheckResults: state.siteCheckResults,
+        healthMode: mode,
+        siteCheckMode: state.siteCheckMode,
+        healthHistory,
+        siteCheckHistory: state.siteCheckHistory,
       });
       toast.success('Health check completed');
     } catch (error: any) {
@@ -739,9 +868,23 @@ export const useStore = create<AppState>((set, get) => ({
     set({ healthCheckingNodes: [...get().healthCheckingNodes, tag] });
     try {
       const res = await nodeApi.healthCheckSingle(tag);
+      const updates = (res.data.data || {}) as Record<string, NodeHealthResult>;
+      const mode = (res.data.mode || null) as HealthCheckMode | null;
+      const state = get();
+      const healthResults = { ...state.healthResults, ...updates };
+      const healthHistory = appendHealthHistory(state.healthHistory, updates, mode);
       set({
-        healthResults: { ...get().healthResults, ...res.data.data },
-        healthMode: res.data.mode,
+        healthResults,
+        healthHistory,
+        healthMode: mode,
+      });
+      saveMeasurementCache({
+        healthResults,
+        siteCheckResults: state.siteCheckResults,
+        healthMode: mode,
+        siteCheckMode: state.siteCheckMode,
+        healthHistory,
+        siteCheckHistory: state.siteCheckHistory,
       });
     } catch (error: any) {
       console.error('Failed to check node health:', error);
@@ -755,9 +898,23 @@ export const useStore = create<AppState>((set, get) => ({
     set({ siteChecking: true });
     try {
       const res = await nodeApi.siteCheck(tags, sites);
+      const updates = (res.data.data || {}) as Record<string, NodeSiteCheckResult>;
+      const mode = (res.data.mode || null) as SiteCheckMode | null;
+      const state = get();
+      const siteCheckResults = { ...state.siteCheckResults, ...updates };
+      const siteCheckHistory = appendSiteHistory(state.siteCheckHistory, updates, mode);
       set({
-        siteCheckResults: { ...get().siteCheckResults, ...res.data.data },
-        siteCheckMode: res.data.mode,
+        siteCheckResults,
+        siteCheckHistory,
+        siteCheckMode: mode,
+      });
+      saveMeasurementCache({
+        healthResults: state.healthResults,
+        siteCheckResults,
+        healthMode: state.healthMode,
+        siteCheckMode: mode,
+        healthHistory: state.healthHistory,
+        siteCheckHistory,
       });
       toast.success('Site check completed');
     } catch (error: any) {
@@ -774,9 +931,23 @@ export const useStore = create<AppState>((set, get) => ({
     set({ siteCheckingNodes: [...get().siteCheckingNodes, tag] });
     try {
       const res = await nodeApi.siteCheck([tag], sites);
+      const updates = (res.data.data || {}) as Record<string, NodeSiteCheckResult>;
+      const mode = (res.data.mode || null) as SiteCheckMode | null;
+      const state = get();
+      const siteCheckResults = { ...state.siteCheckResults, ...updates };
+      const siteCheckHistory = appendSiteHistory(state.siteCheckHistory, updates, mode);
       set({
-        siteCheckResults: { ...get().siteCheckResults, ...res.data.data },
-        siteCheckMode: res.data.mode,
+        siteCheckResults,
+        siteCheckHistory,
+        siteCheckMode: mode,
+      });
+      saveMeasurementCache({
+        healthResults: state.healthResults,
+        siteCheckResults,
+        healthMode: state.healthMode,
+        siteCheckMode: mode,
+        healthHistory: state.healthHistory,
+        siteCheckHistory,
       });
     } catch (error: any) {
       console.error('Failed to check node sites:', error);

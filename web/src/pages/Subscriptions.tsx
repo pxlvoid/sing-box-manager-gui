@@ -35,7 +35,7 @@ import { Plus, RefreshCw, Trash2, Globe, Server, Pencil, Link, Filter as FilterI
 import { useStore } from '../store';
 import { nodeApi, manualNodeApi, subscriptionApi } from '../api';
 import { toast } from '../components/Toast';
-import type { Subscription, ManualNode, Node, Filter, NodeHealthResult, NodeSiteCheckResult, UnsupportedNodeInfo } from '../store';
+import type { Subscription, ManualNode, Node, Filter, NodeHealthResult, NodeSiteCheckResult, UnsupportedNodeInfo, HealthCheckMode } from '../store';
 
 function formatBytes(bytes: number): string {
   if (bytes === 0) return '0 B';
@@ -135,15 +135,15 @@ interface SortConfig {
   direction: SortDirection;
 }
 
-function getNodeLatency(tag: string, healthResults: Record<string, NodeHealthResult>, healthMode: string | null): number | null {
+function getNodeLatency(tag: string, healthResults: Record<string, NodeHealthResult>, healthMode: HealthCheckMode | null): number | null {
   const result = healthResults[tag];
   if (!result) return null;
   if ((healthMode === 'clash_api' || healthMode === 'clash_api_temp') && Object.keys(result.groups).length > 0) {
     const delays = Object.values(result.groups).filter(d => d > 0);
-    if (delays.length === 0) return result.alive ? 0 : -1;
+    if (delays.length === 0) return -1;
     return Math.min(...delays);
   }
-  return result.alive ? result.tcp_latency_ms : -1;
+  return -1;
 }
 
 function shortSiteLabel(site: string): string {
@@ -2702,12 +2702,13 @@ export default function Subscriptions() {
 function NodeHealthChips({ tag, healthResults, healthMode, siteCheckResults, siteTargets }: {
   tag: string;
   healthResults: Record<string, NodeHealthResult>;
-  healthMode: 'clash_api' | 'clash_api_temp' | 'tcp' | null;
+  healthMode: HealthCheckMode | null;
   siteCheckResults: Record<string, NodeSiteCheckResult>;
   siteTargets: string[];
 }) {
   const result = healthResults[tag];
   const siteResult = siteCheckResults[tag];
+  const isClashMode = healthMode === 'clash_api' || healthMode === 'clash_api_temp';
   if (!result && !siteResult) return null;
 
   const orderedSiteEntries = siteResult
@@ -2718,7 +2719,7 @@ function NodeHealthChips({ tag, healthResults, healthMode, siteCheckResults, sit
     <>
       {result && (
         <>
-          {(healthMode === 'clash_api' || healthMode === 'clash_api_temp') && Object.keys(result.groups).length > 0 ? (
+          {isClashMode && Object.keys(result.groups).length > 0 ? (
             <div className="flex flex-wrap gap-1 mt-1">
               {Object.entries(result.groups).map(([group, delay]) => (
                 <Chip
@@ -2733,12 +2734,8 @@ function NodeHealthChips({ tag, healthResults, healthMode, siteCheckResults, sit
             </div>
           ) : (
             <div className="flex flex-wrap gap-1 mt-1">
-              <Chip
-                size="sm"
-                variant="flat"
-                color={result.alive ? (result.tcp_latency_ms < 300 ? 'success' : 'warning') : 'danger'}
-              >
-                {result.alive ? `TCP: ${result.tcp_latency_ms}ms` : 'Timeout'}
+              <Chip size="sm" variant="flat" color={result.alive ? 'success' : 'danger'}>
+                {result.alive ? 'Proxy: OK' : 'Proxy: Fail'}
               </Chip>
             </div>
           )}
@@ -2771,7 +2768,7 @@ interface SubscriptionCardProps {
   onToggle: () => void;
   loading: boolean;
   healthResults: Record<string, NodeHealthResult>;
-  healthMode: 'clash_api' | 'clash_api_temp' | 'tcp' | null;
+  healthMode: HealthCheckMode | null;
   healthCheckingNodes: string[];
   onHealthCheck: (tag: string) => void;
   siteCheckResults: Record<string, NodeSiteCheckResult>;

@@ -1716,17 +1716,6 @@ func matchFilter(node storage.Node, filter storage.Filter) bool {
 	return true
 }
 
-func (s *Server) tcpCheck(server string, port int) (alive bool, latencyMs int64) {
-	addr := net.JoinHostPort(server, strconv.Itoa(port))
-	start := time.Now()
-	conn, err := net.DialTimeout("tcp", addr, 5*time.Second)
-	if err != nil {
-		return false, 0
-	}
-	conn.Close()
-	return true, time.Since(start).Milliseconds()
-}
-
 var defaultSiteCheckTargets = []string{
 	"chatgpt.com",
 	"2ip.ru",
@@ -1984,16 +1973,12 @@ func (s *Server) performHealthCheckWithTempSingbox(nodes []storage.Node) (map[st
 				Groups: make(map[string]int),
 			}
 
-			// TCP check
-			alive, tcpLatency := s.tcpCheck(n.Server, n.ServerPort)
-			result.Alive = alive
-			result.TCPLatencyMs = tcpLatency
-
 			// Clash API delay check via temporary instance
 			delay := s.clashProxyDelay(port, "", n.Tag)
 			if delay > 0 {
 				result.Alive = true
 			}
+			result.TCPLatencyMs = 0
 			result.Groups["Proxy"] = delay
 
 			mu.Lock()
@@ -2007,7 +1992,7 @@ func (s *Server) performHealthCheckWithTempSingbox(nodes []storage.Node) (map[st
 	return results, nil
 }
 
-func (s *Server) performHealthCheck(nodes []storage.Node) (map[string]*NodeHealthResult, string) {
+func (s *Server) performHealthCheck(nodes []storage.Node) (map[string]*NodeHealthResult, string, error) {
 	results := make(map[string]*NodeHealthResult)
 	var mu sync.Mutex
 
@@ -2017,18 +2002,19 @@ func (s *Server) performHealthCheck(nodes []storage.Node) (map[string]*NodeHealt
 	if !isRunning {
 		tempResults, err := s.performHealthCheckWithTempSingbox(nodes)
 		if err != nil {
-			logger.Printf("Temporary sing-box health check failed, falling back to TCP: %v", err)
-		} else {
-			return tempResults, "clash_api_temp"
+			return nil, "", err
 		}
-	}
-
-	mode := "tcp"
-	if isRunning {
-		mode = "clash_api"
+		return tempResults, "clash_api_temp", nil
 	}
 
 	settings := s.store.GetSettings()
+	if settings == nil {
+		return nil, "", fmt.Errorf("settings are not configured")
+	}
+	if settings.ClashAPIPort == 0 {
+		return nil, "", fmt.Errorf("Clash API port is not configured")
+	}
+
 	filters := s.store.GetFilters()
 
 	// Semaphore for concurrency limit
@@ -2046,34 +2032,27 @@ func (s *Server) performHealthCheck(nodes []storage.Node) (map[string]*NodeHealt
 				Groups: make(map[string]int),
 			}
 
-			// TCP check
-			alive, tcpLatency := s.tcpCheck(n.Server, n.ServerPort)
-			result.Alive = alive
-			result.TCPLatencyMs = tcpLatency
-
-			// Clash API check
-			if isRunning {
-				// Check delay through each matching enabled filter
-				for _, filter := range filters {
-					if !filter.Enabled {
-						continue
-					}
-					if matchFilter(n, filter) {
-						delay := s.clashProxyDelay(settings.ClashAPIPort, settings.ClashAPISecret, n.Tag)
-						if delay > 0 {
-							result.Alive = true
-						}
-						result.Groups[filter.Name] = delay
-					}
+			// Check delay through each matching enabled filter
+			for _, filter := range filters {
+				if !filter.Enabled {
+					continue
 				}
-
-				// Also check via main Proxy group
-				delay := s.clashProxyDelay(settings.ClashAPIPort, settings.ClashAPISecret, n.Tag)
-				if delay > 0 {
-					result.Alive = true
-					result.Groups["Proxy"] = delay
+				if matchFilter(n, filter) {
+					delay := s.clashProxyDelay(settings.ClashAPIPort, settings.ClashAPISecret, n.Tag)
+					if delay > 0 {
+						result.Alive = true
+					}
+					result.Groups[filter.Name] = delay
 				}
 			}
+
+			// Also check via main Proxy group
+			delay := s.clashProxyDelay(settings.ClashAPIPort, settings.ClashAPISecret, n.Tag)
+			if delay > 0 {
+				result.Alive = true
+			}
+			result.Groups["Proxy"] = delay
+			result.TCPLatencyMs = 0
 
 			mu.Lock()
 			results[n.Tag] = result
@@ -2082,7 +2061,7 @@ func (s *Server) performHealthCheck(nodes []storage.Node) (map[string]*NodeHealt
 	}
 
 	wg.Wait()
-	return results, mode
+	return results, "clash_api", nil
 }
 
 func (s *Server) healthCheckNodes(c *gin.Context) {
@@ -2108,7 +2087,19 @@ func (s *Server) healthCheckNodes(c *gin.Context) {
 		nodes = allNodes
 	}
 
-	results, mode := s.performHealthCheck(nodes)
+	if len(nodes) == 0 {
+		c.JSON(http.StatusOK, gin.H{
+			"data": map[string]*NodeHealthResult{},
+			"mode": "",
+		})
+		return
+	}
+
+	results, mode, err := s.performHealthCheck(nodes)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
 	c.JSON(http.StatusOK, gin.H{"data": results, "mode": mode})
 }
 
@@ -2136,7 +2127,11 @@ func (s *Server) healthCheckSingleNode(c *gin.Context) {
 		return
 	}
 
-	results, mode := s.performHealthCheck(nodes)
+	results, mode, err := s.performHealthCheck(nodes)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
 	c.JSON(http.StatusOK, gin.H{"data": results, "mode": mode})
 }
 
@@ -2251,6 +2246,9 @@ func (s *Server) performSiteCheck(nodes []storage.Node, targets []string) (map[s
 	}
 
 	settings := s.store.GetSettings()
+	if settings == nil {
+		return nil, "", fmt.Errorf("settings are not configured")
+	}
 	if settings.ClashAPIPort == 0 {
 		return nil, "", fmt.Errorf("Clash API port is not configured")
 	}
