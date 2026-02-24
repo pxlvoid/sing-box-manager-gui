@@ -84,6 +84,15 @@ func (p *VlessParser) Parse(rawURL string) (*storage.Node, error) {
 			if mode := params.Get("mode"); mode != "" {
 				transport["mode"] = mode
 			}
+			if idleTimeout := params.Get("idleTimeout"); idleTimeout != "" {
+				transport["idle_timeout"] = idleTimeout
+			}
+			if pingTimeout := params.Get("pingTimeout"); pingTimeout != "" {
+				transport["ping_timeout"] = pingTimeout
+			}
+			if permitWithoutStream := getParamBool(params, "permitWithoutStream"); permitWithoutStream {
+				transport["permit_without_stream"] = true
+			}
 		case "quic":
 			if security := params.Get("quicSecurity"); security != "" {
 				transport["security"] = security
