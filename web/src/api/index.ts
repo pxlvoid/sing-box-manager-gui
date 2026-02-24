@@ -139,4 +139,11 @@ export const proxyApi = {
   checkDelay: (name: string) => api.get(`/proxy/delay/${encodeURIComponent(name)}`),
 };
 
+// Debug API
+export const debugApi = {
+  dump: () => api.get('/debug/dump'),
+  singboxLogs: (lines: number = 500) => api.get(`/debug/logs/singbox?lines=${lines}`),
+  appLogs: (lines: number = 500) => api.get(`/debug/logs/app?lines=${lines}`),
+};
+
 export default api;

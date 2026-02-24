@@ -155,6 +155,9 @@ type Settings struct {
 
 	// GitHub proxy settings
 	GithubProxy string `json:"github_proxy"` // GitHub proxy URL, e.g. https://ghproxy.com/
+
+	// Debug API
+	DebugAPIEnabled bool `json:"debug_api_enabled"` // enable debug API for remote diagnostics
 }
 
 // DefaultSettings returns default settings

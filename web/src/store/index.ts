@@ -250,6 +250,7 @@ export interface Settings {
   auto_apply: boolean;           // Auto-apply after config changes
   subscription_interval: number; // Subscription auto-update interval (minutes)
   github_proxy: string;          // GitHub proxy address
+  debug_api_enabled: boolean;    // Enable debug API for remote diagnostics
 }
 
 export interface ServiceStatus {

@@ -883,6 +883,32 @@ export default function Settings() {
         </CardBody>
       </Card>
 
+      {/* Debug API */}
+      <Card>
+        <CardHeader>
+          <h2 className="text-lg font-semibold">Debug API</h2>
+        </CardHeader>
+        <CardBody className="space-y-4">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="font-medium">Enable Debug API</p>
+              <p className="text-sm text-gray-500">Allows remote access to all data and settings via <code className="text-xs bg-default-100 px-1 py-0.5 rounded">/api/debug/dump</code></p>
+            </div>
+            <Switch
+              isSelected={formData.debug_api_enabled}
+              onValueChange={(enabled) => setFormData({ ...formData, debug_api_enabled: enabled })}
+            />
+          </div>
+          {formData.debug_api_enabled && (
+            <div className="p-3 bg-warning-50 dark:bg-warning-900/20 rounded-lg">
+              <p className="text-sm text-warning-700 dark:text-warning-400">
+                Debug API is active. All subscriptions, nodes, rules, and settings are accessible at <code className="text-xs bg-warning-100 dark:bg-warning-800/30 px-1 py-0.5 rounded">{window.location.origin}/api/debug/dump</code>
+              </p>
+            </div>
+          )}
+        </CardBody>
+      </Card>
+
       {/* Background Service Management */}
       {daemonStatus?.supported && (
         <Card>
