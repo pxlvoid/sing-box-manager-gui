@@ -35,9 +35,10 @@ type Node struct {
 
 // ManualNode represents a manually added node
 type ManualNode struct {
-	ID      string `json:"id"`
-	Node    Node   `json:"node"`
-	Enabled bool   `json:"enabled"`
+	ID       string `json:"id"`
+	Node     Node   `json:"node"`
+	Enabled  bool   `json:"enabled"`
+	GroupTag string `json:"group_tag,omitempty"`
 }
 
 // CountryGroup represents a country-based node group

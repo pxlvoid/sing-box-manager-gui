@@ -39,6 +39,7 @@ export interface ManualNode {
   id: string;
   node: Node;
   enabled: boolean;
+  group_tag?: string;
 }
 
 export interface CountryGroup {
@@ -158,6 +159,10 @@ interface AppState {
   serviceStatus: ServiceStatus | null;
   systemInfo: SystemInfo | null;
 
+  // Group tags
+  manualNodeTags: string[];
+  selectedGroupTag: string | null;
+
   // Health check state
   healthResults: Record<string, NodeHealthResult>;
   healthMode: 'clash_api' | 'clash_api_temp' | 'tcp' | null;
@@ -177,6 +182,8 @@ interface AppState {
   fetchSettings: () => Promise<void>;
   fetchServiceStatus: () => Promise<void>;
   fetchSystemInfo: () => Promise<void>;
+  fetchManualNodeTags: () => Promise<void>;
+  setSelectedGroupTag: (tag: string | null) => void;
 
   addSubscription: (name: string, url: string) => Promise<void>;
   updateSubscription: (id: string, name: string, url: string) => Promise<void>;
@@ -185,7 +192,7 @@ interface AppState {
   toggleSubscription: (id: string, enabled: boolean) => Promise<void>;
 
   // Manual node operations
-  addManualNodesBulk: (nodes: Omit<ManualNode, 'id'>[]) => Promise<void>;
+  addManualNodesBulk: (nodes: Omit<ManualNode, 'id'>[], groupTag?: string) => Promise<void>;
   addManualNode: (node: Omit<ManualNode, 'id'>) => Promise<void>;
   updateManualNode: (id: string, node: Partial<ManualNode>) => Promise<void>;
   deleteManualNode: (id: string) => Promise<void>;
@@ -222,6 +229,8 @@ export const useStore = create<AppState>((set, get) => ({
   settings: null,
   serviceStatus: null,
   systemInfo: null,
+  manualNodeTags: [],
+  selectedGroupTag: null,
   healthResults: {},
   healthMode: null,
   healthChecking: false,
@@ -309,6 +318,19 @@ export const useStore = create<AppState>((set, get) => ({
     }
   },
 
+  fetchManualNodeTags: async () => {
+    try {
+      const res = await manualNodeApi.getTags();
+      set({ manualNodeTags: res.data.data || [] });
+    } catch (error) {
+      console.error('Failed to fetch manual node tags:', error);
+    }
+  },
+
+  setSelectedGroupTag: (tag: string | null) => {
+    set({ selectedGroupTag: tag });
+  },
+
   addSubscription: async (name: string, url: string) => {
     set({ loading: true });
     try {
@@ -387,11 +409,12 @@ export const useStore = create<AppState>((set, get) => ({
     }
   },
 
-  addManualNodesBulk: async (nodes: Omit<ManualNode, 'id'>[]) => {
+  addManualNodesBulk: async (nodes: Omit<ManualNode, 'id'>[], groupTag?: string) => {
     try {
-      const res = await manualNodeApi.addBulk(nodes);
+      const res = await manualNodeApi.addBulk(nodes, groupTag);
       await get().fetchManualNodes();
       await get().fetchCountryGroups();
+      await get().fetchManualNodeTags();
       if (res.data.warning) {
         toast.info(res.data.warning);
       } else {
@@ -409,6 +432,7 @@ export const useStore = create<AppState>((set, get) => ({
       const res = await manualNodeApi.add(node);
       await get().fetchManualNodes();
       await get().fetchCountryGroups();
+      await get().fetchManualNodeTags();
       if (res.data.warning) {
         toast.info(res.data.warning);
       } else {
@@ -426,6 +450,7 @@ export const useStore = create<AppState>((set, get) => ({
       const res = await manualNodeApi.update(id, node);
       await get().fetchManualNodes();
       await get().fetchCountryGroups();
+      await get().fetchManualNodeTags();
       if (res.data.warning) {
         toast.info(res.data.warning);
       } else {
@@ -443,6 +468,7 @@ export const useStore = create<AppState>((set, get) => ({
       const res = await manualNodeApi.delete(id);
       await get().fetchManualNodes();
       await get().fetchCountryGroups();
+      await get().fetchManualNodeTags();
       if (res.data.warning) {
         toast.info(res.data.warning);
       } else {
