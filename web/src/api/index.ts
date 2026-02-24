@@ -91,6 +91,7 @@ export const monitorApi = {
   logs: () => api.get('/monitor/logs'),
   appLogs: (lines: number = 200) => api.get(`/monitor/logs/sbm?lines=${lines}`),
   singboxLogs: (lines: number = 200) => api.get(`/monitor/logs/singbox?lines=${lines}`),
+  probeLogs: (lines: number = 200) => api.get(`/monitor/logs/probe?lines=${lines}`),
 };
 
 // Node API
@@ -150,6 +151,7 @@ export const debugApi = {
   dump: () => api.get('/debug/dump'),
   singboxLogs: (lines: number = 500) => api.get(`/debug/logs/singbox?lines=${lines}`),
   appLogs: (lines: number = 500) => api.get(`/debug/logs/app?lines=${lines}`),
+  probeLogs: (lines: number = 500) => api.get(`/debug/logs/probe?lines=${lines}`),
 };
 
 export default api;

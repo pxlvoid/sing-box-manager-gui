@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Card, CardBody, CardHeader, Button, Tabs, Tab, Switch, Input } from '@nextui-org/react';
-import { RefreshCw, Trash2, Terminal, Server, Pause, Play } from 'lucide-react';
+import { RefreshCw, Trash2, Terminal, Server, Pause, Play, Activity } from 'lucide-react';
 import { monitorApi } from '../api';
 
-type LogType = 'sbm' | 'singbox';
+type LogType = 'sbm' | 'singbox' | 'probe';
 type LogLevel = 'trace' | 'debug' | 'info' | 'warn' | 'error' | 'other';
 
 type ParsedLogLine = {
@@ -76,6 +76,7 @@ export default function Logs() {
   const [activeTab, setActiveTab] = useState<LogType>('singbox');
   const [sbmLogs, setSbmLogs] = useState<string[]>([]);
   const [singboxLogs, setSingboxLogs] = useState<string[]>([]);
+  const [probeLogs, setProbeLogs] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
   const [autoRefresh, setAutoRefresh] = useState(true);
   const [autoScroll, setAutoScroll] = useState(true);
@@ -91,6 +92,9 @@ export default function Logs() {
       if (type === 'sbm') {
         const res = await monitorApi.appLogs(lines);
         setSbmLogs(res.data.data || []);
+      } else if (type === 'probe') {
+        const res = await monitorApi.probeLogs(lines);
+        setProbeLogs(res.data.data || []);
       } else {
         const res = await monitorApi.singboxLogs(lines);
         setSingboxLogs(res.data.data || []);
@@ -137,6 +141,8 @@ export default function Logs() {
   const handleClear = () => {
     if (activeTab === 'sbm') {
       setSbmLogs([]);
+    } else if (activeTab === 'probe') {
+      setProbeLogs([]);
     } else {
       setSingboxLogs([]);
     }
@@ -161,7 +167,7 @@ export default function Logs() {
     setEnabledLevels(new Set(ALL_LEVELS));
   };
 
-  const currentLogs = activeTab === 'sbm' ? sbmLogs : singboxLogs;
+  const currentLogs = activeTab === 'sbm' ? sbmLogs : activeTab === 'probe' ? probeLogs : singboxLogs;
 
   const parsedLogs = useMemo<ParsedLogLine[]>(() => {
     return currentLogs.map((line, index) => {
@@ -268,6 +274,15 @@ export default function Logs() {
                 <div className="flex items-center gap-2">
                   <Terminal className="w-4 h-4" />
                   <span>sing-box Logs</span>
+                </div>
+              }
+            />
+            <Tab
+              key="probe"
+              title={
+                <div className="flex items-center gap-2">
+                  <Activity className="w-4 h-4" />
+                  <span>Probe Logs</span>
                 </div>
               }
             />

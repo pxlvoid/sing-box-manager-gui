@@ -35,6 +35,7 @@ type LogManager struct {
 	dataDir       string
 	appLogger     *Logger
 	singboxLogger *Logger
+	probeLogger   *Logger
 }
 
 var (
@@ -247,10 +248,17 @@ func InitLogManager(dataDir string) error {
 			return
 		}
 
+		probeLogger, err := NewLogger(filepath.Join(logsDir, "probe.log"), "")
+		if err != nil {
+			initErr = fmt.Errorf("failed to initialize probe logger: %w", err)
+			return
+		}
+
 		manager = &LogManager{
 			dataDir:       dataDir,
 			appLogger:     appLogger,
 			singboxLogger: singboxLogger,
+			probeLogger:   probeLogger,
 		}
 	})
 
@@ -270,6 +278,11 @@ func (m *LogManager) AppLogger() *Logger {
 // SingboxLogger returns the sing-box logger
 func (m *LogManager) SingboxLogger() *Logger {
 	return m.singboxLogger
+}
+
+// ProbeLogger returns the probe sing-box logger
+func (m *LogManager) ProbeLogger() *Logger {
+	return m.probeLogger
 }
 
 // Printf app log shortcut method
@@ -346,6 +359,14 @@ func ReadSingboxLogs(lines int) ([]string, error) {
 		return []string{}, nil
 	}
 	return manager.singboxLogger.ReadLastLines(lines)
+}
+
+// ReadProbeLogs reads probe sing-box logs
+func ReadProbeLogs(lines int) ([]string, error) {
+	if manager == nil || manager.probeLogger == nil {
+		return []string{}, nil
+	}
+	return manager.probeLogger.ReadLastLines(lines)
 }
 
 // MultiWriter writes to multiple targets simultaneously

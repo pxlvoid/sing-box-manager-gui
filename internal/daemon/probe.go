@@ -97,14 +97,14 @@ func (pm *ProbeManager) Start(nodes []storage.Node) error {
 	cmd := exec.Command(pm.singboxPath, "run", "-c", tmpPath)
 	cmd.Dir = pm.dataDir
 
-	// Pipe output to singbox logger so it appears in the web panel.
-	var singboxLogger *logger.Logger
+	// Pipe output to probe logger so it appears in the web panel.
+	var probeLogger *logger.Logger
 	if logManager := logger.GetLogManager(); logManager != nil {
-		singboxLogger = logManager.SingboxLogger()
+		probeLogger = logManager.ProbeLogger()
 	}
-	if singboxLogger != nil {
-		cmd.Stdout = singboxLogger
-		cmd.Stderr = singboxLogger
+	if probeLogger != nil {
+		cmd.Stdout = probeLogger
+		cmd.Stderr = probeLogger
 	}
 
 	if err := cmd.Start(); err != nil {
