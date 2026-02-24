@@ -70,6 +70,39 @@ const defaultNode: Node = {
   server_port: 443,
   country: 'HK',
   country_emoji: '🇭🇰',
+  extra: {},
+};
+
+const ssMethodOptions = [
+  'aes-128-gcm', 'aes-256-gcm', 'chacha20-ietf-poly1305',
+  '2022-blake3-aes-128-gcm', '2022-blake3-aes-256-gcm', '2022-blake3-chacha20-poly1305',
+  'none',
+];
+
+const vmessSecurityOptions = ['auto', 'aes-128-gcm', 'chacha20-poly1305', 'none', 'zero'];
+
+const flowOptions = ['', 'xtls-rprx-vision'];
+
+const transportTypeOptions = ['tcp', 'ws', 'http', 'h2', 'grpc', 'quic'];
+
+const utlsFingerprintOptions = [
+  '', 'chrome', 'firefox', 'safari', 'ios', 'android', 'edge', '360', 'qq', 'random', 'randomized',
+];
+
+const congestionControlOptions = ['bbr', 'cubic', 'new_reno'];
+
+const protocolsWithTls = ['vmess', 'vless', 'trojan', 'hysteria2', 'tuic'];
+const protocolsWithTransport = ['vmess', 'vless', 'trojan'];
+
+// Known extra keys per protocol — everything else goes to "Other"
+const knownExtraKeys: Record<string, string[]> = {
+  shadowsocks: ['method', 'password', 'network'],
+  vmess: ['uuid', 'alter_id', 'security', 'tls', 'transport'],
+  vless: ['uuid', 'flow', 'packet_encoding', 'tls', 'transport'],
+  trojan: ['password', 'flow', 'tls', 'transport'],
+  hysteria2: ['password', 'up_mbps', 'down_mbps', 'obfs', 'tls', 'ports', 'hop_interval'],
+  tuic: ['uuid', 'password', 'congestion_control', 'udp_relay_mode', 'zero_rtt_handshake', 'heartbeat', 'tls'],
+  socks: ['version', 'username', 'password', 'udp_over_tcp'],
 };
 
 export default function Subscriptions() {
@@ -285,6 +318,62 @@ export default function Subscriptions() {
     } finally {
       setIsSubmitting(false);
     }
+  };
+
+  // Helpers for reading/writing nested extra fields
+  const getExtra = (...keys: string[]): any => {
+    let obj: any = nodeForm.extra;
+    for (const key of keys) {
+      if (obj == null) return undefined;
+      obj = obj[key];
+    }
+    return obj;
+  };
+
+  const setExtra = (...args: any[]) => {
+    const value = args.pop();
+    const keys: string[] = args;
+    const extra = { ...nodeForm.extra } as Record<string, any>;
+
+    if (keys.length === 1) {
+      if (value === '' || value === undefined) {
+        delete extra[keys[0]];
+      } else {
+        extra[keys[0]] = value;
+      }
+    } else if (keys.length === 2) {
+      const nested = { ...(extra[keys[0]] || {}) };
+      if (value === '' || value === undefined) {
+        delete nested[keys[1]];
+      } else {
+        nested[keys[1]] = value;
+      }
+      if (Object.keys(nested).length === 0) {
+        delete extra[keys[0]];
+      } else {
+        extra[keys[0]] = nested;
+      }
+    } else if (keys.length === 3) {
+      const nested = { ...(extra[keys[0]] || {}) };
+      const deep = { ...(nested[keys[1]] || {}) };
+      if (value === '' || value === undefined) {
+        delete deep[keys[2]];
+      } else {
+        deep[keys[2]] = value;
+      }
+      if (Object.keys(deep).length === 0) {
+        delete nested[keys[1]];
+      } else {
+        nested[keys[1]] = deep;
+      }
+      if (Object.keys(nested).length === 0) {
+        delete extra[keys[0]];
+      } else {
+        extra[keys[0]] = nested;
+      }
+    }
+
+    setNodeForm({ ...nodeForm, extra });
   };
 
   const handleDeleteNode = async (id: string) => {
@@ -948,7 +1037,7 @@ export default function Subscriptions() {
       </Modal>
 
       {/* Add/Edit Node Modal */}
-      <Modal isOpen={isNodeOpen} onClose={onNodeClose} size="lg">
+      <Modal isOpen={isNodeOpen} onClose={onNodeClose} size="2xl" scrollBehavior="inside">
         <ModalContent>
           <ModalHeader>{editingNode ? 'Edit Node' : 'Add Node'}</ModalHeader>
           <ModalBody>
@@ -1003,9 +1092,9 @@ export default function Subscriptions() {
                 </Card>
               )}
 
-              {/* Manual edit area - collapsible */}
+              {/* Edit area - collapsible sections */}
               <Accordion variant="bordered" selectionMode="multiple">
-                <AccordionItem key="manual" aria-label="Manual Edit" title="Manually Edit Node Info">
+                <AccordionItem key="basic" aria-label="Basic Settings" title="Basic Settings">
                   <div className="space-y-4 pb-2">
                     <Input
                       label="Node Name"
@@ -1065,7 +1154,505 @@ export default function Subscriptions() {
                     </div>
                   </div>
                 </AccordionItem>
+
+                {/* Protocol Settings */}
+                <AccordionItem key="protocol" aria-label="Protocol Settings" title="Protocol Settings">
+                  <div className="space-y-4 pb-2">
+                    {/* Shadowsocks */}
+                    {nodeForm.type === 'shadowsocks' && (
+                      <>
+                        <Select
+                          label="Encryption Method"
+                          selectedKeys={getExtra('method') ? [getExtra('method')] : []}
+                          onChange={(e) => setExtra('method', e.target.value)}
+                        >
+                          {ssMethodOptions.map((m) => (
+                            <SelectItem key={m} value={m}>{m}</SelectItem>
+                          ))}
+                        </Select>
+                        <Input
+                          label="Password"
+                          placeholder="Password"
+                          value={getExtra('password') || ''}
+                          onChange={(e) => setExtra('password', e.target.value)}
+                        />
+                      </>
+                    )}
+
+                    {/* VMess */}
+                    {nodeForm.type === 'vmess' && (
+                      <>
+                        <Input
+                          label="UUID"
+                          placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+                          value={getExtra('uuid') || ''}
+                          onChange={(e) => setExtra('uuid', e.target.value)}
+                        />
+                        <div className="grid grid-cols-2 gap-4">
+                          <Select
+                            label="Security"
+                            selectedKeys={getExtra('security') ? [getExtra('security')] : ['auto']}
+                            onChange={(e) => setExtra('security', e.target.value)}
+                          >
+                            {vmessSecurityOptions.map((s) => (
+                              <SelectItem key={s} value={s}>{s}</SelectItem>
+                            ))}
+                          </Select>
+                          <Input
+                            type="number"
+                            label="Alter ID"
+                            placeholder="0"
+                            value={String(getExtra('alter_id') ?? 0)}
+                            onChange={(e) => setExtra('alter_id', parseInt(e.target.value) || 0)}
+                          />
+                        </div>
+                      </>
+                    )}
+
+                    {/* VLESS */}
+                    {nodeForm.type === 'vless' && (
+                      <>
+                        <Input
+                          label="UUID"
+                          placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+                          value={getExtra('uuid') || ''}
+                          onChange={(e) => setExtra('uuid', e.target.value)}
+                        />
+                        <div className="grid grid-cols-2 gap-4">
+                          <Select
+                            label="Flow"
+                            selectedKeys={[getExtra('flow') || '']}
+                            onChange={(e) => setExtra('flow', e.target.value)}
+                          >
+                            {flowOptions.map((f) => (
+                              <SelectItem key={f} value={f}>{f || '(none)'}</SelectItem>
+                            ))}
+                          </Select>
+                          <Select
+                            label="Packet Encoding"
+                            selectedKeys={[getExtra('packet_encoding') || '']}
+                            onChange={(e) => setExtra('packet_encoding', e.target.value)}
+                          >
+                            <SelectItem key="" value="">(none)</SelectItem>
+                            <SelectItem key="xudp" value="xudp">xudp</SelectItem>
+                          </Select>
+                        </div>
+                      </>
+                    )}
+
+                    {/* Trojan */}
+                    {nodeForm.type === 'trojan' && (
+                      <>
+                        <Input
+                          label="Password"
+                          placeholder="Password"
+                          value={getExtra('password') || ''}
+                          onChange={(e) => setExtra('password', e.target.value)}
+                        />
+                        <Select
+                          label="Flow"
+                          selectedKeys={[getExtra('flow') || '']}
+                          onChange={(e) => setExtra('flow', e.target.value)}
+                        >
+                          {flowOptions.map((f) => (
+                            <SelectItem key={f} value={f}>{f || '(none)'}</SelectItem>
+                          ))}
+                        </Select>
+                      </>
+                    )}
+
+                    {/* Hysteria2 */}
+                    {nodeForm.type === 'hysteria2' && (
+                      <>
+                        <Input
+                          label="Password"
+                          placeholder="Password"
+                          value={getExtra('password') || ''}
+                          onChange={(e) => setExtra('password', e.target.value)}
+                        />
+                        <div className="grid grid-cols-2 gap-4">
+                          <Input
+                            type="number"
+                            label="Upload (Mbps)"
+                            placeholder="0"
+                            value={String(getExtra('up_mbps') ?? '')}
+                            onChange={(e) => setExtra('up_mbps', e.target.value ? parseInt(e.target.value) : undefined)}
+                          />
+                          <Input
+                            type="number"
+                            label="Download (Mbps)"
+                            placeholder="0"
+                            value={String(getExtra('down_mbps') ?? '')}
+                            onChange={(e) => setExtra('down_mbps', e.target.value ? parseInt(e.target.value) : undefined)}
+                          />
+                        </div>
+                        <p className="text-xs text-gray-400 -mt-2">Obfuscation</p>
+                        <div className="grid grid-cols-2 gap-4">
+                          <Select
+                            label="Obfs Type"
+                            selectedKeys={[getExtra('obfs', 'type') || '']}
+                            onChange={(e) => {
+                              if (e.target.value) {
+                                setExtra('obfs', 'type', e.target.value);
+                              } else {
+                                // Clear entire obfs object
+                                const extra = { ...nodeForm.extra } as Record<string, any>;
+                                delete extra.obfs;
+                                setNodeForm({ ...nodeForm, extra });
+                              }
+                            }}
+                          >
+                            <SelectItem key="" value="">(none)</SelectItem>
+                            <SelectItem key="salamander" value="salamander">salamander</SelectItem>
+                          </Select>
+                          {getExtra('obfs', 'type') && (
+                            <Input
+                              label="Obfs Password"
+                              placeholder="Obfuscation password"
+                              value={getExtra('obfs', 'password') || ''}
+                              onChange={(e) => setExtra('obfs', 'password', e.target.value)}
+                            />
+                          )}
+                        </div>
+                      </>
+                    )}
+
+                    {/* TUIC */}
+                    {nodeForm.type === 'tuic' && (
+                      <>
+                        <div className="grid grid-cols-2 gap-4">
+                          <Input
+                            label="UUID"
+                            placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+                            value={getExtra('uuid') || ''}
+                            onChange={(e) => setExtra('uuid', e.target.value)}
+                          />
+                          <Input
+                            label="Password"
+                            placeholder="Password"
+                            value={getExtra('password') || ''}
+                            onChange={(e) => setExtra('password', e.target.value)}
+                          />
+                        </div>
+                        <div className="grid grid-cols-2 gap-4">
+                          <Select
+                            label="Congestion Control"
+                            selectedKeys={getExtra('congestion_control') ? [getExtra('congestion_control')] : []}
+                            onChange={(e) => setExtra('congestion_control', e.target.value)}
+                          >
+                            {congestionControlOptions.map((c) => (
+                              <SelectItem key={c} value={c}>{c}</SelectItem>
+                            ))}
+                          </Select>
+                          <Select
+                            label="UDP Relay Mode"
+                            selectedKeys={[getExtra('udp_relay_mode') || '']}
+                            onChange={(e) => setExtra('udp_relay_mode', e.target.value)}
+                          >
+                            <SelectItem key="" value="">(default)</SelectItem>
+                            <SelectItem key="native" value="native">native</SelectItem>
+                            <SelectItem key="quic" value="quic">quic</SelectItem>
+                          </Select>
+                        </div>
+                        <div className="flex items-center justify-between">
+                          <span className="text-sm">Zero RTT Handshake</span>
+                          <Switch
+                            size="sm"
+                            isSelected={!!getExtra('zero_rtt_handshake')}
+                            onValueChange={(v) => setExtra('zero_rtt_handshake', v || undefined)}
+                          />
+                        </div>
+                        <Input
+                          label="Heartbeat"
+                          placeholder="e.g. 10s"
+                          value={getExtra('heartbeat') || ''}
+                          onChange={(e) => setExtra('heartbeat', e.target.value)}
+                        />
+                      </>
+                    )}
+
+                    {/* SOCKS */}
+                    {nodeForm.type === 'socks' && (
+                      <>
+                        <Select
+                          label="SOCKS Version"
+                          selectedKeys={[getExtra('version') || '5']}
+                          onChange={(e) => setExtra('version', e.target.value)}
+                        >
+                          <SelectItem key="4" value="4">SOCKS4</SelectItem>
+                          <SelectItem key="5" value="5">SOCKS5</SelectItem>
+                        </Select>
+                        <div className="grid grid-cols-2 gap-4">
+                          <Input
+                            label="Username"
+                            placeholder="(optional)"
+                            value={getExtra('username') || ''}
+                            onChange={(e) => setExtra('username', e.target.value)}
+                          />
+                          <Input
+                            label="Password"
+                            placeholder="(optional)"
+                            value={getExtra('password') || ''}
+                            onChange={(e) => setExtra('password', e.target.value)}
+                          />
+                        </div>
+                      </>
+                    )}
+                  </div>
+                </AccordionItem>
               </Accordion>
+
+              {/* TLS Settings */}
+              {protocolsWithTls.includes(nodeForm.type) && (
+                <Accordion variant="bordered" selectionMode="multiple">
+                  <AccordionItem key="tls" aria-label="TLS Settings" title="TLS Settings">
+                    <div className="space-y-4 pb-2">
+                      <div className="flex items-center justify-between">
+                        <span className="text-sm">Enable TLS</span>
+                        <Switch
+                          size="sm"
+                          isSelected={!!getExtra('tls', 'enabled')}
+                          onValueChange={(v) => {
+                            if (v) {
+                              setExtra('tls', 'enabled', true);
+                            } else {
+                              const extra = { ...nodeForm.extra } as Record<string, any>;
+                              delete extra.tls;
+                              setNodeForm({ ...nodeForm, extra });
+                            }
+                          }}
+                        />
+                      </div>
+
+                      {!!getExtra('tls', 'enabled') && (
+                        <>
+                          <Input
+                            label="SNI (Server Name)"
+                            placeholder="example.com"
+                            value={getExtra('tls', 'server_name') || ''}
+                            onChange={(e) => setExtra('tls', 'server_name', e.target.value)}
+                          />
+
+                          <div className="flex items-center justify-between">
+                            <span className="text-sm">Allow Insecure</span>
+                            <Switch
+                              size="sm"
+                              isSelected={!!getExtra('tls', 'insecure')}
+                              onValueChange={(v) => setExtra('tls', 'insecure', v || undefined)}
+                            />
+                          </div>
+
+                          <Input
+                            label="ALPN"
+                            placeholder="h2,http/1.1 (comma-separated)"
+                            value={Array.isArray(getExtra('tls', 'alpn')) ? getExtra('tls', 'alpn').join(',') : (getExtra('tls', 'alpn') || '')}
+                            onChange={(e) => {
+                              const val = e.target.value;
+                              if (val) {
+                                setExtra('tls', 'alpn', val.split(',').map((s: string) => s.trim()).filter(Boolean));
+                              } else {
+                                setExtra('tls', 'alpn', undefined);
+                              }
+                            }}
+                          />
+
+                          <Select
+                            label="uTLS Fingerprint"
+                            selectedKeys={[getExtra('tls', 'utls', 'fingerprint') || '']}
+                            onChange={(e) => {
+                              if (e.target.value) {
+                                const tls = { ...(nodeForm.extra?.tls || {}), utls: { enabled: true, fingerprint: e.target.value } };
+                                const extra = { ...nodeForm.extra, tls } as Record<string, any>;
+                                setNodeForm({ ...nodeForm, extra });
+                              } else {
+                                const tls = { ...(nodeForm.extra?.tls || {}) };
+                                delete tls.utls;
+                                const extra = { ...nodeForm.extra, tls } as Record<string, any>;
+                                setNodeForm({ ...nodeForm, extra });
+                              }
+                            }}
+                          >
+                            {utlsFingerprintOptions.map((f) => (
+                              <SelectItem key={f} value={f}>{f || '(none)'}</SelectItem>
+                            ))}
+                          </Select>
+
+                          {/* Reality */}
+                          {(nodeForm.type === 'vless' || nodeForm.type === 'trojan') && (
+                            <>
+                              <div className="flex items-center justify-between">
+                                <span className="text-sm">Reality</span>
+                                <Switch
+                                  size="sm"
+                                  isSelected={!!getExtra('tls', 'reality', 'enabled')}
+                                  onValueChange={(v) => {
+                                    if (v) {
+                                      setExtra('tls', 'reality', { enabled: true, public_key: '', short_id: '' });
+                                    } else {
+                                      const tls = { ...(nodeForm.extra?.tls || {}) };
+                                      delete tls.reality;
+                                      const extra = { ...nodeForm.extra, tls } as Record<string, any>;
+                                      setNodeForm({ ...nodeForm, extra });
+                                    }
+                                  }}
+                                />
+                              </div>
+
+                              {!!getExtra('tls', 'reality', 'enabled') && (
+                                <div className="grid grid-cols-2 gap-4">
+                                  <Input
+                                    label="Public Key"
+                                    placeholder="Reality public key"
+                                    value={getExtra('tls', 'reality', 'public_key') || ''}
+                                    onChange={(e) => setExtra('tls', 'reality', { ...getExtra('tls', 'reality'), public_key: e.target.value })}
+                                  />
+                                  <Input
+                                    label="Short ID"
+                                    placeholder="Reality short ID"
+                                    value={getExtra('tls', 'reality', 'short_id') || ''}
+                                    onChange={(e) => setExtra('tls', 'reality', { ...getExtra('tls', 'reality'), short_id: e.target.value })}
+                                  />
+                                </div>
+                              )}
+                            </>
+                          )}
+                        </>
+                      )}
+                    </div>
+                  </AccordionItem>
+                </Accordion>
+              )}
+
+              {/* Transport Settings */}
+              {protocolsWithTransport.includes(nodeForm.type) && (
+                <Accordion variant="bordered" selectionMode="multiple">
+                  <AccordionItem key="transport" aria-label="Transport" title="Transport">
+                    <div className="space-y-4 pb-2">
+                      <Select
+                        label="Transport Type"
+                        selectedKeys={[getExtra('transport', 'type') || '']}
+                        onChange={(e) => {
+                          if (e.target.value) {
+                            setExtra('transport', 'type', e.target.value);
+                          } else {
+                            const extra = { ...nodeForm.extra } as Record<string, any>;
+                            delete extra.transport;
+                            setNodeForm({ ...nodeForm, extra });
+                          }
+                        }}
+                      >
+                        {['' , ...transportTypeOptions].map((t) => (
+                          <SelectItem key={t} value={t}>{t || '(none)'}</SelectItem>
+                        ))}
+                      </Select>
+
+                      {/* WebSocket */}
+                      {getExtra('transport', 'type') === 'ws' && (
+                        <div className="grid grid-cols-2 gap-4">
+                          <Input
+                            label="Path"
+                            placeholder="/"
+                            value={getExtra('transport', 'path') || ''}
+                            onChange={(e) => setExtra('transport', 'path', e.target.value)}
+                          />
+                          <Input
+                            label="Host Header"
+                            placeholder="example.com"
+                            value={getExtra('transport', 'headers', 'Host') || ''}
+                            onChange={(e) => {
+                              const transport = { ...(nodeForm.extra?.transport || {}) };
+                              if (e.target.value) {
+                                transport.headers = { ...(transport.headers || {}), Host: e.target.value };
+                              } else {
+                                if (transport.headers) {
+                                  delete transport.headers.Host;
+                                  if (Object.keys(transport.headers).length === 0) delete transport.headers;
+                                }
+                              }
+                              const extra = { ...nodeForm.extra, transport } as Record<string, any>;
+                              setNodeForm({ ...nodeForm, extra });
+                            }}
+                          />
+                        </div>
+                      )}
+
+                      {/* HTTP / H2 */}
+                      {(getExtra('transport', 'type') === 'http' || getExtra('transport', 'type') === 'h2') && (
+                        <div className="grid grid-cols-2 gap-4">
+                          <Input
+                            label="Path"
+                            placeholder="/"
+                            value={getExtra('transport', 'path') || ''}
+                            onChange={(e) => setExtra('transport', 'path', e.target.value)}
+                          />
+                          <Input
+                            label="Host"
+                            placeholder="example.com (comma-separated)"
+                            value={Array.isArray(getExtra('transport', 'host')) ? getExtra('transport', 'host').join(',') : (getExtra('transport', 'host') || '')}
+                            onChange={(e) => {
+                              const val = e.target.value;
+                              if (val) {
+                                setExtra('transport', 'host', val.split(',').map((s: string) => s.trim()).filter(Boolean));
+                              } else {
+                                setExtra('transport', 'host', undefined);
+                              }
+                            }}
+                          />
+                        </div>
+                      )}
+
+                      {/* gRPC */}
+                      {getExtra('transport', 'type') === 'grpc' && (
+                        <Input
+                          label="Service Name"
+                          placeholder="grpc-service"
+                          value={getExtra('transport', 'service_name') || ''}
+                          onChange={(e) => setExtra('transport', 'service_name', e.target.value)}
+                        />
+                      )}
+                    </div>
+                  </AccordionItem>
+                </Accordion>
+              )}
+
+              {/* Other (unknown) extra fields */}
+              {(() => {
+                const known = new Set(knownExtraKeys[nodeForm.type] || []);
+                const unknownKeys = Object.keys(nodeForm.extra || {}).filter(k => !known.has(k));
+                if (unknownKeys.length === 0) return null;
+                const unknownObj: Record<string, any> = {};
+                for (const k of unknownKeys) unknownObj[k] = (nodeForm.extra as Record<string, any>)[k];
+                return (
+                  <Accordion variant="bordered" selectionMode="multiple">
+                    <AccordionItem key="other" aria-label="Other" title={`Other (${unknownKeys.length})`}>
+                      <div className="space-y-3 pb-2">
+                        <p className="text-xs text-gray-400">
+                          Extra fields not covered by the editor above. Edit as JSON.
+                        </p>
+                        <Textarea
+                          label="Other Fields (JSON)"
+                          minRows={3}
+                          maxRows={10}
+                          value={JSON.stringify(unknownObj, null, 2)}
+                          onChange={(e) => {
+                            try {
+                              const parsed = JSON.parse(e.target.value);
+                              if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) return;
+                              // Keep known keys, replace unknown keys with parsed
+                              const extra = { ...nodeForm.extra } as Record<string, any>;
+                              for (const k of unknownKeys) delete extra[k];
+                              for (const [k, v] of Object.entries(parsed)) extra[k] = v;
+                              setNodeForm({ ...nodeForm, extra });
+                            } catch {
+                              // Ignore invalid JSON while user is typing
+                            }
+                          }}
+                        />
+                      </div>
+                    </AccordionItem>
+                  </Accordion>
+                );
+              })()}
 
               <div className="flex items-center justify-between">
                 <span>Enable Node</span>
