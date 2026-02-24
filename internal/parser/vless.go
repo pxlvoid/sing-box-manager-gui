@@ -131,12 +131,12 @@ func (p *VlessParser) Parse(rawURL string) (*storage.Node, error) {
 			tls["reality"] = reality
 
 			// uTLS fingerprint
-			fp := getParamString(params, "fp", "chrome")
+			fp := strings.TrimSpace(getParamString(params, "fp", "chrome"))
 			tls["utls"] = map[string]interface{}{
 				"enabled":     true,
 				"fingerprint": fp,
 			}
-		} else if fp := params.Get("fp"); fp != "" {
+		} else if fp := strings.TrimSpace(params.Get("fp")); fp != "" {
 			// uTLS for regular TLS
 			tls["utls"] = map[string]interface{}{
 				"enabled":     true,
