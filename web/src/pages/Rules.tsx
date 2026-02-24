@@ -420,8 +420,11 @@ export default function Rules() {
 
       {/* Preset Rule Groups */}
       <Card>
-        <CardHeader>
+        <CardHeader className="flex-col items-start gap-1">
           <h2 className="text-lg font-semibold">Preset Rule Groups</h2>
+          <p className="text-sm text-gray-500 dark:text-gray-400">
+            Предустановленные группы правил маршрутизации по сервисам. Каждая группа содержит GeoSite/GeoIP rule set и направляет трафик на выбранный outbound. Нажмите на карандаш, чтобы изменить правила группы. Изменённые группы помечаются меткой «modified» — их можно сбросить до стандартных.
+          </p>
         </CardHeader>
         <CardBody>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -515,8 +518,13 @@ export default function Rules() {
 
       {/* Custom Rules */}
       <Card>
-        <CardHeader className="flex justify-between items-center">
-          <h2 className="text-lg font-semibold">Custom Rules</h2>
+        <CardHeader className="flex justify-between items-start">
+          <div className="flex-col gap-1">
+            <h2 className="text-lg font-semibold">Custom Rules</h2>
+            <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
+              Собственные правила маршрутизации. Поддерживаются domain suffix, keyword, full domain, IP CIDR, GeoSite/GeoIP rule set и порты. Правила с меньшим приоритетом (числом) обрабатываются первыми.
+            </p>
+          </div>
           <Button
             color="primary"
             size="sm"
@@ -705,6 +713,9 @@ export default function Rules() {
           <ModalHeader>Edit Rule Group</ModalHeader>
           <ModalBody>
             <div className="space-y-4">
+              <div className="text-sm text-gray-500 dark:text-gray-400 bg-gray-100 dark:bg-gray-800 rounded-lg p-3">
+                Укажите название группы и списки GeoSite/GeoIP rule set (по одному на строку). Они определяют, какой трафик попадёт в эту группу. Outbound и статус вкл/выкл задаются на основной странице.
+              </div>
               <Input
                 label="Group Name"
                 placeholder="e.g.: Google"
