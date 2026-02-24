@@ -8,6 +8,12 @@ export interface NodeHealthResult {
   groups: Record<string, number>;
 }
 
+export interface UnsupportedNodeInfo {
+  tag: string;
+  error: string;
+  detected_at: string;
+}
+
 // Type definitions
 export interface Subscription {
   id: string;
@@ -170,6 +176,9 @@ interface AppState {
   healthChecking: boolean;
   healthCheckingNodes: string[];
 
+  // Unsupported nodes
+  unsupportedNodes: UnsupportedNodeInfo[];
+
   // Loading state
   loading: boolean;
 
@@ -221,6 +230,11 @@ interface AppState {
   // Health check operations
   checkAllNodesHealth: (tags?: string[]) => Promise<void>;
   checkSingleNodeHealth: (tag: string) => Promise<void>;
+
+  // Unsupported nodes operations
+  fetchUnsupportedNodes: () => Promise<void>;
+  recheckUnsupportedNodes: () => Promise<void>;
+  deleteUnsupportedNodes: (tags?: string[]) => Promise<void>;
 }
 
 export const useStore = create<AppState>((set, get) => ({
@@ -240,6 +254,7 @@ export const useStore = create<AppState>((set, get) => ({
   healthMode: null,
   healthChecking: false,
   healthCheckingNodes: [],
+  unsupportedNodes: [],
   loading: false,
 
   fetchSubscriptions: async () => {
@@ -700,6 +715,43 @@ export const useStore = create<AppState>((set, get) => ({
       toast.error(error.response?.data?.error || 'Health check failed');
     } finally {
       set({ healthCheckingNodes: get().healthCheckingNodes.filter(t => t !== tag) });
+    }
+  },
+
+  fetchUnsupportedNodes: async () => {
+    try {
+      const res = await nodeApi.getUnsupported();
+      set({ unsupportedNodes: res.data.data || [] });
+    } catch (error) {
+      console.error('Failed to fetch unsupported nodes:', error);
+    }
+  },
+
+  recheckUnsupportedNodes: async () => {
+    try {
+      const res = await nodeApi.recheckUnsupported();
+      set({ unsupportedNodes: res.data.data || [] });
+      toast.success(res.data.message || 'Recheck completed');
+    } catch (error: any) {
+      console.error('Failed to recheck unsupported nodes:', error);
+      toast.error(error.response?.data?.error || 'Recheck failed');
+    }
+  },
+
+  deleteUnsupportedNodes: async (tags?: string[]) => {
+    try {
+      const res = await nodeApi.deleteUnsupported(tags);
+      toast.success(res.data.message || 'Nodes deleted');
+      // Refresh all related data
+      await Promise.all([
+        get().fetchUnsupportedNodes(),
+        get().fetchSubscriptions(),
+        get().fetchManualNodes(),
+        get().fetchCountryGroups(),
+      ]);
+    } catch (error: any) {
+      console.error('Failed to delete unsupported nodes:', error);
+      toast.error(error.response?.data?.error || 'Failed to delete nodes');
     }
   },
 }));

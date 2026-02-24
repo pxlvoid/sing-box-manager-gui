@@ -22,10 +22,10 @@ import {
   Switch,
   Textarea,
 } from '@nextui-org/react';
-import { Plus, RefreshCw, Trash2, Globe, Server, Pencil, Link, Filter as FilterIcon, ChevronDown, ChevronUp, List, Activity, Copy, ClipboardCheck } from 'lucide-react';
+import { Plus, RefreshCw, Trash2, Globe, Server, Pencil, Link, Filter as FilterIcon, ChevronDown, ChevronUp, List, Activity, Copy, ClipboardCheck, AlertTriangle } from 'lucide-react';
 import { useStore } from '../store';
 import { nodeApi, manualNodeApi } from '../api';
-import type { Subscription, ManualNode, Node, Filter, NodeHealthResult } from '../store';
+import type { Subscription, ManualNode, Node, Filter, NodeHealthResult, UnsupportedNodeInfo } from '../store';
 
 function formatBytes(bytes: number): string {
   if (bytes === 0) return '0 B';
@@ -105,6 +105,10 @@ export default function Subscriptions() {
     healthCheckingNodes,
     checkAllNodesHealth,
     checkSingleNodeHealth,
+    unsupportedNodes,
+    fetchUnsupportedNodes,
+    recheckUnsupportedNodes,
+    deleteUnsupportedNodes,
   } = useStore();
 
   const { isOpen: isSubOpen, onOpen: onSubOpen, onClose: onSubClose } = useDisclosure();
@@ -161,6 +165,7 @@ export default function Subscriptions() {
     fetchCountryGroups();
     fetchFilters();
     fetchManualNodeTags();
+    fetchUnsupportedNodes();
   }, []);
 
   const handleOpenAddSubscription = () => {
@@ -460,6 +465,68 @@ export default function Subscriptions() {
         </div>
       </div>
 
+      {unsupportedNodes.length > 0 && (
+        <Card className="border border-warning-200 bg-warning-50 dark:bg-warning-50/10">
+          <CardBody>
+            <div className="flex justify-between items-start">
+              <div className="flex gap-3">
+                <AlertTriangle className="w-5 h-5 text-warning-600 mt-0.5 shrink-0" />
+                <div className="flex-1">
+                  <h4 className="font-semibold text-warning-700 dark:text-warning-500">
+                    {unsupportedNodes.length} unsupported node(s) excluded
+                  </h4>
+                  <p className="text-sm text-warning-600 dark:text-warning-400 mt-0.5">
+                    These nodes cause sing-box config errors and have been automatically disabled.
+                  </p>
+                  <div className="mt-2 space-y-1">
+                    {unsupportedNodes.map(n => (
+                      <div key={n.tag} className="text-xs text-warning-600 dark:text-warning-400 flex items-center gap-2">
+                        <span className="font-mono shrink-0">{n.tag}</span>
+                        <span className="opacity-70 truncate flex-1">{n.error}</span>
+                        <Button
+                          isIconOnly
+                          size="sm"
+                          variant="light"
+                          color="danger"
+                          className="min-w-6 w-6 h-6"
+                          onPress={() => deleteUnsupportedNodes([n.tag])}
+                        >
+                          <Trash2 className="w-3 h-3" />
+                        </Button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+              <div className="flex gap-2 shrink-0">
+                <Button
+                  size="sm"
+                  variant="flat"
+                  color="warning"
+                  startContent={<RefreshCw className="w-3 h-3" />}
+                  onPress={recheckUnsupportedNodes}
+                >
+                  Recheck
+                </Button>
+                <Button
+                  size="sm"
+                  variant="flat"
+                  color="danger"
+                  startContent={<Trash2 className="w-3 h-3" />}
+                  onPress={() => {
+                    if (confirm(`Delete all ${unsupportedNodes.length} unsupported node(s) from subscriptions and manual nodes?`)) {
+                      deleteUnsupportedNodes();
+                    }
+                  }}
+                >
+                  Delete All
+                </Button>
+              </div>
+            </div>
+          </CardBody>
+        </Card>
+      )}
+
       <Tabs aria-label="Node Management" defaultSelectedKey="manual">
         <Tab key="manual" title={<span>Manual Nodes{manualNodes.length > 0 && <span className="ml-1.5 text-xs opacity-60">({manualNodes.length})</span>}</span>}>
           {manualNodes.length === 0 ? (
@@ -527,6 +594,11 @@ export default function Subscriptions() {
                           <h3 className="font-medium">{mn.node.tag}</h3>
                           {mn.group_tag && (
                             <Chip size="sm" variant="flat" color="secondary">{mn.group_tag}</Chip>
+                          )}
+                          {unsupportedNodes.some(u => u.tag === mn.node.tag) && (
+                            <Chip size="sm" variant="flat" color="warning" title={unsupportedNodes.find(u => u.tag === mn.node.tag)?.error}>
+                              Unsupported
+                            </Chip>
                           )}
                         </div>
                         <p className="text-xs text-gray-500">{mn.node.type} • {mn.node.server}:{mn.node.server_port}</p>
@@ -604,6 +676,7 @@ export default function Subscriptions() {
                   healthMode={healthMode}
                   healthCheckingNodes={healthCheckingNodes}
                   onHealthCheck={checkSingleNodeHealth}
+                  unsupportedNodes={unsupportedNodes}
                 />
               ))}
             </div>
@@ -1203,9 +1276,10 @@ interface SubscriptionCardProps {
   healthMode: 'clash_api' | 'clash_api_temp' | 'tcp' | null;
   healthCheckingNodes: string[];
   onHealthCheck: (tag: string) => void;
+  unsupportedNodes: UnsupportedNodeInfo[];
 }
 
-function SubscriptionCard({ subscription: sub, onRefresh, onEdit, onDelete, onToggle, loading, healthResults, healthMode, healthCheckingNodes, onHealthCheck }: SubscriptionCardProps) {
+function SubscriptionCard({ subscription: sub, onRefresh, onEdit, onDelete, onToggle, loading, healthResults, healthMode, healthCheckingNodes, onHealthCheck, unsupportedNodes }: SubscriptionCardProps) {
   const [isExpanded, setIsExpanded] = useState(false);
 
   // Ensure nodes is an array, handle null or undefined cases
@@ -1329,6 +1403,11 @@ function SubscriptionCard({ subscription: sub, onRefresh, onEdit, onDelete, onTo
                         <span className="block truncate">{node.tag}</span>
                         <NodeHealthChips tag={node.tag} healthResults={healthResults} healthMode={healthMode} />
                       </span>
+                      {unsupportedNodes.some(u => u.tag === node.tag) && (
+                        <Chip size="sm" variant="flat" color="warning" title={unsupportedNodes.find(u => u.tag === node.tag)?.error}>
+                          Unsupported
+                        </Chip>
+                      )}
                       <Chip size="sm" variant="flat">
                         {node.type}
                       </Chip>

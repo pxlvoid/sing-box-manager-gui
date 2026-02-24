@@ -372,6 +372,54 @@ func (s *JSONStore) DeleteManualNode(id string) error {
 	return fmt.Errorf("manual node not found: %s", id)
 }
 
+// RemoveNodesByTags removes nodes with matching tags from all subscriptions and manual nodes.
+// Returns the number of nodes removed.
+func (s *JSONStore) RemoveNodesByTags(tags []string) (int, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	tagSet := make(map[string]bool, len(tags))
+	for _, t := range tags {
+		tagSet[t] = true
+	}
+
+	removed := 0
+
+	// Remove from subscriptions
+	for i := range s.data.Subscriptions {
+		var filtered []Node
+		for _, node := range s.data.Subscriptions[i].Nodes {
+			if tagSet[node.Tag] {
+				removed++
+			} else {
+				filtered = append(filtered, node)
+			}
+		}
+		if len(filtered) != len(s.data.Subscriptions[i].Nodes) {
+			s.data.Subscriptions[i].Nodes = filtered
+			s.data.Subscriptions[i].NodeCount = len(filtered)
+		}
+	}
+
+	// Remove from manual nodes
+	var filteredManual []ManualNode
+	for _, mn := range s.data.ManualNodes {
+		if tagSet[mn.Node.Tag] {
+			removed++
+		} else {
+			filteredManual = append(filteredManual, mn)
+		}
+	}
+	if removed > 0 {
+		s.data.ManualNodes = filteredManual
+	}
+
+	if removed > 0 {
+		return removed, s.saveInternal()
+	}
+	return 0, nil
+}
+
 // ==================== Helper Methods ====================
 
 // GetAllNodes returns all enabled nodes (subscription nodes + manual nodes)

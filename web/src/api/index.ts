@@ -103,6 +103,10 @@ export const nodeApi = {
     api.post('/nodes/health-check', { tags }, { timeout: 60000 }),
   healthCheckSingle: (tag: string) =>
     api.post('/nodes/health-check-single', { tag }, { timeout: 15000 }),
+  getUnsupported: () => api.get('/nodes/unsupported'),
+  recheckUnsupported: () => api.post('/nodes/unsupported/recheck'),
+  clearUnsupported: () => api.delete('/nodes/unsupported'),
+  deleteUnsupported: (tags?: string[]) => api.post('/nodes/unsupported/delete', { tags }),
 };
 
 // Manual node API

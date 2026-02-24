@@ -6,7 +6,7 @@ import { serviceApi, configApi } from '../api';
 import { toast } from '../components/Toast';
 
 export default function Dashboard() {
-  const { serviceStatus, subscriptions, manualNodes, systemInfo, fetchServiceStatus, fetchSubscriptions, fetchManualNodes, fetchSystemInfo } = useStore();
+  const { serviceStatus, subscriptions, manualNodes, systemInfo, fetchServiceStatus, fetchSubscriptions, fetchManualNodes, fetchSystemInfo, fetchUnsupportedNodes } = useStore();
 
   // Error modal state
   const [errorModal, setErrorModal] = useState<{
@@ -75,9 +75,14 @@ export default function Dashboard() {
 
   const handleApplyConfig = async () => {
     try {
-      await configApi.apply();
+      const res = await configApi.apply();
       await fetchServiceStatus();
-      toast.success('Configuration applied');
+      await fetchUnsupportedNodes();
+      if (res.data.warning) {
+        toast.info(res.data.warning);
+      } else {
+        toast.success('Configuration applied');
+      }
     } catch (error) {
       showError('Failed to apply configuration', error);
     }
