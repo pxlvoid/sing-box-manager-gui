@@ -86,6 +86,7 @@ type Inbound struct {
 	Users          []InboundUser `json:"users,omitempty"`
 	Method         string        `json:"method,omitempty"`
 	Password       string        `json:"password,omitempty"`
+	Network        []string      `json:"network,omitempty"`
 }
 
 // Outbound represents outbound configuration
@@ -426,6 +427,7 @@ func (b *ConfigBuilder) buildInbounds() []Inbound {
 			SniffOverrideDestination: true,
 			Method:     b.settings.ShadowsocksMethod,
 			Password:   b.settings.ShadowsocksPassword,
+			Network:    []string{"tcp", "udp"},
 		})
 	}
 
