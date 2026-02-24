@@ -8,6 +8,10 @@ export interface NodeHealthResult {
   groups: Record<string, number>;
 }
 
+export interface NodeSiteCheckResult {
+  sites: Record<string, number>;
+}
+
 export interface UnsupportedNodeInfo {
   tag: string;
   error: string;
@@ -186,6 +190,10 @@ interface AppState {
   healthMode: 'clash_api' | 'clash_api_temp' | 'tcp' | null;
   healthChecking: boolean;
   healthCheckingNodes: string[];
+  siteCheckResults: Record<string, NodeSiteCheckResult>;
+  siteCheckMode: 'clash_api' | 'clash_api_temp' | null;
+  siteChecking: boolean;
+  siteCheckingNodes: string[];
 
   // Proxy groups (from Clash API)
   proxyGroups: ProxyGroup[];
@@ -244,6 +252,8 @@ interface AppState {
   // Health check operations
   checkAllNodesHealth: (tags?: string[]) => Promise<void>;
   checkSingleNodeHealth: (tag: string) => Promise<void>;
+  checkNodesSites: (tags?: string[], sites?: string[]) => Promise<void>;
+  checkSingleNodeSites: (tag: string, sites?: string[]) => Promise<void>;
 
   // Unsupported nodes operations
   fetchUnsupportedNodes: () => Promise<void>;
@@ -272,6 +282,10 @@ export const useStore = create<AppState>((set, get) => ({
   healthMode: null,
   healthChecking: false,
   healthCheckingNodes: [],
+  siteCheckResults: {},
+  siteCheckMode: null,
+  siteChecking: false,
+  siteCheckingNodes: [],
   proxyGroups: [],
   unsupportedNodes: [],
   loading: false,
@@ -734,6 +748,41 @@ export const useStore = create<AppState>((set, get) => ({
       toast.error(error.response?.data?.error || 'Health check failed');
     } finally {
       set({ healthCheckingNodes: get().healthCheckingNodes.filter(t => t !== tag) });
+    }
+  },
+
+  checkNodesSites: async (tags?: string[], sites?: string[]) => {
+    set({ siteChecking: true });
+    try {
+      const res = await nodeApi.siteCheck(tags, sites);
+      set({
+        siteCheckResults: { ...get().siteCheckResults, ...res.data.data },
+        siteCheckMode: res.data.mode,
+      });
+      toast.success('Site check completed');
+    } catch (error: any) {
+      console.error('Failed to check sites:', error);
+      toast.error(error.response?.data?.error || 'Site check failed');
+    } finally {
+      set({ siteChecking: false });
+    }
+  },
+
+  checkSingleNodeSites: async (tag: string, sites?: string[]) => {
+    if (get().siteCheckingNodes.includes(tag)) return;
+
+    set({ siteCheckingNodes: [...get().siteCheckingNodes, tag] });
+    try {
+      const res = await nodeApi.siteCheck([tag], sites);
+      set({
+        siteCheckResults: { ...get().siteCheckResults, ...res.data.data },
+        siteCheckMode: res.data.mode,
+      });
+    } catch (error: any) {
+      console.error('Failed to check node sites:', error);
+      toast.error(error.response?.data?.error || 'Site check failed');
+    } finally {
+      set({ siteCheckingNodes: get().siteCheckingNodes.filter(t => t !== tag) });
     }
   },
 

@@ -207,6 +207,7 @@ func (s *Server) setupRoutes() {
 		api.POST("/nodes/parse-bulk", s.parseNodeURLsBulk)
 		api.POST("/nodes/health-check", s.healthCheckNodes)
 		api.POST("/nodes/health-check-single", s.healthCheckSingleNode)
+		api.POST("/nodes/site-check", s.siteCheckNodes)
 		api.GET("/nodes/unsupported", s.getUnsupportedNodes)
 		api.POST("/nodes/unsupported/recheck", s.recheckUnsupportedNodes)
 		api.DELETE("/nodes/unsupported", s.clearUnsupportedNodes)
@@ -1531,13 +1532,26 @@ func (s *Server) getSystemInfo(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"data": result})
 }
 
-func (s *Server) getLogs(c *gin.Context) {
-	lines := 200 // Default to 200 lines
+const (
+	defaultMonitorLogLines = 2000
+	maxMonitorLogLines     = 10000
+)
+
+func parseMonitorLogLines(c *gin.Context) int {
+	lines := defaultMonitorLogLines
 	if linesParam := c.Query("lines"); linesParam != "" {
 		if n, err := strconv.Atoi(linesParam); err == nil && n > 0 {
+			if n > maxMonitorLogLines {
+				return maxMonitorLogLines
+			}
 			lines = n
 		}
 	}
+	return lines
+}
+
+func (s *Server) getLogs(c *gin.Context) {
+	lines := parseMonitorLogLines(c)
 
 	// Return program logs, not mixed with sing-box output
 	logs, err := logger.ReadAppLogs(lines)
@@ -1550,12 +1564,7 @@ func (s *Server) getLogs(c *gin.Context) {
 
 // getAppLogs gets application logs
 func (s *Server) getAppLogs(c *gin.Context) {
-	lines := 200 // Default to 200 lines
-	if linesParam := c.Query("lines"); linesParam != "" {
-		if n, err := strconv.Atoi(linesParam); err == nil && n > 0 {
-			lines = n
-		}
-	}
+	lines := parseMonitorLogLines(c)
 
 	logs, err := logger.ReadAppLogs(lines)
 	if err != nil {
@@ -1567,12 +1576,7 @@ func (s *Server) getAppLogs(c *gin.Context) {
 
 // getSingboxLogs gets sing-box logs
 func (s *Server) getSingboxLogs(c *gin.Context) {
-	lines := 200 // Default to 200 lines
-	if linesParam := c.Query("lines"); linesParam != "" {
-		if n, err := strconv.Atoi(linesParam); err == nil && n > 0 {
-			lines = n
-		}
-	}
+	lines := parseMonitorLogLines(c)
 
 	logs, err := logger.ReadSingboxLogs(lines)
 	if err != nil {
@@ -1661,6 +1665,12 @@ type NodeHealthResult struct {
 	Groups       map[string]int `json:"groups"`
 }
 
+// NodeSiteCheckResult represents site reachability check result for a single node.
+// Sites map value is delay in ms; 0 means timeout/failure.
+type NodeSiteCheckResult struct {
+	Sites map[string]int `json:"sites"`
+}
+
 // matchFilter checks if a node matches a filter (duplicated from builder for API layer)
 func matchFilter(node storage.Node, filter storage.Filter) bool {
 	name := strings.ToLower(node.Tag)
@@ -1717,12 +1727,84 @@ func (s *Server) tcpCheck(server string, port int) (alive bool, latencyMs int64)
 	return true, time.Since(start).Milliseconds()
 }
 
-func (s *Server) clashProxyDelay(port int, secret, nodeTag string) int {
-	client := &http.Client{Timeout: 7 * time.Second}
+var defaultSiteCheckTargets = []string{
+	"chatgpt.com",
+	"2ip.ru",
+	"youtube.com",
+	"instagram.com",
+}
+
+func normalizeSiteTarget(site string) string {
+	site = strings.TrimSpace(site)
+	if site == "" {
+		return ""
+	}
+
+	// Fast path: plain hostname.
+	if !strings.Contains(site, "://") && !strings.Contains(site, "/") {
+		return strings.ToLower(site)
+	}
+
+	raw := site
+	if !strings.Contains(raw, "://") {
+		raw = "https://" + raw
+	}
+	if u, err := neturl.Parse(raw); err == nil && u.Hostname() != "" {
+		return strings.ToLower(u.Hostname())
+	}
+
+	site = strings.TrimPrefix(site, "https://")
+	site = strings.TrimPrefix(site, "http://")
+	if idx := strings.Index(site, "/"); idx >= 0 {
+		site = site[:idx]
+	}
+	return strings.ToLower(site)
+}
+
+func sanitizeSiteTargets(raw []string) []string {
+	if len(raw) == 0 {
+		raw = defaultSiteCheckTargets
+	}
+
+	seen := make(map[string]bool, len(raw))
+	targets := make([]string, 0, len(raw))
+	for _, site := range raw {
+		target := normalizeSiteTarget(site)
+		if target == "" || seen[target] {
+			continue
+		}
+		seen[target] = true
+		targets = append(targets, target)
+	}
+	return targets
+}
+
+func normalizeSiteCheckURL(site string) string {
+	site = strings.TrimSpace(site)
+	if site == "" {
+		return ""
+	}
+	if strings.HasPrefix(site, "http://") || strings.HasPrefix(site, "https://") {
+		return site
+	}
+	return "https://" + site
+}
+
+func (s *Server) clashProxyDelayWithURL(port int, secret, nodeTag, targetURL string, timeoutMs int) int {
+	if strings.TrimSpace(targetURL) == "" {
+		return 0
+	}
+	if timeoutMs <= 0 {
+		timeoutMs = 5000
+	}
+
+	client := &http.Client{Timeout: time.Duration(timeoutMs+2000) * time.Millisecond}
 	apiURL := fmt.Sprintf(
-		"http://127.0.0.1:%d/proxies/%s/delay?url=https://www.gstatic.com/generate_204&timeout=5000",
+		"http://127.0.0.1:%d/proxies/%s/delay?url=%s&timeout=%d",
 		port,
 		neturl.PathEscape(nodeTag),
+		neturl.QueryEscape(targetURL),
+		timeoutMs,
 	)
 
 	req, err := http.NewRequest("GET", apiURL, nil)
@@ -1751,6 +1833,10 @@ func (s *Server) clashProxyDelay(port int, secret, nodeTag string) int {
 		return 0
 	}
 	return result.Delay
+}
+
+func (s *Server) clashProxyDelay(port int, secret, nodeTag string) int {
+	return s.clashProxyDelayWithURL(port, secret, nodeTag, "https://www.gstatic.com/generate_204", 5000)
 }
 
 // buildHealthCheckConfig builds a minimal sing-box config for health checking.
@@ -2052,6 +2138,200 @@ func (s *Server) healthCheckSingleNode(c *gin.Context) {
 
 	results, mode := s.performHealthCheck(nodes)
 	c.JSON(http.StatusOK, gin.H{"data": results, "mode": mode})
+}
+
+func (s *Server) performSiteCheckWithTempSingbox(nodes []storage.Node, targets []string) (map[string]*NodeSiteCheckResult, error) {
+	singboxPath := s.processManager.GetSingBoxPath()
+	if _, err := os.Stat(singboxPath); os.IsNotExist(err) {
+		return nil, fmt.Errorf("sing-box binary not found: %s", singboxPath)
+	}
+
+	port, err := getFreePort()
+	if err != nil {
+		return nil, fmt.Errorf("failed to find free port: %w", err)
+	}
+
+	cfg := buildHealthCheckConfig(nodes, port)
+	cfgJSON, err := json.MarshalIndent(cfg, "", "  ")
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal config: %w", err)
+	}
+
+	tmpFile, err := os.CreateTemp("", "sbm-site-check-*.json")
+	if err != nil {
+		return nil, fmt.Errorf("failed to create temp file: %w", err)
+	}
+	tmpPath := tmpFile.Name()
+	defer os.Remove(tmpPath)
+
+	if _, err := tmpFile.Write(cfgJSON); err != nil {
+		tmpFile.Close()
+		return nil, fmt.Errorf("failed to write config: %w", err)
+	}
+	tmpFile.Close()
+
+	logger.Printf("[site-check] Starting temporary sing-box on port %d for %d nodes", port, len(nodes))
+	cmd := exec.Command(singboxPath, "run", "-c", tmpPath)
+
+	var singboxLogger *logger.Logger
+	if logManager := logger.GetLogManager(); logManager != nil {
+		singboxLogger = logManager.SingboxLogger()
+	}
+	if singboxLogger != nil {
+		cmd.Stdout = singboxLogger
+		cmd.Stderr = singboxLogger
+	}
+
+	if err := cmd.Start(); err != nil {
+		return nil, fmt.Errorf("failed to start sing-box: %w", err)
+	}
+	logger.Printf("[site-check] Temporary sing-box started, PID: %d", cmd.Process.Pid)
+
+	defer func() {
+		cmd.Process.Kill()
+		cmd.Wait()
+		logger.Printf("[site-check] Temporary sing-box stopped")
+	}()
+
+	ready := false
+	client := &http.Client{Timeout: 1 * time.Second}
+	for i := 0; i < 50; i++ {
+		time.Sleep(100 * time.Millisecond)
+		resp, err := client.Get(fmt.Sprintf("http://127.0.0.1:%d/", port))
+		if err == nil {
+			resp.Body.Close()
+			ready = true
+			logger.Printf("[site-check] Clash API ready after %dms", (i+1)*100)
+			break
+		}
+	}
+	if !ready {
+		logger.Printf("[site-check] Clash API did not become ready within 5s")
+		return nil, fmt.Errorf("temporary sing-box did not become ready within 5s")
+	}
+
+	results := make(map[string]*NodeSiteCheckResult)
+	var mu sync.Mutex
+	sem := make(chan struct{}, 80)
+	var wg sync.WaitGroup
+
+	for _, node := range nodes {
+		wg.Add(1)
+		go func(n storage.Node) {
+			defer wg.Done()
+			sem <- struct{}{}
+			defer func() { <-sem }()
+
+			result := &NodeSiteCheckResult{
+				Sites: make(map[string]int, len(targets)),
+			}
+			for _, target := range targets {
+				result.Sites[target] = s.clashProxyDelayWithURL(port, "", n.Tag, normalizeSiteCheckURL(target), 5000)
+			}
+
+			mu.Lock()
+			results[n.Tag] = result
+			mu.Unlock()
+		}(node)
+	}
+
+	wg.Wait()
+	logger.Printf("[site-check] Site check completed for %d nodes", len(nodes))
+	return results, nil
+}
+
+func (s *Server) performSiteCheck(nodes []storage.Node, targets []string) (map[string]*NodeSiteCheckResult, string, error) {
+	isRunning := s.processManager.IsRunning()
+	if !isRunning {
+		tempResults, err := s.performSiteCheckWithTempSingbox(nodes, targets)
+		if err != nil {
+			return nil, "", err
+		}
+		return tempResults, "clash_api_temp", nil
+	}
+
+	settings := s.store.GetSettings()
+	if settings.ClashAPIPort == 0 {
+		return nil, "", fmt.Errorf("Clash API port is not configured")
+	}
+
+	results := make(map[string]*NodeSiteCheckResult)
+	var mu sync.Mutex
+	sem := make(chan struct{}, 80)
+	var wg sync.WaitGroup
+
+	for _, node := range nodes {
+		wg.Add(1)
+		go func(n storage.Node) {
+			defer wg.Done()
+			sem <- struct{}{}
+			defer func() { <-sem }()
+
+			result := &NodeSiteCheckResult{
+				Sites: make(map[string]int, len(targets)),
+			}
+			for _, target := range targets {
+				result.Sites[target] = s.clashProxyDelayWithURL(settings.ClashAPIPort, settings.ClashAPISecret, n.Tag, normalizeSiteCheckURL(target), 5000)
+			}
+
+			mu.Lock()
+			results[n.Tag] = result
+			mu.Unlock()
+		}(node)
+	}
+
+	wg.Wait()
+	return results, "clash_api", nil
+}
+
+func (s *Server) siteCheckNodes(c *gin.Context) {
+	var req struct {
+		Tags  []string `json:"tags"`
+		Sites []string `json:"sites"`
+	}
+	c.ShouldBindJSON(&req)
+
+	targets := sanitizeSiteTargets(req.Sites)
+	if len(targets) == 0 {
+		targets = append([]string{}, defaultSiteCheckTargets...)
+	}
+
+	allNodes := s.store.GetAllNodes()
+	var nodes []storage.Node
+	if len(req.Tags) > 0 {
+		tagSet := make(map[string]bool, len(req.Tags))
+		for _, t := range req.Tags {
+			tagSet[t] = true
+		}
+		for _, n := range allNodes {
+			if tagSet[n.Tag] {
+				nodes = append(nodes, n)
+			}
+		}
+	} else {
+		nodes = allNodes
+	}
+
+	if len(nodes) == 0 {
+		c.JSON(http.StatusOK, gin.H{
+			"data":  map[string]*NodeSiteCheckResult{},
+			"mode":  "",
+			"sites": targets,
+		})
+		return
+	}
+
+	results, mode, err := s.performSiteCheck(nodes, targets)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"data":  results,
+		"mode":  mode,
+		"sites": targets,
+	})
 }
 
 // ==================== Manual Node API ====================

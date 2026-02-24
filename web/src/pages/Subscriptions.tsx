@@ -35,7 +35,7 @@ import { Plus, RefreshCw, Trash2, Globe, Server, Pencil, Link, Filter as FilterI
 import { useStore } from '../store';
 import { nodeApi, manualNodeApi, subscriptionApi } from '../api';
 import { toast } from '../components/Toast';
-import type { Subscription, ManualNode, Node, Filter, NodeHealthResult, UnsupportedNodeInfo } from '../store';
+import type { Subscription, ManualNode, Node, Filter, NodeHealthResult, NodeSiteCheckResult, UnsupportedNodeInfo } from '../store';
 
 function formatBytes(bytes: number): string {
   if (bytes === 0) return '0 B';
@@ -102,6 +102,7 @@ const congestionControlOptions = ['bbr', 'cubic', 'new_reno'];
 
 const protocolsWithTls = ['vmess', 'vless', 'trojan', 'hysteria2', 'tuic'];
 const protocolsWithTransport = ['vmess', 'vless', 'trojan'];
+const SITE_CHECK_TARGETS = ['chatgpt.com', '2ip.ru', 'youtube.com', 'instagram.com'];
 
 // Known extra keys per protocol — everything else goes to "Other"
 const knownExtraKeys: Record<string, string[]> = {
@@ -145,6 +146,15 @@ function getNodeLatency(tag: string, healthResults: Record<string, NodeHealthRes
   return result.alive ? result.tcp_latency_ms : -1;
 }
 
+function shortSiteLabel(site: string): string {
+  const host = site.toLowerCase();
+  if (host.includes('chatgpt')) return 'chatgpt';
+  if (host.includes('youtube')) return 'youtube';
+  if (host.includes('instagram')) return 'instagram';
+  if (host.includes('2ip')) return '2ip';
+  return host.split('.')[0];
+}
+
 export default function Subscriptions() {
   const {
     subscriptions,
@@ -179,6 +189,11 @@ export default function Subscriptions() {
     healthCheckingNodes,
     checkAllNodesHealth,
     checkSingleNodeHealth,
+    siteCheckResults,
+    siteChecking,
+    siteCheckingNodes,
+    checkNodesSites,
+    checkSingleNodeSites,
     unsupportedNodes,
     fetchUnsupportedNodes,
     recheckUnsupportedNodes,
@@ -402,6 +417,12 @@ export default function Subscriptions() {
     for (const un of selectedUnified) {
       checkSingleNodeHealth(un.node.tag);
     }
+  };
+
+  const handleBulkSiteCheck = async () => {
+    const tags = [...new Set(selectedUnified.map(un => un.node.tag))];
+    if (tags.length === 0) return;
+    await checkNodesSites(tags, SITE_CHECK_TARGETS);
   };
 
   const handleBulkDelete = async () => {
@@ -885,6 +906,17 @@ export default function Subscriptions() {
             <span className="sm:hidden">Check</span>
           </Button>
           <Button
+            color="warning"
+            variant="flat"
+            size="sm"
+            startContent={siteChecking ? <Spinner size="sm" /> : <Globe className="w-4 h-4" />}
+            onPress={() => checkNodesSites(undefined, SITE_CHECK_TARGETS)}
+            isDisabled={siteChecking}
+          >
+            <span className="hidden sm:inline">Check Sites</span>
+            <span className="sm:hidden">Sites</span>
+          </Button>
+          <Button
             variant="flat"
             size="sm"
             startContent={<Download className="w-4 h-4" />}
@@ -1065,6 +1097,16 @@ export default function Subscriptions() {
                 <Button
                   size="sm"
                   variant="flat"
+                  color="warning"
+                  startContent={siteChecking ? <Spinner size="sm" /> : <Globe className="w-3.5 h-3.5" />}
+                  onPress={handleBulkSiteCheck}
+                  isDisabled={siteChecking}
+                >
+                  Site Check
+                </Button>
+                <Button
+                  size="sm"
+                  variant="flat"
                   color="danger"
                   startContent={<Trash2 className="w-3.5 h-3.5" />}
                   onPress={handleBulkDelete}
@@ -1214,7 +1256,13 @@ export default function Subscriptions() {
                           </Chip>
                         </TableCell>
                         <TableCell>
-                          <NodeHealthChips tag={un.node.tag} healthResults={healthResults} healthMode={healthMode} />
+                          <NodeHealthChips
+                            tag={un.node.tag}
+                            healthResults={healthResults}
+                            healthMode={healthMode}
+                            siteCheckResults={siteCheckResults}
+                            siteTargets={SITE_CHECK_TARGETS}
+                          />
                         </TableCell>
                         <TableCell>
                           <div className="flex items-center gap-1">
@@ -1226,6 +1274,15 @@ export default function Subscriptions() {
                               onPress={() => checkSingleNodeHealth(un.node.tag)}
                             >
                               <Activity className="w-4 h-4" />
+                            </Button>
+                            <Button
+                              isIconOnly
+                              size="sm"
+                              variant="light"
+                              isLoading={siteCheckingNodes.includes(un.node.tag)}
+                              onPress={() => checkSingleNodeSites(un.node.tag, SITE_CHECK_TARGETS)}
+                            >
+                              <Globe className="w-4 h-4" />
                             </Button>
                             {mn ? (
                               <>
@@ -1361,7 +1418,13 @@ export default function Subscriptions() {
                       </div>
                     </div>
                     <div className="flex items-center gap-2 shrink-0 self-end sm:self-auto">
-                      <NodeHealthChips tag={mn.node.tag} healthResults={healthResults} healthMode={healthMode} />
+                      <NodeHealthChips
+                        tag={mn.node.tag}
+                        healthResults={healthResults}
+                        healthMode={healthMode}
+                        siteCheckResults={siteCheckResults}
+                        siteTargets={SITE_CHECK_TARGETS}
+                      />
                       <Button
                         isIconOnly
                         size="sm"
@@ -1370,6 +1433,15 @@ export default function Subscriptions() {
                         onPress={() => checkSingleNodeHealth(mn.node.tag)}
                       >
                         <Activity className="w-4 h-4" />
+                      </Button>
+                      <Button
+                        isIconOnly
+                        size="sm"
+                        variant="light"
+                        isLoading={siteCheckingNodes.includes(mn.node.tag)}
+                        onPress={() => checkSingleNodeSites(mn.node.tag, SITE_CHECK_TARGETS)}
+                      >
+                        <Globe className="w-4 h-4" />
                       </Button>
                       <Button
                         isIconOnly
@@ -1432,6 +1504,10 @@ export default function Subscriptions() {
                   healthMode={healthMode}
                   healthCheckingNodes={healthCheckingNodes}
                   onHealthCheck={checkSingleNodeHealth}
+                  siteCheckResults={siteCheckResults}
+                  siteCheckingNodes={siteCheckingNodes}
+                  onSiteCheck={(tag) => checkSingleNodeSites(tag, SITE_CHECK_TARGETS)}
+                  siteTargets={SITE_CHECK_TARGETS}
                   unsupportedNodes={unsupportedNodes}
                 />
               ))}
@@ -2568,7 +2644,13 @@ export default function Subscriptions() {
                   >
                     <span className="truncate flex-1 min-w-0">
                       <span className="block truncate">{node.tag}</span>
-                      <NodeHealthChips tag={node.tag} healthResults={healthResults} healthMode={healthMode} />
+                      <NodeHealthChips
+                        tag={node.tag}
+                        healthResults={healthResults}
+                        healthMode={healthMode}
+                        siteCheckResults={siteCheckResults}
+                        siteTargets={SITE_CHECK_TARGETS}
+                      />
                     </span>
                     <Chip size="sm" variant="flat">
                       {node.type}
@@ -2588,6 +2670,20 @@ export default function Subscriptions() {
                         <Activity className="w-3 h-3" />
                       )}
                     </Button>
+                    <Button
+                      isIconOnly
+                      size="sm"
+                      variant="light"
+                      color="warning"
+                      onPress={() => checkSingleNodeSites(node.tag, SITE_CHECK_TARGETS)}
+                      isDisabled={siteCheckingNodes.includes(node.tag)}
+                    >
+                      {siteCheckingNodes.includes(node.tag) ? (
+                        <Spinner size="sm" />
+                      ) : (
+                        <Globe className="w-3 h-3" />
+                      )}
+                    </Button>
                   </div>
                 ))}
               </div>
@@ -2602,42 +2698,68 @@ export default function Subscriptions() {
   );
 }
 
-// NodeHealthChips component to display health check results for a node
-function NodeHealthChips({ tag, healthResults, healthMode }: {
+// NodeHealthChips component to display health and site-check results for a node
+function NodeHealthChips({ tag, healthResults, healthMode, siteCheckResults, siteTargets }: {
   tag: string;
   healthResults: Record<string, NodeHealthResult>;
   healthMode: 'clash_api' | 'clash_api_temp' | 'tcp' | null;
+  siteCheckResults: Record<string, NodeSiteCheckResult>;
+  siteTargets: string[];
 }) {
   const result = healthResults[tag];
-  if (!result) return null;
+  const siteResult = siteCheckResults[tag];
+  if (!result && !siteResult) return null;
 
-  if ((healthMode === 'clash_api' || healthMode === 'clash_api_temp') && Object.keys(result.groups).length > 0) {
-    return (
-      <div className="flex flex-wrap gap-1 mt-1">
-        {Object.entries(result.groups).map(([group, delay]) => (
-          <Chip
-            key={group}
-            size="sm"
-            variant="flat"
-            color={delay > 0 ? (delay < 300 ? 'success' : 'warning') : 'danger'}
-          >
-            {group}: {delay > 0 ? `${delay}ms` : 'Timeout'}
-          </Chip>
-        ))}
-      </div>
-    );
-  }
+  const orderedSiteEntries = siteResult
+    ? siteTargets.map((site) => [site, siteResult.sites?.[site] ?? 0] as const)
+    : [];
 
   return (
-    <div className="flex flex-wrap gap-1 mt-1">
-      <Chip
-        size="sm"
-        variant="flat"
-        color={result.alive ? (result.tcp_latency_ms < 300 ? 'success' : 'warning') : 'danger'}
-      >
-        {result.alive ? `TCP: ${result.tcp_latency_ms}ms` : 'Timeout'}
-      </Chip>
-    </div>
+    <>
+      {result && (
+        <>
+          {(healthMode === 'clash_api' || healthMode === 'clash_api_temp') && Object.keys(result.groups).length > 0 ? (
+            <div className="flex flex-wrap gap-1 mt-1">
+              {Object.entries(result.groups).map(([group, delay]) => (
+                <Chip
+                  key={group}
+                  size="sm"
+                  variant="flat"
+                  color={delay > 0 ? (delay < 300 ? 'success' : 'warning') : 'danger'}
+                >
+                  {group}: {delay > 0 ? `${delay}ms` : 'Timeout'}
+                </Chip>
+              ))}
+            </div>
+          ) : (
+            <div className="flex flex-wrap gap-1 mt-1">
+              <Chip
+                size="sm"
+                variant="flat"
+                color={result.alive ? (result.tcp_latency_ms < 300 ? 'success' : 'warning') : 'danger'}
+              >
+                {result.alive ? `TCP: ${result.tcp_latency_ms}ms` : 'Timeout'}
+              </Chip>
+            </div>
+          )}
+        </>
+      )}
+
+      {orderedSiteEntries.length > 0 && (
+        <div className="flex flex-wrap gap-1 mt-1">
+          {orderedSiteEntries.map(([site, delay]) => (
+            <Chip
+              key={site}
+              size="sm"
+              variant="flat"
+              color={delay > 0 ? (delay < 800 ? 'success' : 'warning') : 'danger'}
+            >
+              {shortSiteLabel(site)}: {delay > 0 ? `${delay}ms` : 'Fail'}
+            </Chip>
+          ))}
+        </div>
+      )}
+    </>
   );
 }
 
@@ -2652,10 +2774,30 @@ interface SubscriptionCardProps {
   healthMode: 'clash_api' | 'clash_api_temp' | 'tcp' | null;
   healthCheckingNodes: string[];
   onHealthCheck: (tag: string) => void;
+  siteCheckResults: Record<string, NodeSiteCheckResult>;
+  siteCheckingNodes: string[];
+  onSiteCheck: (tag: string) => void;
+  siteTargets: string[];
   unsupportedNodes: UnsupportedNodeInfo[];
 }
 
-function SubscriptionCard({ subscription: sub, onRefresh, onEdit, onDelete, onToggle, loading, healthResults, healthMode, healthCheckingNodes, onHealthCheck, unsupportedNodes }: SubscriptionCardProps) {
+function SubscriptionCard({
+  subscription: sub,
+  onRefresh,
+  onEdit,
+  onDelete,
+  onToggle,
+  loading,
+  healthResults,
+  healthMode,
+  healthCheckingNodes,
+  onHealthCheck,
+  siteCheckResults,
+  siteCheckingNodes,
+  onSiteCheck,
+  siteTargets,
+  unsupportedNodes,
+}: SubscriptionCardProps) {
   const [isExpanded, setIsExpanded] = useState(false);
 
   // Ensure nodes is an array, handle null or undefined cases
@@ -2777,7 +2919,13 @@ function SubscriptionCard({ subscription: sub, onRefresh, onEdit, onDelete, onTo
                     >
                       <span className="truncate flex-1 min-w-0">
                         <span className="block truncate">{node.tag}</span>
-                        <NodeHealthChips tag={node.tag} healthResults={healthResults} healthMode={healthMode} />
+                        <NodeHealthChips
+                          tag={node.tag}
+                          healthResults={healthResults}
+                          healthMode={healthMode}
+                          siteCheckResults={siteCheckResults}
+                          siteTargets={siteTargets}
+                        />
                       </span>
                       {unsupportedNodes.some(u => u.tag === node.tag) && (
                         <Chip size="sm" variant="flat" color="warning" title={unsupportedNodes.find(u => u.tag === node.tag)?.error}>
@@ -2799,6 +2947,20 @@ function SubscriptionCard({ subscription: sub, onRefresh, onEdit, onDelete, onTo
                           <Spinner size="sm" />
                         ) : (
                           <Activity className="w-3 h-3" />
+                        )}
+                      </Button>
+                      <Button
+                        isIconOnly
+                        size="sm"
+                        variant="light"
+                        color="warning"
+                        onPress={() => onSiteCheck(node.tag)}
+                        isDisabled={siteCheckingNodes.includes(node.tag)}
+                      >
+                        {siteCheckingNodes.includes(node.tag) ? (
+                          <Spinner size="sm" />
+                        ) : (
+                          <Globe className="w-3 h-3" />
                         )}
                       </Button>
                     </div>

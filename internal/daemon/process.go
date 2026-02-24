@@ -16,6 +16,8 @@ import (
 	"github.com/xiaobei/singbox-manager/internal/logger"
 )
 
+const defaultMaxProcessLogs = 10000
+
 // ProcessManager Process manager
 type ProcessManager struct {
 	singboxPath string
@@ -37,7 +39,7 @@ func NewProcessManager(singboxPath, configPath, dataDir string) *ProcessManager 
 		configPath:  configPath,
 		dataDir:     dataDir,
 		pidFile:     filepath.Join(dataDir, "singbox.pid"),
-		maxLogs:     1000,
+		maxLogs:     defaultMaxProcessLogs,
 		logs:        make([]string, 0),
 	}
 
