@@ -144,6 +144,19 @@ curl -X POST http://<host>:9090/api/probe/stop
 
 ---
 
+## Базовый домен
+
+Текущий базовый домен для проверок: `https://sing.basegrid.tech/`
+
+Все эндпоинты доступны по этому адресу, например:
+
+```bash
+curl https://sing.basegrid.tech/api/debug/dump | jq .
+curl https://sing.basegrid.tech/api/probe/status | jq .
+```
+
+---
+
 ## Включение
 
 1. Открыть веб-интерфейс → **Settings**

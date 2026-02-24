@@ -1897,7 +1897,7 @@ func (s *Server) healthCheckNodes(c *gin.Context) {
 	}
 	c.ShouldBindJSON(&req)
 
-	allNodes := s.store.GetAllNodes()
+	allNodes := s.store.GetAllNodesIncludeDisabled()
 
 	var nodes []storage.Node
 	if len(req.Tags) > 0 {
@@ -1940,7 +1940,7 @@ func (s *Server) healthCheckSingleNode(c *gin.Context) {
 		return
 	}
 
-	allNodes := s.store.GetAllNodes()
+	allNodes := s.store.GetAllNodesIncludeDisabled()
 	var nodes []storage.Node
 	for _, n := range allNodes {
 		if n.Tag == req.Tag {
@@ -2009,7 +2009,7 @@ func (s *Server) siteCheckNodes(c *gin.Context) {
 		targets = append([]string{}, defaultSiteCheckTargets...)
 	}
 
-	allNodes := s.store.GetAllNodes()
+	allNodes := s.store.GetAllNodesIncludeDisabled()
 	var nodes []storage.Node
 	if len(req.Tags) > 0 {
 		tagSet := make(map[string]bool, len(req.Tags))
