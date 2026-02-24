@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Card, CardBody, CardHeader, Button, Chip, Modal, ModalContent, ModalHeader, ModalBody, ModalFooter, Tooltip, Select, SelectItem } from '@nextui-org/react';
-import { Play, Square, RefreshCw, Cpu, HardDrive, Wifi, Info, Activity, Copy, ClipboardCheck, Link, Globe } from 'lucide-react';
+import { Play, Square, RefreshCw, Cpu, HardDrive, Wifi, Info, Activity, Copy, ClipboardCheck, Link, Globe, QrCode } from 'lucide-react';
 import { useStore } from '../store';
 import { serviceApi, configApi } from '../api';
 import { toast } from '../components/Toast';
@@ -9,6 +9,7 @@ export default function Dashboard() {
   const { serviceStatus, subscriptions, manualNodes, systemInfo, settings, proxyGroups, fetchServiceStatus, fetchSubscriptions, fetchManualNodes, fetchSystemInfo, fetchSettings, fetchUnsupportedNodes, fetchProxyGroups, switchProxy } = useStore();
 
   const [copiedLink, setCopiedLink] = useState<string | null>(null);
+  const [qrLink, setQrLink] = useState<string | null>(null);
 
   // Error modal state
   const [errorModal, setErrorModal] = useState<{
@@ -151,6 +152,7 @@ export default function Dashboard() {
   const enabledSubs = subscriptions.filter(sub => sub.enabled).length;
   const enabledManualNodes = manualNodes.filter(mn => mn.enabled).length;
   const mainProxyGroup = proxyGroups.find((group) => group.name.toLowerCase() === 'proxy');
+  const qrImageUrl = qrLink ? `https://quickchart.io/qr?text=${encodeURIComponent(qrLink)}&size=260` : '';
 
   return (
     <div className="space-y-6">
@@ -308,18 +310,31 @@ export default function Dashboard() {
                     <Chip size="sm" variant="flat" color="primary">{item.label}</Chip>
                     <code className="text-sm text-gray-600 dark:text-gray-300 truncate">{item.link}</code>
                   </div>
-                  <Button
-                    size="sm"
-                    variant="light"
-                    isIconOnly
-                    onPress={() => handleCopyLink(item.key, item.link)}
-                  >
-                    {copiedLink === item.key ? (
-                      <ClipboardCheck className="w-4 h-4 text-success" />
-                    ) : (
-                      <Copy className="w-4 h-4" />
+                  <div className="flex items-center gap-1 self-end sm:self-auto">
+                    {item.key === 'ss' && (
+                      <Button
+                        size="sm"
+                        variant="light"
+                        isIconOnly
+                        onPress={() => setQrLink(item.link)}
+                        aria-label="Show Shadowsocks QR code"
+                      >
+                        <QrCode className="w-4 h-4" />
+                      </Button>
                     )}
-                  </Button>
+                    <Button
+                      size="sm"
+                      variant="light"
+                      isIconOnly
+                      onPress={() => handleCopyLink(item.key, item.link)}
+                    >
+                      {copiedLink === item.key ? (
+                        <ClipboardCheck className="w-4 h-4 text-success" />
+                      ) : (
+                        <Copy className="w-4 h-4" />
+                      )}
+                    </Button>
+                  </div>
                 </div>
               ))}
             </div>
@@ -494,6 +509,36 @@ export default function Dashboard() {
           <ModalFooter>
             <Button color="primary" onPress={() => setErrorModal({ ...errorModal, isOpen: false })}>
               OK
+            </Button>
+          </ModalFooter>
+        </ModalContent>
+      </Modal>
+
+      {/* Shadowsocks QR modal */}
+      <Modal isOpen={Boolean(qrLink)} onClose={() => setQrLink(null)}>
+        <ModalContent>
+          <ModalHeader>Shadowsocks QR</ModalHeader>
+          <ModalBody>
+            {qrLink && (
+              <div className="flex flex-col items-center gap-3">
+                <img
+                  src={qrImageUrl}
+                  alt="Shadowsocks QR code"
+                  className="w-64 h-64 rounded-md border border-gray-200 dark:border-gray-700"
+                  loading="lazy"
+                />
+                <code className="text-xs text-gray-600 dark:text-gray-300 break-all">{qrLink}</code>
+              </div>
+            )}
+          </ModalBody>
+          <ModalFooter>
+            {qrLink && (
+              <Button variant="flat" onPress={() => handleCopyLink('ss-qr', qrLink)}>
+                {copiedLink === 'ss-qr' ? 'Copied' : 'Copy Link'}
+              </Button>
+            )}
+            <Button color="primary" onPress={() => setQrLink(null)}>
+              Close
             </Button>
           </ModalFooter>
         </ModalContent>
