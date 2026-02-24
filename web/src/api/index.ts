@@ -97,6 +97,10 @@ export const nodeApi = {
   getByCountry: (code: string) => api.get(`/nodes/country/${code}`),
   parse: (url: string) => api.post('/nodes/parse', { url }),
   parseBulk: (urls: string[]) => api.post('/nodes/parse-bulk', { urls }),
+  healthCheck: (tags?: string[]) =>
+    api.post('/nodes/health-check', { tags }, { timeout: 60000 }),
+  healthCheckSingle: (tag: string) =>
+    api.post('/nodes/health-check-single', { tag }, { timeout: 15000 }),
 };
 
 // Manual node API

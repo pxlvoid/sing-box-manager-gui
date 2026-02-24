@@ -3,8 +3,11 @@ package api
 import (
 	"crypto/rand"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
+	"io"
 	"io/fs"
+	"net"
 	"net/http"
 	"os"
 	"os/user"
@@ -12,6 +15,7 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/gin-contrib/cors"
@@ -184,6 +188,8 @@ func (s *Server) setupRoutes() {
 		api.GET("/nodes/country/:code", s.getNodesByCountry)
 		api.POST("/nodes/parse", s.parseNodeURL)
 		api.POST("/nodes/parse-bulk", s.parseNodeURLsBulk)
+		api.POST("/nodes/health-check", s.healthCheckNodes)
+		api.POST("/nodes/health-check-single", s.healthCheckSingleNode)
 
 		// Manual nodes
 		api.GET("/manual-nodes", s.getManualNodes)
@@ -1322,6 +1328,226 @@ func (s *Server) parseNodeURLsBulk(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{"data": results})
+}
+
+// ==================== Health Check API ====================
+
+// NodeHealthResult represents health check result for a single node
+type NodeHealthResult struct {
+	Alive        bool           `json:"alive"`
+	TCPLatencyMs int64          `json:"tcp_latency_ms"`
+	Groups       map[string]int `json:"groups"`
+}
+
+// matchFilter checks if a node matches a filter (duplicated from builder for API layer)
+func matchFilter(node storage.Node, filter storage.Filter) bool {
+	name := strings.ToLower(node.Tag)
+
+	if len(filter.IncludeCountries) > 0 {
+		matched := false
+		for _, country := range filter.IncludeCountries {
+			if strings.EqualFold(node.Country, country) {
+				matched = true
+				break
+			}
+		}
+		if !matched {
+			return false
+		}
+	}
+
+	for _, country := range filter.ExcludeCountries {
+		if strings.EqualFold(node.Country, country) {
+			return false
+		}
+	}
+
+	if len(filter.Include) > 0 {
+		matched := false
+		for _, keyword := range filter.Include {
+			if strings.Contains(name, strings.ToLower(keyword)) {
+				matched = true
+				break
+			}
+		}
+		if !matched {
+			return false
+		}
+	}
+
+	for _, keyword := range filter.Exclude {
+		if strings.Contains(name, strings.ToLower(keyword)) {
+			return false
+		}
+	}
+
+	return true
+}
+
+func (s *Server) tcpCheck(server string, port int) (alive bool, latencyMs int64) {
+	addr := net.JoinHostPort(server, strconv.Itoa(port))
+	start := time.Now()
+	conn, err := net.DialTimeout("tcp", addr, 5*time.Second)
+	if err != nil {
+		return false, 0
+	}
+	conn.Close()
+	return true, time.Since(start).Milliseconds()
+}
+
+func (s *Server) clashProxyDelay(port int, secret, nodeTag string) int {
+	client := &http.Client{Timeout: 7 * time.Second}
+	url := fmt.Sprintf("http://127.0.0.1:%d/proxies/%s/delay?url=https://www.gstatic.com/generate_204&timeout=5000", port, nodeTag)
+
+	req, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		return 0
+	}
+	if secret != "" {
+		req.Header.Set("Authorization", "Bearer "+secret)
+	}
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return 0
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return 0
+	}
+
+	var result struct {
+		Delay int `json:"delay"`
+	}
+	if err := json.Unmarshal(body, &result); err != nil {
+		return 0
+	}
+	return result.Delay
+}
+
+func (s *Server) performHealthCheck(nodes []storage.Node) (map[string]*NodeHealthResult, string) {
+	results := make(map[string]*NodeHealthResult)
+	var mu sync.Mutex
+
+	isRunning := s.processManager.IsRunning()
+	mode := "tcp"
+
+	if isRunning {
+		mode = "clash_api"
+	}
+
+	settings := s.store.GetSettings()
+	filters := s.store.GetFilters()
+
+	// Semaphore for concurrency limit
+	sem := make(chan struct{}, 50)
+	var wg sync.WaitGroup
+
+	for _, node := range nodes {
+		wg.Add(1)
+		go func(n storage.Node) {
+			defer wg.Done()
+			sem <- struct{}{}
+			defer func() { <-sem }()
+
+			result := &NodeHealthResult{
+				Groups: make(map[string]int),
+			}
+
+			// TCP check
+			alive, tcpLatency := s.tcpCheck(n.Server, n.ServerPort)
+			result.Alive = alive
+			result.TCPLatencyMs = tcpLatency
+
+			// Clash API check
+			if isRunning {
+				// Check delay through each matching enabled filter
+				for _, filter := range filters {
+					if !filter.Enabled {
+						continue
+					}
+					if matchFilter(n, filter) {
+						delay := s.clashProxyDelay(settings.ClashAPIPort, settings.ClashAPISecret, n.Tag)
+						if delay > 0 {
+							result.Alive = true
+						}
+						result.Groups[filter.Name] = delay
+					}
+				}
+
+				// Also check via main Proxy group
+				delay := s.clashProxyDelay(settings.ClashAPIPort, settings.ClashAPISecret, n.Tag)
+				if delay > 0 {
+					result.Alive = true
+					result.Groups["Proxy"] = delay
+				}
+			}
+
+			mu.Lock()
+			results[n.Tag] = result
+			mu.Unlock()
+		}(node)
+	}
+
+	wg.Wait()
+	return results, mode
+}
+
+func (s *Server) healthCheckNodes(c *gin.Context) {
+	var req struct {
+		Tags []string `json:"tags"`
+	}
+	c.ShouldBindJSON(&req)
+
+	allNodes := s.store.GetAllNodes()
+
+	var nodes []storage.Node
+	if len(req.Tags) > 0 {
+		tagSet := make(map[string]bool)
+		for _, t := range req.Tags {
+			tagSet[t] = true
+		}
+		for _, n := range allNodes {
+			if tagSet[n.Tag] {
+				nodes = append(nodes, n)
+			}
+		}
+	} else {
+		nodes = allNodes
+	}
+
+	results, mode := s.performHealthCheck(nodes)
+	c.JSON(http.StatusOK, gin.H{"data": results, "mode": mode})
+}
+
+func (s *Server) healthCheckSingleNode(c *gin.Context) {
+	var req struct {
+		Tag string `json:"tag" binding:"required"`
+	}
+
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	allNodes := s.store.GetAllNodes()
+	var nodes []storage.Node
+	for _, n := range allNodes {
+		if n.Tag == req.Tag {
+			nodes = append(nodes, n)
+			break
+		}
+	}
+
+	if len(nodes) == 0 {
+		c.JSON(http.StatusNotFound, gin.H{"error": "node not found"})
+		return
+	}
+
+	results, mode := s.performHealthCheck(nodes)
+	c.JSON(http.StatusOK, gin.H{"data": results, "mode": mode})
 }
 
 // ==================== Manual Node API ====================
