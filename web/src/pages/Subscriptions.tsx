@@ -421,37 +421,8 @@ export default function Subscriptions() {
         </div>
       </div>
 
-      <Tabs aria-label="Node Management">
-        <Tab key="subscriptions" title="Subscriptions">
-          {subscriptions.length === 0 ? (
-            <Card className="mt-4">
-              <CardBody className="py-12 text-center">
-                <Globe className="w-12 h-12 mx-auto text-gray-300 mb-4" />
-                <p className="text-gray-500">No subscriptions yet, click the button above to add one</p>
-              </CardBody>
-            </Card>
-          ) : (
-            <div className="space-y-4 mt-4">
-              {subscriptions.map((sub) => (
-                <SubscriptionCard
-                  key={sub.id}
-                  subscription={sub}
-                  onRefresh={() => handleRefresh(sub.id)}
-                  onEdit={() => handleOpenEditSubscription(sub)}
-                  onDelete={() => handleDeleteSubscription(sub.id)}
-                  onToggle={() => handleToggleSubscription(sub)}
-                  loading={loading}
-                  healthResults={healthResults}
-                  healthMode={healthMode}
-                  healthCheckingNodes={healthCheckingNodes}
-                  onHealthCheck={checkSingleNodeHealth}
-                />
-              ))}
-            </div>
-          )}
-        </Tab>
-
-        <Tab key="manual" title="Manual Nodes">
+      <Tabs aria-label="Node Management" defaultSelectedKey="manual">
+        <Tab key="manual" title={<span>Manual Nodes{manualNodes.length > 0 && <span className="ml-1.5 text-xs opacity-60">({manualNodes.length})</span>}</span>}>
           {manualNodes.length === 0 ? (
             <Card className="mt-4">
               <CardBody className="py-12 text-center">
@@ -468,30 +439,19 @@ export default function Subscriptions() {
                       <span className="text-xl">{mn.node.country_emoji || '🌐'}</span>
                       <div>
                         <h3 className="font-medium">{mn.node.tag}</h3>
-                        <p className="text-sm text-gray-500">
-                          {mn.node.type} · {mn.node.server}:{mn.node.server_port}
-                        </p>
-                        <NodeHealthChips
-                          tag={mn.node.tag}
-                          healthResults={healthResults}
-                          healthMode={healthMode}
-                        />
+                        <p className="text-xs text-gray-500">{mn.node.type} • {mn.node.server}:{mn.node.server_port}</p>
                       </div>
                     </div>
                     <div className="flex items-center gap-2">
+                      <NodeHealthChips tag={mn.node.tag} healthResults={healthResults} healthMode={healthMode} />
                       <Button
                         isIconOnly
                         size="sm"
                         variant="light"
-                        color="warning"
+                        isLoading={healthCheckingNodes.includes(mn.node.tag)}
                         onPress={() => checkSingleNodeHealth(mn.node.tag)}
-                        isDisabled={healthCheckingNodes.includes(mn.node.tag)}
                       >
-                        {healthCheckingNodes.includes(mn.node.tag) ? (
-                          <Spinner size="sm" />
-                        ) : (
-                          <Activity className="w-4 h-4" />
-                        )}
+                        <Activity className="w-4 h-4" />
                       </Button>
                       <Button
                         isIconOnly
@@ -522,7 +482,36 @@ export default function Subscriptions() {
           )}
         </Tab>
 
-        <Tab key="filters" title="Filters">
+        <Tab key="subscriptions" title={<span>Subscriptions{subscriptions.length > 0 && <span className="ml-1.5 text-xs opacity-60">({subscriptions.length})</span>}</span>}>
+          {subscriptions.length === 0 ? (
+            <Card className="mt-4">
+              <CardBody className="py-12 text-center">
+                <Globe className="w-12 h-12 mx-auto text-gray-300 mb-4" />
+                <p className="text-gray-500">No subscriptions yet, click the button above to add one</p>
+              </CardBody>
+            </Card>
+          ) : (
+            <div className="space-y-4 mt-4">
+              {subscriptions.map((sub) => (
+                <SubscriptionCard
+                  key={sub.id}
+                  subscription={sub}
+                  onRefresh={() => handleRefresh(sub.id)}
+                  onEdit={() => handleOpenEditSubscription(sub)}
+                  onDelete={() => handleDeleteSubscription(sub.id)}
+                  onToggle={() => handleToggleSubscription(sub)}
+                  loading={loading}
+                  healthResults={healthResults}
+                  healthMode={healthMode}
+                  healthCheckingNodes={healthCheckingNodes}
+                  onHealthCheck={checkSingleNodeHealth}
+                />
+              ))}
+            </div>
+          )}
+        </Tab>
+
+        <Tab key="filters" title={<span>Filters{filters.length > 0 && <span className="ml-1.5 text-xs opacity-60">({filters.length})</span>}</span>}>
           {filters.length === 0 ? (
             <Card className="mt-4">
               <CardBody className="py-12 text-center">
@@ -598,7 +587,7 @@ export default function Subscriptions() {
           )}
         </Tab>
 
-        <Tab key="countries" title="By Country/Region">
+        <Tab key="countries" title={<span>By Country/Region{countryGroups.length > 0 && <span className="ml-1.5 text-xs opacity-60">({countryGroups.length})</span>}</span>}>
           {countryGroups.length === 0 ? (
             <Card className="mt-4">
               <CardBody className="py-12 text-center">
