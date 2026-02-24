@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   Card,
   CardBody,
@@ -21,8 +21,16 @@ import {
   SelectItem,
   Switch,
   Textarea,
+  Table,
+  TableHeader,
+  TableColumn,
+  TableBody,
+  TableRow,
+  TableCell,
+  Pagination,
+  Tooltip,
 } from '@nextui-org/react';
-import { Plus, RefreshCw, Trash2, Globe, Server, Pencil, Link, Filter as FilterIcon, ChevronDown, ChevronUp, List, Activity, Copy, ClipboardCheck, Download, ClipboardPaste, AlertTriangle } from 'lucide-react';
+import { Plus, RefreshCw, Trash2, Globe, Server, Pencil, Link, Filter as FilterIcon, ChevronDown, ChevronUp, List, Activity, Copy, ClipboardCheck, Download, ClipboardPaste, AlertTriangle, Search, ArrowUp, ArrowDown, FolderInput } from 'lucide-react';
 import { useStore } from '../store';
 import { nodeApi, manualNodeApi, subscriptionApi } from '../api';
 import { toast } from '../components/Toast';
@@ -71,6 +79,37 @@ const defaultNode: Node = {
   country: 'HK',
   country_emoji: '🇭🇰',
 };
+
+interface UnifiedNode {
+  key: string;
+  node: Node;
+  source: 'manual' | 'subscription';
+  sourceName: string;
+  sourceId: string;
+  enabled: boolean;
+  groupTag?: string;
+  manualNodeId?: string;
+  isUnsupported: boolean;
+}
+
+type HealthFilter = 'all' | 'alive' | 'timeout' | 'unchecked';
+type SortColumn = 'name' | 'type' | 'source' | 'latency';
+type SortDirection = 'asc' | 'desc';
+interface SortConfig {
+  column: SortColumn | null;
+  direction: SortDirection;
+}
+
+function getNodeLatency(tag: string, healthResults: Record<string, NodeHealthResult>, healthMode: string | null): number | null {
+  const result = healthResults[tag];
+  if (!result) return null;
+  if ((healthMode === 'clash_api' || healthMode === 'clash_api_temp') && Object.keys(result.groups).length > 0) {
+    const delays = Object.values(result.groups).filter(d => d > 0);
+    if (delays.length === 0) return result.alive ? 0 : -1;
+    return Math.min(...delays);
+  }
+  return result.alive ? result.tcp_latency_ms : -1;
+}
 
 export default function Subscriptions() {
   const {
@@ -166,6 +205,125 @@ export default function Subscriptions() {
   const [exportData, setExportData] = useState<{ subscriptions: { name: string; url: string }[]; manual_nodes: string[] } | null>(null);
   const [importData, setImportData] = useState<{ subscriptions: { name: string; url: string }[]; manual_nodes: string[] } | null>(null);
   const [importing, setImporting] = useState(false);
+
+  // Unified tab state
+  const [healthFilter, setHealthFilter] = useState<HealthFilter>('all');
+  const [sortConfig, setSortConfig] = useState<SortConfig>({ column: null, direction: 'asc' });
+  const [searchQuery, setSearchQuery] = useState('');
+  const [sourceFilter, setSourceFilter] = useState<string>('all');
+  const [unifiedPage, setUnifiedPage] = useState(1);
+  const UNIFIED_PAGE_SIZE = 50;
+
+  const handleColumnSort = (column: SortColumn) => {
+    setSortConfig(prev => {
+      if (prev.column === column) {
+        if (prev.direction === 'asc') return { column, direction: 'desc' };
+        return { column: null, direction: 'asc' }; // reset
+      }
+      return { column, direction: 'asc' };
+    });
+  };
+
+  const unifiedNodes = useMemo(() => {
+    const result: UnifiedNode[] = [];
+    for (const mn of manualNodes) {
+      result.push({
+        key: `manual::${mn.id}`,
+        node: mn.node,
+        source: 'manual',
+        sourceName: 'Manual',
+        sourceId: mn.id,
+        enabled: mn.enabled,
+        groupTag: mn.group_tag,
+        manualNodeId: mn.id,
+        isUnsupported: unsupportedNodes.some(u => u.tag === mn.node.tag),
+      });
+    }
+    for (const sub of subscriptions) {
+      if (!sub.enabled) continue;
+      for (const node of (sub.nodes || [])) {
+        result.push({
+          key: `sub::${sub.id}::${node.tag}`,
+          node,
+          source: 'subscription',
+          sourceName: sub.name,
+          sourceId: sub.id,
+          enabled: true,
+          isUnsupported: unsupportedNodes.some(u => u.tag === node.tag),
+        });
+      }
+    }
+    return result;
+  }, [manualNodes, subscriptions, unsupportedNodes]);
+
+  const filteredAndSortedNodes = useMemo(() => {
+    let nodes = [...unifiedNodes];
+
+    if (sourceFilter === 'manual') {
+      nodes = nodes.filter(n => n.source === 'manual');
+    } else if (sourceFilter !== 'all') {
+      nodes = nodes.filter(n => n.source === 'subscription' && n.sourceId === sourceFilter);
+    }
+
+    if (searchQuery) {
+      const q = searchQuery.toLowerCase();
+      nodes = nodes.filter(n =>
+        n.node.tag.toLowerCase().includes(q) ||
+        n.node.server.toLowerCase().includes(q) ||
+        n.sourceName.toLowerCase().includes(q)
+      );
+    }
+
+    if (healthFilter !== 'all') {
+      nodes = nodes.filter(n => {
+        const result = healthResults[n.node.tag];
+        if (healthFilter === 'unchecked') return !result;
+        if (healthFilter === 'alive') return result?.alive === true;
+        if (healthFilter === 'timeout') return result && !result.alive;
+        return true;
+      });
+    }
+
+    if (sortConfig.column) {
+      const dir = sortConfig.direction === 'asc' ? 1 : -1;
+      nodes.sort((a, b) => {
+        switch (sortConfig.column) {
+          case 'name':
+            return dir * a.node.tag.localeCompare(b.node.tag);
+          case 'type':
+            return dir * a.node.type.localeCompare(b.node.type);
+          case 'source':
+            return dir * a.sourceName.localeCompare(b.sourceName);
+          case 'latency': {
+            const la = getNodeLatency(a.node.tag, healthResults, healthMode);
+            const lb = getNodeLatency(b.node.tag, healthResults, healthMode);
+            if (la === null && lb === null) return 0;
+            if (la === null) return 1;
+            if (lb === null) return -1;
+            if (la === -1 && lb === -1) return 0;
+            if (la === -1) return 1;
+            if (lb === -1) return -1;
+            return dir * (la - lb);
+          }
+          default:
+            return 0;
+        }
+      });
+    }
+
+    return nodes;
+  }, [unifiedNodes, sourceFilter, searchQuery, healthFilter, sortConfig, healthResults, healthMode]);
+
+  const unifiedTotalPages = Math.max(1, Math.ceil(filteredAndSortedNodes.length / UNIFIED_PAGE_SIZE));
+  const paginatedNodes = filteredAndSortedNodes.slice(
+    (unifiedPage - 1) * UNIFIED_PAGE_SIZE,
+    unifiedPage * UNIFIED_PAGE_SIZE
+  );
+
+  // Reset page when filters change
+  useEffect(() => {
+    setUnifiedPage(1);
+  }, [sourceFilter, searchQuery, healthFilter, sortConfig]);
 
   useEffect(() => {
     fetchSubscriptions();
@@ -322,6 +480,14 @@ export default function Subscriptions() {
       }
     } catch (error) {
       console.error('Failed to copy nodes:', error);
+    }
+  };
+
+  const handleCopyToManual = async (node: Node) => {
+    try {
+      await addManualNode({ node, enabled: true });
+    } catch (error) {
+      console.error('Failed to copy node to manual:', error);
     }
   };
 
@@ -642,7 +808,219 @@ export default function Subscriptions() {
         </Card>
       )}
 
-      <Tabs aria-label="Node Management" defaultSelectedKey="manual">
+      <Tabs aria-label="Node Management" defaultSelectedKey="unified">
+        <Tab key="unified" title={<span>Unified{unifiedNodes.length > 0 && <span className="ml-1.5 text-xs opacity-60">({unifiedNodes.length})</span>}</span>}>
+          <div className="space-y-3 mt-4">
+            {/* Toolbar */}
+            <div className="flex flex-wrap gap-2 items-center">
+              <Input
+                size="sm"
+                placeholder="Search nodes..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                startContent={<Search className="w-3.5 h-3.5 text-gray-400" />}
+                className="w-48"
+                isClearable
+                onClear={() => setSearchQuery('')}
+              />
+              <Select
+                size="sm"
+                selectedKeys={[sourceFilter]}
+                onChange={(e) => setSourceFilter(e.target.value || 'all')}
+                className="w-40"
+                aria-label="Source filter"
+                items={[
+                  { key: 'all', label: 'All Sources' },
+                  { key: 'manual', label: 'Manual' },
+                  ...subscriptions.filter(s => s.enabled).map(sub => ({ key: sub.id, label: sub.name })),
+                ]}
+              >
+                {(item) => <SelectItem key={item.key}>{item.label}</SelectItem>}
+              </Select>
+              <div className="flex gap-1">
+                {(['all', 'alive', 'timeout', 'unchecked'] as HealthFilter[]).map(f => (
+                  <Chip
+                    key={f}
+                    size="sm"
+                    variant={healthFilter === f ? 'solid' : 'flat'}
+                    color={f === 'alive' ? 'success' : f === 'timeout' ? 'danger' : f === 'unchecked' ? 'default' : 'primary'}
+                    className="cursor-pointer"
+                    onClick={() => setHealthFilter(f)}
+                  >
+                    {f === 'all' ? 'All' : f === 'alive' ? 'Alive' : f === 'timeout' ? 'Timeout' : 'Unchecked'}
+                  </Chip>
+                ))}
+              </div>
+              <span className="text-xs text-gray-400 ml-auto">
+                {filteredAndSortedNodes.length === unifiedNodes.length
+                  ? `${unifiedNodes.length} nodes`
+                  : `${filteredAndSortedNodes.length} of ${unifiedNodes.length} nodes`}
+              </span>
+            </div>
+
+            {/* Table */}
+            {unifiedNodes.length === 0 ? (
+              <Card>
+                <CardBody className="py-12 text-center">
+                  <Server className="w-12 h-12 mx-auto text-gray-300 mb-4" />
+                  <p className="text-gray-500">No nodes yet. Add manual nodes or subscriptions first.</p>
+                </CardBody>
+              </Card>
+            ) : filteredAndSortedNodes.length === 0 ? (
+              <Card>
+                <CardBody className="py-8 text-center">
+                  <p className="text-gray-500">No nodes match current filters.</p>
+                </CardBody>
+              </Card>
+            ) : (
+              <Table
+                aria-label="Unified nodes table"
+                removeWrapper
+                isCompact
+                bottomContent={
+                  unifiedTotalPages > 1 ? (
+                    <div className="flex justify-center">
+                      <Pagination
+                        size="sm"
+                        total={unifiedTotalPages}
+                        page={unifiedPage}
+                        onChange={setUnifiedPage}
+                      />
+                    </div>
+                  ) : null
+                }
+              >
+                <TableHeader>
+                  <TableColumn width={40}> </TableColumn>
+                  <TableColumn allowsSorting>
+                    <span className="cursor-pointer flex items-center gap-1" onClick={() => handleColumnSort('name')}>
+                      Name
+                      {sortConfig.column === 'name' && (sortConfig.direction === 'asc' ? <ArrowUp className="w-3 h-3" /> : <ArrowDown className="w-3 h-3" />)}
+                    </span>
+                  </TableColumn>
+                  <TableColumn width={100}>
+                    <span className="cursor-pointer flex items-center gap-1" onClick={() => handleColumnSort('type')}>
+                      Type
+                      {sortConfig.column === 'type' && (sortConfig.direction === 'asc' ? <ArrowUp className="w-3 h-3" /> : <ArrowDown className="w-3 h-3" />)}
+                    </span>
+                  </TableColumn>
+                  <TableColumn width={140}>
+                    <span className="cursor-pointer flex items-center gap-1" onClick={() => handleColumnSort('source')}>
+                      Source
+                      {sortConfig.column === 'source' && (sortConfig.direction === 'asc' ? <ArrowUp className="w-3 h-3" /> : <ArrowDown className="w-3 h-3" />)}
+                    </span>
+                  </TableColumn>
+                  <TableColumn width={180}>
+                    <span className="cursor-pointer flex items-center gap-1" onClick={() => handleColumnSort('latency')}>
+                      Latency
+                      {sortConfig.column === 'latency' && (sortConfig.direction === 'asc' ? <ArrowUp className="w-3 h-3" /> : <ArrowDown className="w-3 h-3" />)}
+                    </span>
+                  </TableColumn>
+                  <TableColumn width={160}>Actions</TableColumn>
+                </TableHeader>
+                <TableBody>
+                  {paginatedNodes.map((un) => {
+                    const mn = un.manualNodeId ? manualNodes.find(m => m.id === un.manualNodeId) : null;
+                    return (
+                      <TableRow key={un.key}>
+                        <TableCell>
+                          <span className="text-lg">{un.node.country_emoji || '🌐'}</span>
+                        </TableCell>
+                        <TableCell>
+                          <div className="flex items-center gap-2">
+                            <span className="font-medium truncate max-w-[300px]">{un.node.tag}</span>
+                            {un.isUnsupported && (
+                              <Chip size="sm" variant="flat" color="warning">Unsupported</Chip>
+                            )}
+                            {un.groupTag && (
+                              <Chip size="sm" variant="flat" color="secondary">{un.groupTag}</Chip>
+                            )}
+                          </div>
+                          <p className="text-xs text-gray-400">{un.node.server}:{un.node.server_port}</p>
+                        </TableCell>
+                        <TableCell>
+                          <Chip size="sm" variant="flat">{un.node.type}</Chip>
+                        </TableCell>
+                        <TableCell>
+                          <Chip
+                            size="sm"
+                            variant="flat"
+                            color={un.source === 'manual' ? 'primary' : 'secondary'}
+                          >
+                            {un.sourceName}
+                          </Chip>
+                        </TableCell>
+                        <TableCell>
+                          <NodeHealthChips tag={un.node.tag} healthResults={healthResults} healthMode={healthMode} />
+                        </TableCell>
+                        <TableCell>
+                          <div className="flex items-center gap-1">
+                            <Button
+                              isIconOnly
+                              size="sm"
+                              variant="light"
+                              isLoading={healthCheckingNodes.includes(un.node.tag)}
+                              onPress={() => checkSingleNodeHealth(un.node.tag)}
+                            >
+                              <Activity className="w-4 h-4" />
+                            </Button>
+                            {mn ? (
+                              <>
+                                <Button
+                                  isIconOnly
+                                  size="sm"
+                                  variant="light"
+                                  onPress={() => handleCopyNode(mn.id)}
+                                  title="Copy node link"
+                                >
+                                  {copiedNodeId === mn.id ? <ClipboardCheck className="w-4 h-4 text-success" /> : <Copy className="w-4 h-4" />}
+                                </Button>
+                                <Button
+                                  isIconOnly
+                                  size="sm"
+                                  variant="light"
+                                  onPress={() => handleOpenEditNode(mn)}
+                                >
+                                  <Pencil className="w-4 h-4" />
+                                </Button>
+                                <Button
+                                  isIconOnly
+                                  size="sm"
+                                  variant="light"
+                                  color="danger"
+                                  onPress={() => handleDeleteNode(mn.id)}
+                                >
+                                  <Trash2 className="w-4 h-4" />
+                                </Button>
+                                <Switch
+                                  size="sm"
+                                  isSelected={mn.enabled}
+                                  onValueChange={() => handleToggleNode(mn)}
+                                />
+                              </>
+                            ) : (
+                              <Tooltip content="Copy to Manual">
+                                <Button
+                                  isIconOnly
+                                  size="sm"
+                                  variant="light"
+                                  onPress={() => handleCopyToManual(un.node)}
+                                >
+                                  <FolderInput className="w-4 h-4" />
+                                </Button>
+                              </Tooltip>
+                            )}
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })}
+                </TableBody>
+              </Table>
+            )}
+          </div>
+        </Tab>
+
         <Tab key="manual" title={<span>Manual Nodes{manualNodes.length > 0 && <span className="ml-1.5 text-xs opacity-60">({manualNodes.length})</span>}</span>}>
           {manualNodes.length === 0 ? (
             <Card className="mt-4">
