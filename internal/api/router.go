@@ -224,6 +224,10 @@ func (s *Server) setupRoutes() {
 		api.GET("/kernel/releases", s.getKernelReleases)
 		api.POST("/kernel/download", s.startKernelDownload)
 		api.GET("/kernel/progress", s.getKernelProgress)
+
+		// Proxy group management (Clash API proxy)
+		api.GET("/proxy/groups", s.getProxyGroups)
+		api.PUT("/proxy/groups/:name", s.switchProxyGroup)
 	}
 
 	// Static file service (frontend, using embedded file system)
@@ -2219,4 +2223,140 @@ func (s *Server) startKernelDownload(c *gin.Context) {
 func (s *Server) getKernelProgress(c *gin.Context) {
 	progress := s.kernelManager.GetProgress()
 	c.JSON(http.StatusOK, gin.H{"data": progress})
+}
+
+// ==================== Proxy Group Management (Clash API) ====================
+
+func (s *Server) getProxyGroups(c *gin.Context) {
+	if !s.processManager.IsRunning() {
+		c.JSON(http.StatusOK, gin.H{"data": nil})
+		return
+	}
+
+	settings := s.store.GetSettings()
+	if settings.ClashAPIPort == 0 {
+		c.JSON(http.StatusOK, gin.H{"data": nil})
+		return
+	}
+
+	client := &http.Client{Timeout: 5 * time.Second}
+	url := fmt.Sprintf("http://127.0.0.1:%d/proxies", settings.ClashAPIPort)
+	req, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	if settings.ClashAPISecret != "" {
+		req.Header.Set("Authorization", "Bearer "+settings.ClashAPISecret)
+	}
+
+	resp, err := client.Do(req)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to connect to Clash API: " + err.Error()})
+		return
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	var clashResp struct {
+		Proxies map[string]struct {
+			Type    string   `json:"type"`
+			Now     string   `json:"now"`
+			All     []string `json:"all"`
+			History []struct {
+				Delay int `json:"delay"`
+			} `json:"history"`
+		} `json:"proxies"`
+	}
+	if err := json.Unmarshal(body, &clashResp); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to parse Clash API response: " + err.Error()})
+		return
+	}
+
+	type ProxyGroup struct {
+		Name string   `json:"name"`
+		Type string   `json:"type"`
+		Now  string   `json:"now"`
+		All  []string `json:"all"`
+	}
+
+	var groups []ProxyGroup
+	for name, proxy := range clashResp.Proxies {
+		if proxy.Type == "Selector" || proxy.Type == "selector" {
+			groups = append(groups, ProxyGroup{
+				Name: name,
+				Type: proxy.Type,
+				Now:  proxy.Now,
+				All:  proxy.All,
+			})
+		}
+	}
+
+	// Sort: "Proxy" first, then alphabetical
+	sort.Slice(groups, func(i, j int) bool {
+		if groups[i].Name == "Proxy" {
+			return true
+		}
+		if groups[j].Name == "Proxy" {
+			return false
+		}
+		return groups[i].Name < groups[j].Name
+	})
+
+	c.JSON(http.StatusOK, gin.H{"data": groups})
+}
+
+func (s *Server) switchProxyGroup(c *gin.Context) {
+	if !s.processManager.IsRunning() {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "sing-box is not running"})
+		return
+	}
+
+	groupName := c.Param("name")
+	var req struct {
+		Name string `json:"name" binding:"required"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	settings := s.store.GetSettings()
+	if settings.ClashAPIPort == 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Clash API port is not configured"})
+		return
+	}
+
+	client := &http.Client{Timeout: 5 * time.Second}
+	reqBody, _ := json.Marshal(map[string]string{"name": req.Name})
+	url := fmt.Sprintf("http://127.0.0.1:%d/proxies/%s", settings.ClashAPIPort, groupName)
+	httpReq, err := http.NewRequest("PUT", url, strings.NewReader(string(reqBody)))
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	httpReq.Header.Set("Content-Type", "application/json")
+	if settings.ClashAPISecret != "" {
+		httpReq.Header.Set("Authorization", "Bearer "+settings.ClashAPISecret)
+	}
+
+	resp, err := client.Do(httpReq)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to connect to Clash API: " + err.Error()})
+		return
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusNoContent && resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Clash API error: " + string(body)})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": "Proxy switched"})
 }

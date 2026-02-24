@@ -1,12 +1,12 @@
 import { useEffect, useState } from 'react';
-import { Card, CardBody, CardHeader, Button, Chip, Modal, ModalContent, ModalHeader, ModalBody, ModalFooter, Tooltip } from '@nextui-org/react';
-import { Play, Square, RefreshCw, Cpu, HardDrive, Wifi, Info, Activity, Copy, ClipboardCheck, Link } from 'lucide-react';
+import { Card, CardBody, CardHeader, Button, Chip, Modal, ModalContent, ModalHeader, ModalBody, ModalFooter, Tooltip, Select, SelectItem } from '@nextui-org/react';
+import { Play, Square, RefreshCw, Cpu, HardDrive, Wifi, Info, Activity, Copy, ClipboardCheck, Link, Globe } from 'lucide-react';
 import { useStore } from '../store';
 import { serviceApi, configApi } from '../api';
 import { toast } from '../components/Toast';
 
 export default function Dashboard() {
-  const { serviceStatus, subscriptions, manualNodes, systemInfo, settings, fetchServiceStatus, fetchSubscriptions, fetchManualNodes, fetchSystemInfo, fetchSettings, fetchUnsupportedNodes } = useStore();
+  const { serviceStatus, subscriptions, manualNodes, systemInfo, settings, proxyGroups, fetchServiceStatus, fetchSubscriptions, fetchManualNodes, fetchSystemInfo, fetchSettings, fetchUnsupportedNodes, fetchProxyGroups, switchProxy } = useStore();
 
   const [copiedLink, setCopiedLink] = useState<string | null>(null);
 
@@ -37,11 +37,13 @@ export default function Dashboard() {
     fetchManualNodes();
     fetchSystemInfo();
     fetchSettings();
+    fetchProxyGroups();
 
-    // Refresh status and system info every 5 seconds
+    // Refresh status, system info, and proxy groups every 5 seconds
     const interval = setInterval(() => {
       fetchServiceStatus();
       fetchSystemInfo();
+      fetchProxyGroups();
     }, 5000);
     return () => clearInterval(interval);
   }, []);
@@ -242,6 +244,47 @@ export default function Dashboard() {
           </div>
         </CardBody>
       </Card>
+
+      {/* Active Proxy */}
+      {serviceStatus?.running && proxyGroups.length > 0 && (
+        <Card>
+          <CardHeader>
+            <div className="flex items-center gap-2">
+              <Globe className="w-5 h-5" />
+              <h2 className="text-lg font-semibold">Active Proxy</h2>
+            </div>
+          </CardHeader>
+          <CardBody>
+            <div className="space-y-3">
+              {proxyGroups.map((group) => (
+                <div
+                  key={group.name}
+                  className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 p-3 bg-gray-50 dark:bg-gray-800 rounded-lg"
+                >
+                  <div className="flex items-center gap-2 min-w-0">
+                    <span className="font-medium text-sm whitespace-nowrap">{group.name}</span>
+                  </div>
+                  <Select
+                    size="sm"
+                    selectedKeys={[group.now]}
+                    onChange={(e) => {
+                      if (e.target.value) {
+                        switchProxy(group.name, e.target.value);
+                      }
+                    }}
+                    className="w-full sm:w-64"
+                    aria-label={`Select proxy for ${group.name}`}
+                  >
+                    {group.all.map((item) => (
+                      <SelectItem key={item}>{item}</SelectItem>
+                    ))}
+                  </Select>
+                </div>
+              ))}
+            </div>
+          </CardBody>
+        </Card>
+      )}
 
       {/* Proxy Links */}
       {proxyLinks.length === 0 ? (
