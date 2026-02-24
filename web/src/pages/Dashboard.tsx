@@ -6,7 +6,7 @@ import { serviceApi, configApi } from '../api';
 import { toast } from '../components/Toast';
 
 export default function Dashboard() {
-  const { serviceStatus, subscriptions, systemInfo, fetchServiceStatus, fetchSubscriptions, fetchSystemInfo } = useStore();
+  const { serviceStatus, subscriptions, manualNodes, systemInfo, fetchServiceStatus, fetchSubscriptions, fetchManualNodes, fetchSystemInfo } = useStore();
 
   // Error modal state
   const [errorModal, setErrorModal] = useState<{
@@ -32,6 +32,7 @@ export default function Dashboard() {
   useEffect(() => {
     fetchServiceStatus();
     fetchSubscriptions();
+    fetchManualNodes();
     fetchSystemInfo();
 
     // Refresh status and system info every 5 seconds
@@ -82,8 +83,9 @@ export default function Dashboard() {
     }
   };
 
-  const totalNodes = subscriptions.reduce((sum, sub) => sum + sub.node_count, 0);
+  const totalNodes = subscriptions.reduce((sum, sub) => sum + sub.node_count, 0) + manualNodes.length;
   const enabledSubs = subscriptions.filter(sub => sub.enabled).length;
+  const enabledManualNodes = manualNodes.filter(mn => mn.enabled).length;
 
   return (
     <div className="space-y-6">
@@ -180,7 +182,7 @@ export default function Dashboard() {
       </Card>
 
       {/* Statistics cards */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
         <Card>
           <CardBody className="flex flex-row items-center gap-4">
             <div className="p-3 bg-blue-100 dark:bg-blue-900 rounded-lg">
@@ -189,6 +191,18 @@ export default function Dashboard() {
             <div>
               <p className="text-sm text-gray-500">Subscriptions</p>
               <p className="text-2xl font-bold">{enabledSubs} / {subscriptions.length}</p>
+            </div>
+          </CardBody>
+        </Card>
+
+        <Card>
+          <CardBody className="flex flex-row items-center gap-4">
+            <div className="p-3 bg-cyan-100 dark:bg-cyan-900 rounded-lg">
+              <HardDrive className="w-6 h-6 text-cyan-600 dark:text-cyan-300" />
+            </div>
+            <div>
+              <p className="text-sm text-gray-500">Manual Nodes</p>
+              <p className="text-2xl font-bold">{enabledManualNodes} / {manualNodes.length}</p>
             </div>
           </CardBody>
         </Card>
@@ -279,6 +293,43 @@ export default function Dashboard() {
                   </div>
                   <span className="text-sm text-gray-400">
                     Updated {new Date(sub.updated_at).toLocaleString()}
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
+        </CardBody>
+      </Card>
+
+      {/* Manual nodes list preview */}
+      <Card>
+        <CardHeader>
+          <h2 className="text-lg font-semibold">Manual Nodes Overview</h2>
+        </CardHeader>
+        <CardBody>
+          {manualNodes.length === 0 ? (
+            <p className="text-gray-500 text-center py-4">No manual nodes yet. Go to the Nodes page to add one.</p>
+          ) : (
+            <div className="space-y-3">
+              {manualNodes.map((mn) => (
+                <div
+                  key={mn.id}
+                  className="flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-800 rounded-lg"
+                >
+                  <div className="flex items-center gap-3">
+                    <Chip
+                      size="sm"
+                      color={mn.enabled ? 'success' : 'default'}
+                      variant="dot"
+                    >
+                      {mn.node.country_emoji && `${mn.node.country_emoji} `}{mn.node.tag}
+                    </Chip>
+                    <span className="text-sm text-gray-500">
+                      {mn.node.type}
+                    </span>
+                  </div>
+                  <span className="text-sm text-gray-400">
+                    {mn.node.server}:{mn.node.server_port}
                   </span>
                 </div>
               ))}
