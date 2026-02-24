@@ -160,7 +160,7 @@ interface AppState {
 
   // Health check state
   healthResults: Record<string, NodeHealthResult>;
-  healthMode: 'clash_api' | 'tcp' | null;
+  healthMode: 'clash_api' | 'clash_api_temp' | 'tcp' | null;
   healthChecking: boolean;
   healthCheckingNodes: string[];
 

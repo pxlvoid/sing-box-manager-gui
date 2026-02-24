@@ -626,6 +626,11 @@ func (b *ConfigBuilder) buildOutbounds() []Outbound {
 
 // nodeToOutbound converts a node to outbound configuration
 func (b *ConfigBuilder) nodeToOutbound(node storage.Node) Outbound {
+	return NodeToOutbound(node)
+}
+
+// NodeToOutbound converts a storage.Node to an Outbound config entry.
+func NodeToOutbound(node storage.Node) Outbound {
 	outbound := Outbound{
 		"tag":         node.Tag,
 		"type":        node.Type,

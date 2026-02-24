@@ -1103,12 +1103,12 @@ export default function Subscriptions() {
 function NodeHealthChips({ tag, healthResults, healthMode }: {
   tag: string;
   healthResults: Record<string, NodeHealthResult>;
-  healthMode: 'clash_api' | 'tcp' | null;
+  healthMode: 'clash_api' | 'clash_api_temp' | 'tcp' | null;
 }) {
   const result = healthResults[tag];
   if (!result) return null;
 
-  if (healthMode === 'clash_api' && Object.keys(result.groups).length > 0) {
+  if ((healthMode === 'clash_api' || healthMode === 'clash_api_temp') && Object.keys(result.groups).length > 0) {
     return (
       <div className="flex flex-wrap gap-1 mt-1">
         {Object.entries(result.groups).map(([group, delay]) => (
@@ -1146,7 +1146,7 @@ interface SubscriptionCardProps {
   onToggle: () => void;
   loading: boolean;
   healthResults: Record<string, NodeHealthResult>;
-  healthMode: 'clash_api' | 'tcp' | null;
+  healthMode: 'clash_api' | 'clash_api_temp' | 'tcp' | null;
   healthCheckingNodes: string[];
   onHealthCheck: (tag: string) => void;
 }
