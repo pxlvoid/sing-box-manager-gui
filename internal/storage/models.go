@@ -162,8 +162,8 @@ func DefaultSettings() *Settings {
 		AllowLAN:             false, // LAN access disabled by default
 		SocksPort:            0,     // disabled by default
 		HttpPort:             0,     // disabled by default
-		ShadowsocksPort:     0,     // disabled by default
-		ShadowsocksMethod:   "aes-256-gcm",
+		ShadowsocksPort:     8388,
+		ShadowsocksMethod:   "chacha20-ietf-poly1305",
 		ProxyDNS:             "https://1.1.1.1/dns-query",
 		DirectDNS:            "https://dns.alidns.com/dns-query",
 		WebPort:              9090,
