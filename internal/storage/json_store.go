@@ -452,6 +452,21 @@ func (s *JSONStore) GetAllNodes() []Node {
 	return nodes
 }
 
+// GetAllNodesIncludeDisabled returns all nodes regardless of enabled status.
+func (s *JSONStore) GetAllNodesIncludeDisabled() []Node {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	var nodes []Node
+	for _, sub := range s.data.Subscriptions {
+		nodes = append(nodes, sub.Nodes...)
+	}
+	for _, mn := range s.data.ManualNodes {
+		nodes = append(nodes, mn.Node)
+	}
+	return nodes
+}
+
 // GetNodesByCountry returns nodes by country
 func (s *JSONStore) GetNodesByCountry(countryCode string) []Node {
 	s.mu.RLock()
