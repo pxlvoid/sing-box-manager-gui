@@ -9,6 +9,7 @@ import (
 	"io/fs"
 	"net"
 	"net/http"
+	neturl "net/url"
 	"os"
 	"os/exec"
 	"os/user"
@@ -229,6 +230,7 @@ func (s *Server) setupRoutes() {
 		// Proxy group management (Clash API proxy)
 		api.GET("/proxy/groups", s.getProxyGroups)
 		api.PUT("/proxy/groups/:name", s.switchProxyGroup)
+		api.GET("/proxy/delay/:name", s.getProxyDelay)
 	}
 
 	// Static file service (frontend, using embedded file system)
@@ -1717,9 +1719,13 @@ func (s *Server) tcpCheck(server string, port int) (alive bool, latencyMs int64)
 
 func (s *Server) clashProxyDelay(port int, secret, nodeTag string) int {
 	client := &http.Client{Timeout: 7 * time.Second}
-	url := fmt.Sprintf("http://127.0.0.1:%d/proxies/%s/delay?url=https://www.gstatic.com/generate_204&timeout=5000", port, nodeTag)
+	apiURL := fmt.Sprintf(
+		"http://127.0.0.1:%d/proxies/%s/delay?url=https://www.gstatic.com/generate_204&timeout=5000",
+		port,
+		neturl.PathEscape(nodeTag),
+	)
 
-	req, err := http.NewRequest("GET", url, nil)
+	req, err := http.NewRequest("GET", apiURL, nil)
 	if err != nil {
 		return 0
 	}
@@ -2365,8 +2371,8 @@ func (s *Server) switchProxyGroup(c *gin.Context) {
 
 	client := &http.Client{Timeout: 5 * time.Second}
 	reqBody, _ := json.Marshal(map[string]string{"name": req.Name})
-	url := fmt.Sprintf("http://127.0.0.1:%d/proxies/%s", settings.ClashAPIPort, groupName)
-	httpReq, err := http.NewRequest("PUT", url, strings.NewReader(string(reqBody)))
+	apiURL := fmt.Sprintf("http://127.0.0.1:%d/proxies/%s", settings.ClashAPIPort, neturl.PathEscape(groupName))
+	httpReq, err := http.NewRequest("PUT", apiURL, strings.NewReader(string(reqBody)))
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -2390,4 +2396,31 @@ func (s *Server) switchProxyGroup(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{"message": "Proxy switched"})
+}
+
+func (s *Server) getProxyDelay(c *gin.Context) {
+	if !s.processManager.IsRunning() {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "sing-box is not running"})
+		return
+	}
+
+	proxyName := c.Param("name")
+	if strings.TrimSpace(proxyName) == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "proxy name is required"})
+		return
+	}
+
+	settings := s.store.GetSettings()
+	if settings.ClashAPIPort == 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Clash API port is not configured"})
+		return
+	}
+
+	delay := s.clashProxyDelay(settings.ClashAPIPort, settings.ClashAPISecret, proxyName)
+	c.JSON(http.StatusOK, gin.H{
+		"data": gin.H{
+			"name":  proxyName,
+			"delay": delay,
+		},
+	})
 }

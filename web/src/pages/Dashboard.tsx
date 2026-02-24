@@ -1,8 +1,8 @@
-import { useEffect, useState } from 'react';
-import { Card, CardBody, CardHeader, Button, Chip, Modal, ModalContent, ModalHeader, ModalBody, ModalFooter, Tooltip, Select, SelectItem } from '@nextui-org/react';
-import { Play, Square, RefreshCw, Cpu, HardDrive, Wifi, Info, Activity, Copy, ClipboardCheck, Link, Globe, QrCode } from 'lucide-react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Card, CardBody, CardHeader, Button, Chip, Input, Modal, ModalContent, ModalHeader, ModalBody, ModalFooter, Tooltip, Select, SelectItem } from '@nextui-org/react';
+import { Play, Square, RefreshCw, Cpu, HardDrive, Wifi, Info, Activity, Copy, ClipboardCheck, Link, Globe, QrCode, Search } from 'lucide-react';
 import { useStore } from '../store';
-import { serviceApi, configApi } from '../api';
+import { serviceApi, configApi, proxyApi } from '../api';
 import { toast } from '../components/Toast';
 
 export default function Dashboard() {
@@ -10,6 +10,10 @@ export default function Dashboard() {
 
   const [copiedLink, setCopiedLink] = useState<string | null>(null);
   const [qrLink, setQrLink] = useState<string | null>(null);
+  const [proxySearch, setProxySearch] = useState('');
+  const [activeProxyDelay, setActiveProxyDelay] = useState<number | null>(null);
+  const [checkingActiveProxyDelay, setCheckingActiveProxyDelay] = useState(false);
+  const activeProxyDelayRequestRef = useRef(0);
 
   // Error modal state
   const [errorModal, setErrorModal] = useState<{
@@ -154,6 +158,53 @@ export default function Dashboard() {
   const mainProxyGroup = proxyGroups.find((group) => group.name.toLowerCase() === 'proxy');
   const qrImageUrl = qrLink ? `https://quickchart.io/qr?text=${encodeURIComponent(qrLink)}&size=260` : '';
 
+  const normalizedProxySearch = proxySearch.trim().toLowerCase();
+  const hasSearchMatches = !normalizedProxySearch || !!mainProxyGroup?.all.some((item) =>
+    item.toLowerCase().includes(normalizedProxySearch),
+  );
+  const filteredMainProxyOptions = useMemo(() => {
+    if (!mainProxyGroup) return [];
+    const matchedOptions = normalizedProxySearch
+      ? mainProxyGroup.all.filter((item) => item.toLowerCase().includes(normalizedProxySearch))
+      : mainProxyGroup.all;
+
+    if (mainProxyGroup.now && !matchedOptions.includes(mainProxyGroup.now)) {
+      return [mainProxyGroup.now, ...matchedOptions];
+    }
+    return matchedOptions;
+  }, [mainProxyGroup, normalizedProxySearch]);
+
+  const checkActiveProxyDelay = useCallback(async (proxyName: string) => {
+    const requestId = ++activeProxyDelayRequestRef.current;
+    setCheckingActiveProxyDelay(true);
+    try {
+      const res = await proxyApi.checkDelay(proxyName);
+      const delay = Number(res.data?.data?.delay) || 0;
+      if (requestId === activeProxyDelayRequestRef.current) {
+        setActiveProxyDelay(delay);
+      }
+    } catch (error) {
+      if (requestId === activeProxyDelayRequestRef.current) {
+        setActiveProxyDelay(null);
+      }
+      console.error('Failed to check proxy delay:', error);
+    } finally {
+      if (requestId === activeProxyDelayRequestRef.current) {
+        setCheckingActiveProxyDelay(false);
+      }
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!serviceStatus?.running || !mainProxyGroup?.now) {
+      activeProxyDelayRequestRef.current += 1;
+      setActiveProxyDelay(null);
+      setCheckingActiveProxyDelay(false);
+      return;
+    }
+    checkActiveProxyDelay(mainProxyGroup.now);
+  }, [serviceStatus?.running, mainProxyGroup?.now, checkActiveProxyDelay]);
+
   return (
     <div className="space-y-6">
       <h1 className="text-2xl font-bold text-gray-800 dark:text-white">Dashboard</h1>
@@ -258,25 +309,73 @@ export default function Dashboard() {
             </div>
           </CardHeader>
           <CardBody>
-            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 p-3 bg-gray-50 dark:bg-gray-800 rounded-lg">
-              <div className="flex items-center gap-2 min-w-0">
-                <span className="font-medium text-sm whitespace-nowrap">Main</span>
+            <div className="space-y-4 p-4 bg-gray-50 dark:bg-gray-800 rounded-xl">
+              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+                <div className="flex items-center gap-2 min-w-0">
+                  <span className="font-semibold text-base whitespace-nowrap">Main</span>
+                  <Chip size="sm" variant="flat">{mainProxyGroup.now}</Chip>
+                </div>
+                <div className="flex items-center gap-2">
+                  <Chip
+                    size="sm"
+                    variant="flat"
+                    color={
+                      activeProxyDelay === null
+                        ? 'default'
+                        : activeProxyDelay > 0
+                          ? (activeProxyDelay < 300 ? 'success' : 'warning')
+                          : 'danger'
+                    }
+                  >
+                    {activeProxyDelay === null ? 'Ping: N/A' : activeProxyDelay > 0 ? `Ping: ${activeProxyDelay}ms` : 'Ping: Timeout'}
+                  </Chip>
+                  <Button
+                    size="sm"
+                    variant="flat"
+                    isIconOnly
+                    isLoading={checkingActiveProxyDelay}
+                    onPress={() => checkActiveProxyDelay(mainProxyGroup.now)}
+                    aria-label="Recheck active proxy ping"
+                  >
+                    <Activity className="w-4 h-4" />
+                  </Button>
+                </div>
               </div>
+
+              <Input
+                size="lg"
+                value={proxySearch}
+                onChange={(e) => setProxySearch(e.target.value)}
+                placeholder="Search proxy by name"
+                startContent={<Search className="w-4 h-4 text-gray-400" />}
+                aria-label="Search proxy by name"
+                className="max-w-2xl"
+              />
+
               <Select
-                size="sm"
+                size="lg"
                 selectedKeys={[mainProxyGroup.now]}
                 onChange={(e) => {
                   if (e.target.value) {
                     switchProxy(mainProxyGroup.name, e.target.value);
+                    setProxySearch('');
                   }
                 }}
-                className="w-full sm:w-64"
+                className="w-full max-w-2xl"
                 aria-label="Select main proxy"
+                classNames={{
+                  trigger: 'min-h-14',
+                  value: 'text-base',
+                }}
               >
-                {mainProxyGroup.all.map((item) => (
+                {filteredMainProxyOptions.map((item) => (
                   <SelectItem key={item}>{item}</SelectItem>
                 ))}
               </Select>
+
+              {!hasSearchMatches && (
+                <p className="text-sm text-gray-500">No proxies found for "{proxySearch.trim()}"</p>
+              )}
             </div>
           </CardBody>
         </Card>

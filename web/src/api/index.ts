@@ -134,6 +134,7 @@ export const proxyApi = {
   getGroups: () => api.get('/proxy/groups'),
   switchGroup: (group: string, selected: string) =>
     api.put(`/proxy/groups/${encodeURIComponent(group)}`, { name: selected }),
+  checkDelay: (name: string) => api.get(`/proxy/delay/${encodeURIComponent(name)}`),
 };
 
 export default api;

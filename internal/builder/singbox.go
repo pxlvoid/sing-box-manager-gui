@@ -756,8 +756,28 @@ func (b *ConfigBuilder) buildRoute() *RouteConfig {
 	ruleSetMap := make(map[string]bool)
 	var ruleSets []RuleSet
 
+	// Use a stable order for default rule groups so specific groups
+	// (e.g. YouTube) can override broader groups (e.g. Google).
+	orderedRuleGroups := make([]storage.RuleGroup, len(b.ruleGroups))
+	copy(orderedRuleGroups, b.ruleGroups)
+	defaultRulePriority := map[string]int{
+		"youtube": 10,
+		"google":  20,
+	}
+	sort.SliceStable(orderedRuleGroups, func(i, j int) bool {
+		pi, okI := defaultRulePriority[orderedRuleGroups[i].ID]
+		pj, okJ := defaultRulePriority[orderedRuleGroups[j].ID]
+		if !okI {
+			pi = 1000
+		}
+		if !okJ {
+			pj = 1000
+		}
+		return pi < pj
+	})
+
 	// Collect required rule sets from rule groups
-	for _, rg := range b.ruleGroups {
+	for _, rg := range orderedRuleGroups {
 		if !rg.Enabled {
 			continue
 		}
@@ -923,7 +943,7 @@ func (b *ConfigBuilder) buildRoute() *RouteConfig {
 	}
 
 	// Add rule group route rules
-	for _, rg := range b.ruleGroups {
+	for _, rg := range orderedRuleGroups {
 		if !rg.Enabled {
 			continue
 		}
