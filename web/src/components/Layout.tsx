@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
-import { LayoutDashboard, Globe, FileText, Settings, Activity, ScrollText, Menu, X } from 'lucide-react';
+import { LayoutDashboard, Globe, FileText, Settings, Activity, ScrollText, Menu, X, Sun, Moon } from 'lucide-react';
+import { useTheme } from '../hooks/useTheme';
 import { useStore } from '../store';
 
 const menuItems = [
@@ -18,6 +19,7 @@ interface LayoutProps {
 export default function Layout({ children }: LayoutProps) {
   const location = useLocation();
   const { settings, fetchSettings, serviceStatus, fetchServiceStatus } = useStore();
+  const { theme, toggleTheme } = useTheme();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   useEffect(() => {
@@ -33,6 +35,8 @@ export default function Layout({ children }: LayoutProps) {
   useEffect(() => {
     setMobileMenuOpen(false);
   }, [location.pathname]);
+
+  const ThemeIcon = theme === 'dark' ? Sun : Moon;
 
   const navContent = (
     <>
@@ -56,6 +60,16 @@ export default function Layout({ children }: LayoutProps) {
         );
       })}
     </>
+  );
+
+  const themeToggle = (
+    <button
+      onClick={toggleTheme}
+      className="flex items-center gap-3 px-4 py-3 rounded-lg transition-colors text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 w-full"
+    >
+      <ThemeIcon className="w-5 h-5" />
+      <span>{theme === 'dark' ? 'Light mode' : 'Dark mode'}</span>
+    </button>
   );
 
   return (
@@ -100,6 +114,9 @@ export default function Layout({ children }: LayoutProps) {
             <nav className="px-4">
               {navContent}
             </nav>
+            <div className="px-4 mt-4 border-t border-gray-200 dark:border-gray-700 pt-4">
+              {themeToggle}
+            </div>
           </aside>
         </div>
       )}
@@ -118,7 +135,8 @@ export default function Layout({ children }: LayoutProps) {
         </nav>
 
         {/* Bottom links */}
-        <div className="sticky bottom-4 left-4 right-4 mt-auto pt-4">
+        <div className="absolute bottom-0 left-0 right-0 px-4 pb-4 border-t border-gray-200 dark:border-gray-700 pt-4 bg-white dark:bg-gray-800">
+          {themeToggle}
         </div>
       </aside>
 
