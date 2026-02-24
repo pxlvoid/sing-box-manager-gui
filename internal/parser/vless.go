@@ -81,9 +81,7 @@ func (p *VlessParser) Parse(rawURL string) (*storage.Node, error) {
 			if serviceName := params.Get("serviceName"); serviceName != "" {
 				transport["service_name"] = serviceName
 			}
-			if mode := params.Get("mode"); mode != "" {
-				transport["mode"] = mode
-			}
+			// mode is parsed from URL but not added to config (sing-box doesn't support it)
 		case "quic":
 			if security := params.Get("quicSecurity"); security != "" {
 				transport["security"] = security
