@@ -70,6 +70,9 @@ func main() {
 	configPath := filepath.Join(dataDir, "generated", "config.json")
 	processManager := daemon.NewProcessManager(singboxPath, configPath, dataDir)
 
+	// Initialize probe manager (separate sing-box for health/site checks)
+	probeManager := daemon.NewProbeManager(singboxPath, dataDir)
+
 	// Initialize launchd manager
 	launchdManager, err := daemon.NewLaunchdManager()
 	if err != nil {
@@ -83,7 +86,7 @@ func main() {
 	}
 
 	// Create API server
-	server := api.NewServer(store, processManager, launchdManager, systemdManager, execPath, port, version)
+	server := api.NewServer(store, processManager, probeManager, launchdManager, systemdManager, execPath, port, version)
 
 	// Start task scheduler
 	server.StartScheduler()

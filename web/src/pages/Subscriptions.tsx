@@ -198,6 +198,8 @@ export default function Subscriptions() {
     fetchUnsupportedNodes,
     recheckUnsupportedNodes,
     deleteUnsupportedNodes,
+    probeStatus,
+    fetchProbeStatus,
   } = useStore();
 
   const { isOpen: isSubOpen, onOpen: onSubOpen, onClose: onSubClose } = useDisclosure();
@@ -465,6 +467,7 @@ export default function Subscriptions() {
     fetchFilters();
     fetchManualNodeTags();
     fetchUnsupportedNodes();
+    fetchProbeStatus();
   }, []);
 
   const handleOpenAddSubscription = () => {
@@ -1084,6 +1087,14 @@ export default function Subscriptions() {
                 {filteredAndSortedNodes.length === unifiedNodes.length
                   ? `${unifiedNodes.length} nodes`
                   : `${filteredAndSortedNodes.length} of ${unifiedNodes.length} nodes`}
+              </span>
+            </div>
+
+            {/* Probe status indicator */}
+            <div className="flex items-center gap-2 px-1">
+              <span className={`inline-block w-2 h-2 rounded-full ${probeStatus?.running ? 'bg-green-500' : 'bg-gray-400'}`} />
+              <span className="text-xs text-gray-500">
+                {probeStatus?.running ? `Probe running (${probeStatus.node_count} nodes)` : 'Probe stopped'}
               </span>
             </div>
 

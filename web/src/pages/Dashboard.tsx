@@ -1,12 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Card, CardBody, CardHeader, Button, Chip, Input, Modal, ModalContent, ModalHeader, ModalBody, ModalFooter, Tooltip, Select, SelectItem } from '@nextui-org/react';
-import { Play, Square, RefreshCw, Cpu, HardDrive, Wifi, Info, Activity, Copy, ClipboardCheck, Link, Globe, QrCode, Search } from 'lucide-react';
+import { Play, Square, RefreshCw, Cpu, HardDrive, Wifi, Info, Activity, Copy, ClipboardCheck, Link, Globe, QrCode, Search, Stethoscope } from 'lucide-react';
 import { useStore } from '../store';
 import { serviceApi, configApi, proxyApi } from '../api';
 import { toast } from '../components/Toast';
 
 export default function Dashboard() {
-  const { serviceStatus, subscriptions, manualNodes, systemInfo, settings, proxyGroups, fetchServiceStatus, fetchSubscriptions, fetchManualNodes, fetchSystemInfo, fetchSettings, fetchUnsupportedNodes, fetchProxyGroups, switchProxy } = useStore();
+  const { serviceStatus, probeStatus, subscriptions, manualNodes, systemInfo, settings, proxyGroups, fetchServiceStatus, fetchProbeStatus, stopProbe, fetchSubscriptions, fetchManualNodes, fetchSystemInfo, fetchSettings, fetchUnsupportedNodes, fetchProxyGroups, switchProxy } = useStore();
 
   const [copiedLink, setCopiedLink] = useState<string | null>(null);
   const [qrLink, setQrLink] = useState<string | null>(null);
@@ -38,15 +38,17 @@ export default function Dashboard() {
 
   useEffect(() => {
     fetchServiceStatus();
+    fetchProbeStatus();
     fetchSubscriptions();
     fetchManualNodes();
     fetchSystemInfo();
     fetchSettings();
     fetchProxyGroups();
 
-    // Refresh status, system info, and proxy groups every 5 seconds
+    // Refresh status, system info, proxy groups, and probe status every 5 seconds
     const interval = setInterval(() => {
       fetchServiceStatus();
+      fetchProbeStatus();
       fetchSystemInfo();
       fetchProxyGroups();
     }, 5000);
@@ -297,6 +299,67 @@ export default function Dashboard() {
             </div>
           </div>
         </CardBody>
+      </Card>
+
+      {/* Probe sing-box status */}
+      <Card>
+        <CardHeader className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
+          <div className="flex items-center gap-3">
+            <Stethoscope className="w-5 h-5" />
+            <h2 className="text-lg font-semibold">Probe sing-box</h2>
+            <Chip
+              color={probeStatus?.running ? 'success' : 'default'}
+              variant="flat"
+              size="sm"
+            >
+              {probeStatus?.running ? 'Running' : 'Stopped'}
+            </Chip>
+          </div>
+          {probeStatus?.running && (
+            <Button
+              size="sm"
+              color="danger"
+              variant="flat"
+              startContent={<Square className="w-4 h-4" />}
+              onPress={stopProbe}
+            >
+              Stop
+            </Button>
+          )}
+        </CardHeader>
+        {probeStatus?.running && (
+          <CardBody>
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+              <div>
+                <p className="text-sm text-gray-500">PID</p>
+                <p className="font-medium">{probeStatus.pid}</p>
+              </div>
+              <div>
+                <p className="text-sm text-gray-500">Clash API Port</p>
+                <p className="font-medium">{probeStatus.port}</p>
+              </div>
+              <div>
+                <p className="text-sm text-gray-500">Nodes</p>
+                <p className="font-medium">{probeStatus.node_count}</p>
+              </div>
+              <div>
+                <p className="text-sm text-gray-500">Uptime</p>
+                <p className="font-medium">
+                  {probeStatus.started_at
+                    ? (() => {
+                        const seconds = Math.floor((Date.now() - new Date(probeStatus.started_at).getTime()) / 1000);
+                        if (seconds < 60) return `${seconds}s`;
+                        const minutes = Math.floor(seconds / 60);
+                        if (minutes < 60) return `${minutes}m ${seconds % 60}s`;
+                        const hours = Math.floor(minutes / 60);
+                        return `${hours}h ${minutes % 60}m`;
+                      })()
+                    : '-'}
+                </p>
+              </div>
+            </div>
+          </CardBody>
+        )}
       </Card>
 
       {/* Active Proxy */}
