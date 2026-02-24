@@ -96,12 +96,14 @@ export const nodeApi = {
   getCountries: () => api.get('/nodes/countries'),
   getByCountry: (code: string) => api.get(`/nodes/country/${code}`),
   parse: (url: string) => api.post('/nodes/parse', { url }),
+  parseBulk: (urls: string[]) => api.post('/nodes/parse-bulk', { urls }),
 };
 
 // Manual node API
 export const manualNodeApi = {
   getAll: () => api.get('/manual-nodes'),
   add: (data: any) => api.post('/manual-nodes', data),
+  addBulk: (nodes: any[]) => api.post('/manual-nodes/bulk', { nodes }),
   update: (id: string, data: any) => api.put(`/manual-nodes/${id}`, data),
   delete: (id: string) => api.delete(`/manual-nodes/${id}`),
 };

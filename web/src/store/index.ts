@@ -173,6 +173,7 @@ interface AppState {
   toggleSubscription: (id: string, enabled: boolean) => Promise<void>;
 
   // Manual node operations
+  addManualNodesBulk: (nodes: Omit<ManualNode, 'id'>[]) => Promise<void>;
   addManualNode: (node: Omit<ManualNode, 'id'>) => Promise<void>;
   updateManualNode: (id: string, node: Partial<ManualNode>) => Promise<void>;
   deleteManualNode: (id: string) => Promise<void>;
@@ -363,6 +364,23 @@ export const useStore = create<AppState>((set, get) => ({
         console.error('Failed to toggle subscription:', error);
         toast.error(error.response?.data?.error || 'Failed to toggle subscription');
       }
+    }
+  },
+
+  addManualNodesBulk: async (nodes: Omit<ManualNode, 'id'>[]) => {
+    try {
+      const res = await manualNodeApi.addBulk(nodes);
+      await get().fetchManualNodes();
+      await get().fetchCountryGroups();
+      if (res.data.warning) {
+        toast.info(res.data.warning);
+      } else {
+        toast.success(`${nodes.length} nodes added successfully`);
+      }
+    } catch (error: any) {
+      console.error('Failed to add nodes in bulk:', error);
+      toast.error(error.response?.data?.error || 'Failed to add nodes');
+      throw error;
     }
   },
 

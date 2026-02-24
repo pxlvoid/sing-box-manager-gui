@@ -20,10 +20,11 @@ import {
   Select,
   SelectItem,
   Switch,
+  Textarea,
 } from '@nextui-org/react';
-import { Plus, RefreshCw, Trash2, Globe, Server, Pencil, Link, Filter as FilterIcon, ChevronDown, ChevronUp } from 'lucide-react';
+import { Plus, RefreshCw, Trash2, Globe, Server, Pencil, Link, Filter as FilterIcon, ChevronDown, ChevronUp, List } from 'lucide-react';
 import { useStore } from '../store';
-import { nodeApi } from '../api';
+import { nodeApi, manualNodeApi } from '../api';
 import type { Subscription, ManualNode, Node, Filter } from '../store';
 
 function formatBytes(bytes: number): string {
@@ -87,6 +88,7 @@ export default function Subscriptions() {
     refreshSubscription,
     toggleSubscription,
     addManualNode,
+    addManualNodesBulk,
     updateManualNode,
     deleteManualNode,
     addFilter,
@@ -97,6 +99,7 @@ export default function Subscriptions() {
 
   const { isOpen: isSubOpen, onOpen: onSubOpen, onClose: onSubClose } = useDisclosure();
   const { isOpen: isNodeOpen, onOpen: onNodeOpen, onClose: onNodeClose } = useDisclosure();
+  const { isOpen: isBulkOpen, onOpen: onBulkOpen, onClose: onBulkClose } = useDisclosure();
   const { isOpen: isFilterOpen, onOpen: onFilterOpen, onClose: onFilterClose } = useDisclosure();
   const [name, setName] = useState('');
   const [url, setUrl] = useState('');
@@ -110,6 +113,12 @@ export default function Subscriptions() {
   const [nodeUrl, setNodeUrl] = useState('');
   const [isParsing, setIsParsing] = useState(false);
   const [parseError, setParseError] = useState('');
+
+  // Bulk add form
+  const [bulkUrls, setBulkUrls] = useState('');
+  const [bulkParsing, setBulkParsing] = useState(false);
+  const [bulkAdding, setBulkAdding] = useState(false);
+  const [bulkResults, setBulkResults] = useState<Array<{ url: string; node?: Node; error?: string }>>([]);
 
   // Filter form
   const [editingFilter, setEditingFilter] = useState<Filter | null>(null);
@@ -259,6 +268,49 @@ export default function Subscriptions() {
     await updateManualNode(mn.id, { ...mn, enabled: !mn.enabled });
   };
 
+  // Bulk add operations
+  const handleOpenBulkAdd = () => {
+    setBulkUrls('');
+    setBulkResults([]);
+    setBulkParsing(false);
+    setBulkAdding(false);
+    onBulkOpen();
+  };
+
+  const handleBulkParse = async () => {
+    const urls = bulkUrls.split('\n').map(u => u.trim()).filter(u => u.length > 0);
+    if (urls.length === 0) return;
+
+    setBulkParsing(true);
+    try {
+      const response = await nodeApi.parseBulk(urls);
+      setBulkResults(response.data.data);
+    } catch (error: any) {
+      console.error('Failed to parse URLs:', error);
+    } finally {
+      setBulkParsing(false);
+    }
+  };
+
+  const handleBulkAdd = async () => {
+    const successNodes = bulkResults.filter(r => r.node);
+    if (successNodes.length === 0) return;
+
+    setBulkAdding(true);
+    try {
+      const nodes = successNodes.map(r => ({
+        node: r.node!,
+        enabled: true,
+      }));
+      await addManualNodesBulk(nodes);
+      onBulkClose();
+    } catch (error: any) {
+      console.error('Failed to add nodes:', error);
+    } finally {
+      setBulkAdding(false);
+    }
+  };
+
   // Filter operations
   const handleOpenAddFilter = () => {
     setEditingFilter(null);
@@ -335,6 +387,14 @@ export default function Subscriptions() {
             onPress={handleOpenAddNode}
           >
             Add Node
+          </Button>
+          <Button
+            color="primary"
+            variant="flat"
+            startContent={<List className="w-4 h-4" />}
+            onPress={handleOpenBulkAdd}
+          >
+            Bulk Add
           </Button>
           <Button
             color="primary"
@@ -700,6 +760,90 @@ export default function Subscriptions() {
               isDisabled={!nodeForm.tag || !nodeForm.server}
             >
               {editingNode ? 'Save' : 'Add'}
+            </Button>
+          </ModalFooter>
+        </ModalContent>
+      </Modal>
+
+      {/* Bulk Add Nodes Modal */}
+      <Modal isOpen={isBulkOpen} onClose={onBulkClose} size="2xl">
+        <ModalContent>
+          <ModalHeader>Bulk Add Nodes</ModalHeader>
+          <ModalBody>
+            <div className="space-y-4">
+              <Textarea
+                label="Node Links"
+                placeholder={"Paste node links, one per line:\nhysteria2://...\nvmess://...\nss://..."}
+                value={bulkUrls}
+                onChange={(e) => setBulkUrls(e.target.value)}
+                minRows={5}
+                maxRows={10}
+              />
+              <div className="flex justify-between items-center">
+                <p className="text-xs text-gray-400">
+                  Supported: ss://, vmess://, vless://, trojan://, hysteria2://, tuic://, socks://
+                </p>
+                <Button
+                  color="primary"
+                  variant="flat"
+                  onPress={handleBulkParse}
+                  isLoading={bulkParsing}
+                  isDisabled={!bulkUrls.trim()}
+                >
+                  Parse All
+                </Button>
+              </div>
+
+              {bulkResults.length > 0 && (
+                <div className="space-y-2">
+                  <div className="flex justify-between items-center">
+                    <p className="text-sm font-medium">
+                      Results: {bulkResults.filter(r => r.node).length} parsed, {bulkResults.filter(r => r.error).length} failed
+                    </p>
+                  </div>
+                  <div className="max-h-64 overflow-y-auto space-y-2">
+                    {bulkResults.map((result, idx) => (
+                      <Card key={idx} className={result.error ? 'bg-danger-50' : 'bg-default-100'}>
+                        <CardBody className="py-2 px-3">
+                          {result.node ? (
+                            <div className="flex items-center gap-3">
+                              <span className="text-xl">{result.node.country_emoji || '🌐'}</span>
+                              <div className="flex-1 min-w-0">
+                                <h4 className="font-medium text-sm truncate">{result.node.tag}</h4>
+                                <p className="text-xs text-gray-500 truncate">
+                                  {result.node.type} · {result.node.server}:{result.node.server_port}
+                                </p>
+                              </div>
+                              <Chip size="sm" variant="flat" color="success">OK</Chip>
+                            </div>
+                          ) : (
+                            <div className="flex items-center gap-3">
+                              <div className="flex-1 min-w-0">
+                                <p className="text-xs text-gray-500 truncate">{result.url}</p>
+                                <p className="text-xs text-danger">{result.error}</p>
+                              </div>
+                              <Chip size="sm" variant="flat" color="danger">Error</Chip>
+                            </div>
+                          )}
+                        </CardBody>
+                      </Card>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          </ModalBody>
+          <ModalFooter>
+            <Button variant="flat" onPress={onBulkClose}>
+              Cancel
+            </Button>
+            <Button
+              color="primary"
+              onPress={handleBulkAdd}
+              isLoading={bulkAdding}
+              isDisabled={bulkResults.filter(r => r.node).length === 0}
+            >
+              Add {bulkResults.filter(r => r.node).length || ''} Nodes
             </Button>
           </ModalFooter>
         </ModalContent>
