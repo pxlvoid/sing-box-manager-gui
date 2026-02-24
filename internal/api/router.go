@@ -10,6 +10,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"os/exec"
 	"os/user"
 	"path/filepath"
 	"runtime"
@@ -1427,13 +1428,191 @@ func (s *Server) clashProxyDelay(port int, secret, nodeTag string) int {
 	return result.Delay
 }
 
+// buildHealthCheckConfig builds a minimal sing-box config for health checking.
+// It contains only outbounds (DIRECT + node outbounds + Proxy urltest) and Clash API.
+func buildHealthCheckConfig(nodes []storage.Node, clashAPIPort int) *builder.SingBoxConfig {
+	outbounds := []builder.Outbound{
+		{"type": "direct", "tag": "DIRECT"},
+		{"type": "block", "tag": "REJECT"},
+	}
+
+	var nodeTags []string
+	for _, n := range nodes {
+		outbounds = append(outbounds, builder.NodeToOutbound(n))
+		nodeTags = append(nodeTags, n.Tag)
+	}
+
+	// Proxy urltest group over all nodes
+	if len(nodeTags) > 0 {
+		outbounds = append(outbounds, builder.Outbound{
+			"type":       "urltest",
+			"tag":        "Proxy",
+			"outbounds":  nodeTags,
+			"url":        "https://www.gstatic.com/generate_204",
+			"interval":   "5m",
+			"tolerance":  50,
+		})
+	}
+
+	return &builder.SingBoxConfig{
+		Log: &builder.LogConfig{Level: "warn", Timestamp: true},
+		Outbounds: outbounds,
+		Experimental: &builder.ExperimentalConfig{
+			ClashAPI: &builder.ClashAPIConfig{
+				ExternalController: fmt.Sprintf("127.0.0.1:%d", clashAPIPort),
+				DefaultMode:        "rule",
+			},
+		},
+	}
+}
+
+// getFreePort finds and returns a free TCP port on localhost.
+func getFreePort() (int, error) {
+	l, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		return 0, err
+	}
+	port := l.Addr().(*net.TCPAddr).Port
+	l.Close()
+	return port, nil
+}
+
+// performHealthCheckWithTempSingbox starts a temporary sing-box instance,
+// runs Clash API health checks, then stops and cleans up.
+func (s *Server) performHealthCheckWithTempSingbox(nodes []storage.Node) (map[string]*NodeHealthResult, error) {
+	singboxPath := s.processManager.GetSingBoxPath()
+	if _, err := os.Stat(singboxPath); os.IsNotExist(err) {
+		return nil, fmt.Errorf("sing-box binary not found: %s", singboxPath)
+	}
+
+	// Find a free port for the temporary Clash API
+	port, err := getFreePort()
+	if err != nil {
+		return nil, fmt.Errorf("failed to find free port: %w", err)
+	}
+
+	// Build minimal config
+	cfg := buildHealthCheckConfig(nodes, port)
+	cfgJSON, err := json.MarshalIndent(cfg, "", "  ")
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal config: %w", err)
+	}
+
+	// Write to temp file
+	tmpFile, err := os.CreateTemp("", "sbm-healthcheck-*.json")
+	if err != nil {
+		return nil, fmt.Errorf("failed to create temp file: %w", err)
+	}
+	tmpPath := tmpFile.Name()
+	defer os.Remove(tmpPath)
+
+	if _, err := tmpFile.Write(cfgJSON); err != nil {
+		tmpFile.Close()
+		return nil, fmt.Errorf("failed to write config: %w", err)
+	}
+	tmpFile.Close()
+
+	// Start temporary sing-box
+	logger.Printf("[health-check] Starting temporary sing-box on port %d for %d nodes", port, len(nodes))
+	cmd := exec.Command(singboxPath, "run", "-c", tmpPath)
+
+	// Pipe sing-box output to singbox log (visible in web panel)
+	var singboxLogger *logger.Logger
+	if logManager := logger.GetLogManager(); logManager != nil {
+		singboxLogger = logManager.SingboxLogger()
+	}
+	if singboxLogger != nil {
+		cmd.Stdout = singboxLogger
+		cmd.Stderr = singboxLogger
+	}
+
+	if err := cmd.Start(); err != nil {
+		return nil, fmt.Errorf("failed to start sing-box: %w", err)
+	}
+	logger.Printf("[health-check] Temporary sing-box started, PID: %d", cmd.Process.Pid)
+
+	// Ensure cleanup
+	defer func() {
+		cmd.Process.Kill()
+		cmd.Wait()
+		logger.Printf("[health-check] Temporary sing-box stopped")
+	}()
+
+	// Wait for Clash API to become ready (poll every 100ms, timeout 5s)
+	ready := false
+	client := &http.Client{Timeout: 1 * time.Second}
+	for i := 0; i < 50; i++ {
+		time.Sleep(100 * time.Millisecond)
+		resp, err := client.Get(fmt.Sprintf("http://127.0.0.1:%d/", port))
+		if err == nil {
+			resp.Body.Close()
+			ready = true
+			logger.Printf("[health-check] Clash API ready after %dms", (i+1)*100)
+			break
+		}
+	}
+	if !ready {
+		logger.Printf("[health-check] Clash API did not become ready within 5s")
+		return nil, fmt.Errorf("temporary sing-box did not become ready within 5s")
+	}
+
+	// Run Clash API health checks in parallel
+	results := make(map[string]*NodeHealthResult)
+	var mu sync.Mutex
+	sem := make(chan struct{}, 50)
+	var wg sync.WaitGroup
+
+	for _, node := range nodes {
+		wg.Add(1)
+		go func(n storage.Node) {
+			defer wg.Done()
+			sem <- struct{}{}
+			defer func() { <-sem }()
+
+			result := &NodeHealthResult{
+				Groups: make(map[string]int),
+			}
+
+			// TCP check
+			alive, tcpLatency := s.tcpCheck(n.Server, n.ServerPort)
+			result.Alive = alive
+			result.TCPLatencyMs = tcpLatency
+
+			// Clash API delay check via temporary instance
+			delay := s.clashProxyDelay(port, "", n.Tag)
+			if delay > 0 {
+				result.Alive = true
+			}
+			result.Groups["Proxy"] = delay
+
+			mu.Lock()
+			results[n.Tag] = result
+			mu.Unlock()
+		}(node)
+	}
+
+	wg.Wait()
+	logger.Printf("[health-check] Health check completed for %d nodes", len(nodes))
+	return results, nil
+}
+
 func (s *Server) performHealthCheck(nodes []storage.Node) (map[string]*NodeHealthResult, string) {
 	results := make(map[string]*NodeHealthResult)
 	var mu sync.Mutex
 
 	isRunning := s.processManager.IsRunning()
-	mode := "tcp"
 
+	// When sing-box is not running, try temporary instance for real proxy checks
+	if !isRunning {
+		tempResults, err := s.performHealthCheckWithTempSingbox(nodes)
+		if err != nil {
+			logger.Printf("Temporary sing-box health check failed, falling back to TCP: %v", err)
+		} else {
+			return tempResults, "clash_api_temp"
+		}
+	}
+
+	mode := "tcp"
 	if isRunning {
 		mode = "clash_api"
 	}
