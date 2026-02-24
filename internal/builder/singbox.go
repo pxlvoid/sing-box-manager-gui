@@ -313,15 +313,6 @@ func (b *ConfigBuilder) buildDNS() *DNSConfig {
 	// Base DNS rules
 	rules := []DNSRule{
 		{
-			RuleSet: []string{"geosite-category-ads-all"},
-			Action:  "reject",
-		},
-		{
-			RuleSet: []string{"geosite-geolocation-cn"},
-			Server:  "dns_direct",
-			Action:  "route",
-		},
-		{
 			QueryType: []string{"A", "AAAA"},
 			Server:    "dns_fakeip",
 			Action:    "route",
