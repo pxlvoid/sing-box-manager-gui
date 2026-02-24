@@ -232,6 +232,11 @@ func (s *Server) setupRoutes() {
 		api.GET("/proxy/groups", s.getProxyGroups)
 		api.PUT("/proxy/groups/:name", s.switchProxyGroup)
 		api.GET("/proxy/delay/:name", s.getProxyDelay)
+
+		// Debug API
+		api.GET("/debug/dump", s.debugDump)
+		api.GET("/debug/logs/singbox", s.debugSingboxLogs)
+		api.GET("/debug/logs/app", s.debugAppLogs)
 	}
 
 	// Static file service (frontend, using embedded file system)
@@ -2701,4 +2706,117 @@ func (s *Server) getProxyDelay(c *gin.Context) {
 			"delay": delay,
 		},
 	})
+}
+
+// ==================== Debug API ====================
+
+func (s *Server) debugDump(c *gin.Context) {
+	settings := s.store.GetSettings()
+	if !settings.DebugAPIEnabled {
+		c.JSON(http.StatusForbidden, gin.H{"error": "Debug API is disabled. Enable it in Settings."})
+		return
+	}
+
+	subscriptions := s.store.GetSubscriptions()
+	manualNodes := s.store.GetManualNodes()
+	filters := s.store.GetFilters()
+	rules := s.store.GetRules()
+	ruleGroups := s.store.GetRuleGroups()
+	countryGroups := s.store.GetCountryGroups()
+
+	// Unsupported nodes
+	s.unsupportedNodesMu.RLock()
+	unsupported := make([]UnsupportedNodeInfo, 0, len(s.unsupportedNodes))
+	for _, info := range s.unsupportedNodes {
+		unsupported = append(unsupported, info)
+	}
+	s.unsupportedNodesMu.RUnlock()
+
+	// Service status
+	serviceRunning := s.processManager.IsRunning()
+	servicePID := 0
+	if serviceRunning {
+		servicePID = s.processManager.GetPID()
+	}
+
+	// Runtime info
+	var memStats runtime.MemStats
+	runtime.ReadMemStats(&memStats)
+
+	c.JSON(http.StatusOK, gin.H{
+		"data": gin.H{
+			"settings":          settings,
+			"subscriptions":     subscriptions,
+			"manual_nodes":      manualNodes,
+			"filters":           filters,
+			"rules":             rules,
+			"rule_groups":       ruleGroups,
+			"country_groups":    countryGroups,
+			"unsupported_nodes": unsupported,
+			"service": gin.H{
+				"running": serviceRunning,
+				"pid":     servicePID,
+			},
+			"runtime": gin.H{
+				"version":      s.version,
+				"go_version":   runtime.Version(),
+				"os":           runtime.GOOS,
+				"arch":         runtime.GOARCH,
+				"goroutines":   runtime.NumGoroutine(),
+				"mem_alloc_mb": float64(memStats.Alloc) / 1024 / 1024,
+				"mem_sys_mb":   float64(memStats.Sys) / 1024 / 1024,
+			},
+			"timestamp": time.Now().UTC(),
+		},
+	})
+}
+
+func (s *Server) debugSingboxLogs(c *gin.Context) {
+	settings := s.store.GetSettings()
+	if !settings.DebugAPIEnabled {
+		c.JSON(http.StatusForbidden, gin.H{"error": "Debug API is disabled. Enable it in Settings."})
+		return
+	}
+
+	lines := 500
+	if linesParam := c.Query("lines"); linesParam != "" {
+		if n, err := strconv.Atoi(linesParam); err == nil && n > 0 {
+			if n > 5000 {
+				n = 5000
+			}
+			lines = n
+		}
+	}
+
+	logs, err := logger.ReadSingboxLogs(lines)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"data": logs})
+}
+
+func (s *Server) debugAppLogs(c *gin.Context) {
+	settings := s.store.GetSettings()
+	if !settings.DebugAPIEnabled {
+		c.JSON(http.StatusForbidden, gin.H{"error": "Debug API is disabled. Enable it in Settings."})
+		return
+	}
+
+	lines := 500
+	if linesParam := c.Query("lines"); linesParam != "" {
+		if n, err := strconv.Atoi(linesParam); err == nil && n > 0 {
+			if n > 5000 {
+				n = 5000
+			}
+			lines = n
+		}
+	}
+
+	logs, err := logger.ReadAppLogs(lines)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"data": logs})
 }
