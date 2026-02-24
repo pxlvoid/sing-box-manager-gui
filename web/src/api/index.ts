@@ -110,6 +110,7 @@ export const manualNodeApi = {
   addBulk: (nodes: any[]) => api.post('/manual-nodes/bulk', { nodes }),
   update: (id: string, data: any) => api.put(`/manual-nodes/${id}`, data),
   delete: (id: string) => api.delete(`/manual-nodes/${id}`),
+  export: (ids?: string[]) => api.post('/manual-nodes/export', ids ? { ids } : {}),
 };
 
 // Kernel management API

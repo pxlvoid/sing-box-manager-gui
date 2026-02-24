@@ -22,9 +22,9 @@ import {
   Switch,
   Textarea,
 } from '@nextui-org/react';
-import { Plus, RefreshCw, Trash2, Globe, Server, Pencil, Link, Filter as FilterIcon, ChevronDown, ChevronUp, List, Activity } from 'lucide-react';
+import { Plus, RefreshCw, Trash2, Globe, Server, Pencil, Link, Filter as FilterIcon, ChevronDown, ChevronUp, List, Activity, Copy, ClipboardCheck } from 'lucide-react';
 import { useStore } from '../store';
-import { nodeApi } from '../api';
+import { nodeApi, manualNodeApi } from '../api';
 import type { Subscription, ManualNode, Node, Filter, NodeHealthResult } from '../store';
 
 function formatBytes(bytes: number): string {
@@ -145,6 +145,10 @@ export default function Subscriptions() {
     enabled: true,
   };
   const [filterForm, setFilterForm] = useState<Omit<Filter, 'id'>>(defaultFilterForm);
+
+  // Copy state
+  const [copiedNodeId, setCopiedNodeId] = useState<string | null>(null);
+  const [copiedAll, setCopiedAll] = useState(false);
 
   useEffect(() => {
     fetchSubscriptions();
@@ -272,6 +276,34 @@ export default function Subscriptions() {
 
   const handleToggleNode = async (mn: ManualNode) => {
     await updateManualNode(mn.id, { ...mn, enabled: !mn.enabled });
+  };
+
+  const handleCopyNode = async (id: string) => {
+    try {
+      const response = await manualNodeApi.export([id]);
+      const urls: string[] = response.data.data;
+      if (urls.length > 0) {
+        await navigator.clipboard.writeText(urls[0]);
+        setCopiedNodeId(id);
+        setTimeout(() => setCopiedNodeId(null), 2000);
+      }
+    } catch (error) {
+      console.error('Failed to copy node:', error);
+    }
+  };
+
+  const handleCopyAllNodes = async () => {
+    try {
+      const response = await manualNodeApi.export();
+      const urls: string[] = response.data.data;
+      if (urls.length > 0) {
+        await navigator.clipboard.writeText(urls.join('\n'));
+        setCopiedAll(true);
+        setTimeout(() => setCopiedAll(false), 2000);
+      }
+    } catch (error) {
+      console.error('Failed to copy nodes:', error);
+    }
   };
 
   // Bulk add operations
@@ -432,6 +464,17 @@ export default function Subscriptions() {
             </Card>
           ) : (
             <div className="space-y-3 mt-4">
+              <div className="flex justify-end">
+                <Button
+                  size="sm"
+                  variant="flat"
+                  startContent={copiedAll ? <ClipboardCheck className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
+                  color={copiedAll ? 'success' : 'default'}
+                  onPress={handleCopyAllNodes}
+                >
+                  {copiedAll ? 'Copied!' : 'Copy All'}
+                </Button>
+              </div>
               {manualNodes.map((mn) => (
                 <Card key={mn.id}>
                   <CardBody className="flex flex-row items-center justify-between">
@@ -452,6 +495,15 @@ export default function Subscriptions() {
                         onPress={() => checkSingleNodeHealth(mn.node.tag)}
                       >
                         <Activity className="w-4 h-4" />
+                      </Button>
+                      <Button
+                        isIconOnly
+                        size="sm"
+                        variant="light"
+                        onPress={() => handleCopyNode(mn.id)}
+                        title="Copy node link"
+                      >
+                        {copiedNodeId === mn.id ? <ClipboardCheck className="w-4 h-4 text-success" /> : <Copy className="w-4 h-4" />}
                       </Button>
                       <Button
                         isIconOnly
