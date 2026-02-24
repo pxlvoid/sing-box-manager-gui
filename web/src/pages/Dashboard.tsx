@@ -150,6 +150,7 @@ export default function Dashboard() {
   const totalNodes = subscriptions.reduce((sum, sub) => sum + sub.node_count, 0) + manualNodes.length;
   const enabledSubs = subscriptions.filter(sub => sub.enabled).length;
   const enabledManualNodes = manualNodes.filter(mn => mn.enabled).length;
+  const mainProxyGroup = proxyGroups.find((group) => group.name.toLowerCase() === 'proxy');
 
   return (
     <div className="space-y-6">
@@ -246,7 +247,7 @@ export default function Dashboard() {
       </Card>
 
       {/* Active Proxy */}
-      {serviceStatus?.running && proxyGroups.length > 0 && (
+      {serviceStatus?.running && mainProxyGroup && (
         <Card>
           <CardHeader>
             <div className="flex items-center gap-2">
@@ -255,32 +256,25 @@ export default function Dashboard() {
             </div>
           </CardHeader>
           <CardBody>
-            <div className="space-y-3">
-              {proxyGroups.map((group) => (
-                <div
-                  key={group.name}
-                  className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 p-3 bg-gray-50 dark:bg-gray-800 rounded-lg"
-                >
-                  <div className="flex items-center gap-2 min-w-0">
-                    <span className="font-medium text-sm whitespace-nowrap">{group.name}</span>
-                  </div>
-                  <Select
-                    size="sm"
-                    selectedKeys={[group.now]}
-                    onChange={(e) => {
-                      if (e.target.value) {
-                        switchProxy(group.name, e.target.value);
-                      }
-                    }}
-                    className="w-full sm:w-64"
-                    aria-label={`Select proxy for ${group.name}`}
-                  >
-                    {group.all.map((item) => (
-                      <SelectItem key={item}>{item}</SelectItem>
-                    ))}
-                  </Select>
-                </div>
-              ))}
+            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 p-3 bg-gray-50 dark:bg-gray-800 rounded-lg">
+              <div className="flex items-center gap-2 min-w-0">
+                <span className="font-medium text-sm whitespace-nowrap">Main</span>
+              </div>
+              <Select
+                size="sm"
+                selectedKeys={[mainProxyGroup.now]}
+                onChange={(e) => {
+                  if (e.target.value) {
+                    switchProxy(mainProxyGroup.name, e.target.value);
+                  }
+                }}
+                className="w-full sm:w-64"
+                aria-label="Select main proxy"
+              >
+                {mainProxyGroup.all.map((item) => (
+                  <SelectItem key={item}>{item}</SelectItem>
+                ))}
+              </Select>
             </div>
           </CardBody>
         </Card>

@@ -285,6 +285,15 @@ func (s *JSONStore) DeleteRule(id string) error {
 	return fmt.Errorf("rule not found: %s", id)
 }
 
+// ReplaceRules replaces all custom rules at once
+func (s *JSONStore) ReplaceRules(rules []Rule) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	s.data.Rules = rules
+	return s.saveInternal()
+}
+
 // ==================== Rule Group Operations ====================
 
 // GetRuleGroups returns all preset rule groups

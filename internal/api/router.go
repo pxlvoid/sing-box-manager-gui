@@ -142,6 +142,7 @@ func (s *Server) setupRoutes() {
 		// Rule management
 		api.GET("/rules", s.getRules)
 		api.POST("/rules", s.addRule)
+		api.PUT("/rules/replace", s.replaceRules)
 		api.PUT("/rules/:id", s.updateRule)
 		api.DELETE("/rules/:id", s.deleteRule)
 
@@ -462,6 +463,36 @@ func (s *Server) addRule(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{"data": rule})
+}
+
+func (s *Server) replaceRules(c *gin.Context) {
+	var req struct {
+		Rules []storage.Rule `json:"rules"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	// Ensure each rule has an ID
+	for i := range req.Rules {
+		if strings.TrimSpace(req.Rules[i].ID) == "" {
+			req.Rules[i].ID = uuid.New().String()
+		}
+	}
+
+	if err := s.store.ReplaceRules(req.Rules); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	// Auto-apply config
+	if err := s.autoApplyConfig(); err != nil {
+		c.JSON(http.StatusOK, gin.H{"data": req.Rules, "warning": "Replaced successfully, but auto-apply config failed: " + err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"data": req.Rules, "message": "Replaced successfully"})
 }
 
 func (s *Server) updateRule(c *gin.Context) {
@@ -1733,17 +1764,17 @@ func buildHealthCheckConfig(nodes []storage.Node, clashAPIPort int) *builder.Sin
 	// Proxy urltest group over all nodes
 	if len(nodeTags) > 0 {
 		outbounds = append(outbounds, builder.Outbound{
-			"type":       "urltest",
-			"tag":        "Proxy",
-			"outbounds":  nodeTags,
-			"url":        "https://www.gstatic.com/generate_204",
-			"interval":   "5m",
-			"tolerance":  50,
+			"type":      "urltest",
+			"tag":       "Proxy",
+			"outbounds": nodeTags,
+			"url":       "https://www.gstatic.com/generate_204",
+			"interval":  "5m",
+			"tolerance": 50,
 		})
 	}
 
 	return &builder.SingBoxConfig{
-		Log: &builder.LogConfig{Level: "warn", Timestamp: true},
+		Log:       &builder.LogConfig{Level: "warn", Timestamp: true},
 		Outbounds: outbounds,
 		Experimental: &builder.ExperimentalConfig{
 			ClashAPI: &builder.ClashAPIConfig{

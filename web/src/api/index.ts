@@ -27,6 +27,7 @@ export const filterApi = {
 export const ruleApi = {
   getAll: () => api.get('/rules'),
   add: (data: any) => api.post('/rules', data),
+  replaceAll: (rules: any[]) => api.put('/rules/replace', { rules }),
   update: (id: string, data: any) => api.put(`/rules/${id}`, data),
   delete: (id: string) => api.delete(`/rules/${id}`),
 };

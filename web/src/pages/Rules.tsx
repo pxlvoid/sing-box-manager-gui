@@ -15,13 +15,16 @@ import {
   Select,
   SelectItem,
   Textarea,
+  Tab,
+  Tabs,
   useDisclosure,
   Spinner,
   Tooltip,
 } from '@nextui-org/react';
 import { Shield, Globe, Tv, MessageCircle, Github, Bot, Apple, Monitor, Plus, Pencil, Trash2, CheckCircle, XCircle, RotateCcw } from 'lucide-react';
 import { useStore } from '../store';
-import { ruleSetApi } from '../api';
+import { ruleApi, ruleSetApi, settingsApi } from '../api';
+import { toast } from '../components/Toast';
 import type { Rule, RuleGroup } from '../store';
 
 // Rule set validation result type
@@ -73,6 +76,16 @@ const defaultRule: Omit<Rule, 'id'> = {
   priority: 100,
 };
 
+const switchyHeader = '[SwitchyOmega Conditions]\n@with result';
+
+const outboundAliases: Record<string, string> = {
+  direct: 'DIRECT',
+  proxy: 'Proxy',
+  outline: 'Proxy',
+  reject: 'REJECT',
+  block: 'REJECT',
+};
+
 // Check if a rule group differs from its default version
 function isRuleGroupModified(group: RuleGroup, defaults: RuleGroup[]): boolean {
   const defaultGroup = defaults.find((d) => d.id === group.id);
@@ -89,11 +102,13 @@ export default function Rules() {
     ruleGroups,
     defaultRuleGroups,
     rules,
+    settings,
     filters,
     countryGroups,
     fetchRuleGroups,
     fetchDefaultRuleGroups,
     fetchRules,
+    fetchSettings,
     fetchFilters,
     fetchCountryGroups,
     toggleRuleGroup,
@@ -110,6 +125,11 @@ export default function Rules() {
   const [editingRule, setEditingRule] = useState<Rule | null>(null);
   const [formData, setFormData] = useState<Omit<Rule, 'id'>>(defaultRule);
   const [valuesText, setValuesText] = useState('');
+  const [customRulesView, setCustomRulesView] = useState<'visual' | 'text'>('visual');
+  const [switchyText, setSwitchyText] = useState('');
+  const [switchyDirty, setSwitchyDirty] = useState(false);
+  const [switchyErrors, setSwitchyErrors] = useState<string[]>([]);
+  const [isApplyingSwitchyText, setIsApplyingSwitchyText] = useState(false);
 
   // Rule group edit modal
   const { isOpen: isRuleGroupModalOpen, onOpen: onRuleGroupModalOpen, onClose: onRuleGroupModalClose } = useDisclosure();
@@ -135,6 +155,7 @@ export default function Rules() {
     fetchRuleGroups();
     fetchDefaultRuleGroups();
     fetchRules();
+    fetchSettings();
     fetchFilters();
     fetchCountryGroups();
   }, []);
@@ -276,6 +297,231 @@ export default function Rules() {
 
     return options;
   };
+
+  const outboundToTextToken = (outbound: string) => {
+    if (outbound === 'DIRECT') return 'direct';
+    if (outbound === 'Proxy') return 'proxy';
+    if (outbound === 'REJECT') return 'reject';
+    return outbound;
+  };
+
+  const textPatternToRule = (pattern: string): { rule_type: string; value: string } | null => {
+    const trimmed = pattern.trim();
+    if (!trimmed) return null;
+
+    const prefixedRuleTypes = [
+      { prefix: 'keyword:', rule_type: 'domain_keyword' },
+      { prefix: 'ip:', rule_type: 'ip_cidr' },
+      { prefix: 'geosite:', rule_type: 'geosite' },
+      { prefix: 'geoip:', rule_type: 'geoip' },
+      { prefix: 'port:', rule_type: 'port' },
+      { prefix: 'domain:', rule_type: 'domain' },
+      { prefix: 'suffix:', rule_type: 'domain_suffix' },
+    ];
+
+    const lower = trimmed.toLowerCase();
+    for (const item of prefixedRuleTypes) {
+      if (lower.startsWith(item.prefix)) {
+        const value = trimmed.slice(item.prefix.length).trim();
+        if (!value) return null;
+        return { rule_type: item.rule_type, value };
+      }
+    }
+
+    if (trimmed.startsWith('*.') && !trimmed.slice(2).includes('*')) {
+      const value = trimmed.slice(2).trim();
+      return value ? { rule_type: 'domain_suffix', value } : null;
+    }
+
+    if (trimmed.includes('*')) {
+      return null;
+    }
+
+    return { rule_type: 'domain', value: trimmed };
+  };
+
+  const ruleToTextPattern = (ruleType: string, value: string) => {
+    if (ruleType === 'domain_suffix') return `*.${value}`;
+    if (ruleType === 'domain') return value;
+    if (ruleType === 'domain_keyword') return `keyword:${value}`;
+    if (ruleType === 'ip_cidr') return `ip:${value}`;
+    if (ruleType === 'geosite') return `geosite:${value}`;
+    if (ruleType === 'geoip') return `geoip:${value}`;
+    if (ruleType === 'port') return `port:${value}`;
+    return null;
+  };
+
+  const buildSwitchyTextFromRules = useCallback(() => {
+    const lines: string[] = [];
+    const sorted = [...rules].sort((a, b) => a.priority - b.priority);
+
+    for (const rule of sorted) {
+      for (const rawValue of rule.values || []) {
+        const value = rawValue.trim();
+        if (!value) continue;
+        const pattern = ruleToTextPattern(rule.rule_type, value);
+        if (!pattern) continue;
+        const disabledPrefix = rule.enabled ? '' : '!';
+        lines.push(`${disabledPrefix}${pattern} +${outboundToTextToken(rule.outbound)}`);
+      }
+    }
+
+    if (settings?.final_outbound) {
+      lines.push(`* +${outboundToTextToken(settings.final_outbound)}`);
+    }
+
+    return `${switchyHeader}\n\n${lines.join('\n')}`;
+  }, [rules, settings?.final_outbound]);
+
+  const normalizeOutboundToken = (rawOutbound: string, knownOutbounds: Map<string, string>) => {
+    const token = rawOutbound.trim();
+    if (!token) return '';
+    const alias = outboundAliases[token.toLowerCase()];
+    if (alias) return alias;
+    return knownOutbounds.get(token.toLowerCase()) || '';
+  };
+
+  const parseSwitchyText = (): {
+    rules: Omit<Rule, 'id'>[];
+    finalOutbound?: string;
+    errors: string[];
+  } => {
+    const knownOutbounds = new Map<string, string>();
+    for (const opt of getAllOutboundOptions()) {
+      knownOutbounds.set(opt.value.toLowerCase(), opt.value);
+    }
+    for (const rule of rules) {
+      knownOutbounds.set(rule.outbound.toLowerCase(), rule.outbound);
+    }
+    if (settings?.final_outbound) {
+      knownOutbounds.set(settings.final_outbound.toLowerCase(), settings.final_outbound);
+    }
+    for (const aliasTarget of Object.values(outboundAliases)) {
+      knownOutbounds.set(aliasTarget.toLowerCase(), aliasTarget);
+    }
+
+    const parsedRules: Omit<Rule, 'id'>[] = [];
+    const errors: string[] = [];
+    let finalOutbound: string | undefined;
+    let priority = 1;
+    const lines = switchyText.split('\n');
+
+    for (let i = 0; i < lines.length; i += 1) {
+      const lineNumber = i + 1;
+      const rawLine = lines[i].trim();
+      if (!rawLine) continue;
+      if (rawLine === '[SwitchyOmega Conditions]' || rawLine.toLowerCase() === '@with result') continue;
+      if (rawLine.startsWith('#') || rawLine.startsWith('//')) continue;
+
+      let enabled = true;
+      let line = rawLine;
+      if (line.startsWith('!')) {
+        enabled = false;
+        line = line.slice(1).trim();
+      }
+
+      const match = line.match(/^(.*?)\s+\+(.+)$/);
+      if (!match) {
+        errors.push(`Line ${lineNumber}: expected "<pattern> +<outbound>"`);
+        continue;
+      }
+
+      const pattern = match[1].trim();
+      const rawOutbound = match[2].trim();
+      const outbound = normalizeOutboundToken(rawOutbound, knownOutbounds);
+      if (!outbound) {
+        errors.push(`Line ${lineNumber}: unknown outbound "${rawOutbound}"`);
+        continue;
+      }
+
+      if (pattern === '*') {
+        finalOutbound = outbound;
+        continue;
+      }
+
+      const parsed = textPatternToRule(pattern);
+      if (!parsed) {
+        errors.push(`Line ${lineNumber}: unsupported pattern "${pattern}"`);
+        continue;
+      }
+
+      const shortValue = parsed.value.length > 60 ? `${parsed.value.slice(0, 57)}...` : parsed.value;
+      parsedRules.push({
+        name: `${parsed.rule_type}:${shortValue}`,
+        rule_type: parsed.rule_type,
+        values: [parsed.value],
+        outbound,
+        enabled,
+        priority,
+      });
+      priority += 1;
+    }
+
+    return { rules: parsedRules, finalOutbound, errors };
+  };
+
+  const handleReloadSwitchyText = () => {
+    setSwitchyText(buildSwitchyTextFromRules());
+    setSwitchyDirty(false);
+    setSwitchyErrors([]);
+  };
+
+  const handleApplySwitchyText = async () => {
+    const parsed = parseSwitchyText();
+    if (parsed.errors.length > 0) {
+      setSwitchyErrors(parsed.errors.slice(0, 8));
+      toast.error(`Text parse failed: ${parsed.errors[0]}`);
+      return;
+    }
+
+    if (parsed.rules.length === 0 && !parsed.finalOutbound) {
+      toast.error('Nothing to apply: no valid rules found');
+      return;
+    }
+
+    if (!confirm(`Replace all custom rules with ${parsed.rules.length} rule(s) from text mode?`)) {
+      return;
+    }
+
+    setIsApplyingSwitchyText(true);
+    setSwitchyErrors([]);
+    try {
+      const ruleRes = await ruleApi.replaceAll(parsed.rules);
+      if (ruleRes.data.warning) {
+        toast.info(ruleRes.data.warning);
+      } else {
+        toast.success(`Applied ${parsed.rules.length} text rule(s)`);
+      }
+      await fetchRules();
+
+      if (parsed.finalOutbound && settings && settings.final_outbound !== parsed.finalOutbound) {
+        const settingsRes = await settingsApi.update({
+          ...settings,
+          final_outbound: parsed.finalOutbound,
+        });
+        if (settingsRes.data.warning) {
+          toast.info(settingsRes.data.warning);
+        } else {
+          toast.success(`Final outbound set to ${parsed.finalOutbound}`);
+        }
+        await fetchSettings();
+      } else if (parsed.finalOutbound && !settings) {
+        toast.info(`Parsed fallback "* +${parsed.finalOutbound}", but settings are not loaded`);
+      }
+
+      setSwitchyDirty(false);
+    } catch (error: any) {
+      console.error('Failed to apply text rules:', error);
+      toast.error(error.response?.data?.error || 'Failed to apply text rules');
+    } finally {
+      setIsApplyingSwitchyText(false);
+    }
+  };
+
+  useEffect(() => {
+    if (switchyDirty) return;
+    setSwitchyText(buildSwitchyTextFromRules());
+  }, [buildSwitchyTextFromRules, switchyDirty]);
 
   const handleToggle = async (id: string, enabled: boolean) => {
     await toggleRuleGroup(id, enabled);
@@ -535,82 +781,131 @@ export default function Rules() {
           </Button>
         </CardHeader>
         <CardBody>
-          {rules.length === 0 ? (
-            <p className="text-gray-500 text-center py-8">
-              No custom rules yet. Click the button above to add one.
-            </p>
-          ) : (
-            <div className="space-y-3">
-              {rules
-                .sort((a, b) => a.priority - b.priority)
-                .map((rule) => (
-                  <div
-                    key={rule.id}
-                    className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 p-4 bg-gray-50 dark:bg-gray-800 rounded-lg"
-                  >
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <h3 className="font-medium">{rule.name}</h3>
-                        <Chip size="sm" variant="flat" color="secondary">
-                          {ruleTypeOptions.find((t) => t.value === rule.rule_type)?.label.split(' ')[0] || rule.rule_type}
-                        </Chip>
-                        <Chip
-                          size="sm"
-                          color={
-                            rule.outbound === 'DIRECT'
-                              ? 'success'
-                              : rule.outbound === 'REJECT'
-                              ? 'danger'
-                              : 'primary'
-                          }
-                          variant="flat"
+          <Tabs
+            aria-label="Custom rule editor view"
+            selectedKey={customRulesView}
+            onSelectionChange={(key) => setCustomRulesView(String(key) as 'visual' | 'text')}
+          >
+            <Tab key="visual" title="Visual">
+              <div className="mt-4">
+                {rules.length === 0 ? (
+                  <p className="text-gray-500 text-center py-8">
+                    No custom rules yet. Click the button above to add one.
+                  </p>
+                ) : (
+                  <div className="space-y-3">
+                    {rules
+                      .sort((a, b) => a.priority - b.priority)
+                      .map((rule) => (
+                        <div
+                          key={rule.id}
+                          className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 p-4 bg-gray-50 dark:bg-gray-800 rounded-lg"
                         >
-                          {rule.outbound}
-                        </Chip>
-                      </div>
-                      <div className="flex gap-1 mt-2 flex-wrap">
-                        {rule.values.slice(0, 3).map((val, idx) => (
-                          <Chip key={idx} size="sm" variant="bordered">
-                            {val}
-                          </Chip>
-                        ))}
-                        {rule.values.length > 3 && (
-                          <Chip size="sm" variant="bordered">
-                            +{rule.values.length - 3} more
-                          </Chip>
-                        )}
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-2 shrink-0 self-end sm:self-auto">
-                      <Chip size="sm" variant="flat">
-                        Priority: {rule.priority}
-                      </Chip>
-                      <Button
-                        isIconOnly
-                        size="sm"
-                        variant="light"
-                        onPress={() => handleEditRule(rule)}
-                      >
-                        <Pencil className="w-4 h-4" />
-                      </Button>
-                      <Button
-                        isIconOnly
-                        size="sm"
-                        variant="light"
-                        color="danger"
-                        onPress={() => handleDeleteRule(rule)}
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </Button>
-                      <Switch
-                        isSelected={rule.enabled}
-                        onValueChange={() => handleToggleCustomRule(rule)}
-                      />
-                    </div>
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <h3 className="font-medium">{rule.name}</h3>
+                              <Chip size="sm" variant="flat" color="secondary">
+                                {ruleTypeOptions.find((t) => t.value === rule.rule_type)?.label.split(' ')[0] || rule.rule_type}
+                              </Chip>
+                              <Chip
+                                size="sm"
+                                color={
+                                  rule.outbound === 'DIRECT'
+                                    ? 'success'
+                                    : rule.outbound === 'REJECT'
+                                    ? 'danger'
+                                    : 'primary'
+                                }
+                                variant="flat"
+                              >
+                                {rule.outbound}
+                              </Chip>
+                            </div>
+                            <div className="flex gap-1 mt-2 flex-wrap">
+                              {rule.values.slice(0, 3).map((val, idx) => (
+                                <Chip key={idx} size="sm" variant="bordered">
+                                  {val}
+                                </Chip>
+                              ))}
+                              {rule.values.length > 3 && (
+                                <Chip size="sm" variant="bordered">
+                                  +{rule.values.length - 3} more
+                                </Chip>
+                              )}
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-2 shrink-0 self-end sm:self-auto">
+                            <Chip size="sm" variant="flat">
+                              Priority: {rule.priority}
+                            </Chip>
+                            <Button
+                              isIconOnly
+                              size="sm"
+                              variant="light"
+                              onPress={() => handleEditRule(rule)}
+                            >
+                              <Pencil className="w-4 h-4" />
+                            </Button>
+                            <Button
+                              isIconOnly
+                              size="sm"
+                              variant="light"
+                              color="danger"
+                              onPress={() => handleDeleteRule(rule)}
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </Button>
+                            <Switch
+                              isSelected={rule.enabled}
+                              onValueChange={() => handleToggleCustomRule(rule)}
+                            />
+                          </div>
+                        </div>
+                      ))}
                   </div>
-                ))}
-            </div>
-          )}
+                )}
+              </div>
+            </Tab>
+            <Tab key="text" title="Text (Switchy-like)">
+              <div className="space-y-3 mt-4">
+                <div className="text-sm text-gray-500 dark:text-gray-400 bg-gray-100 dark:bg-gray-800 rounded-lg p-3">
+                  Формат строки: <code>&lt;pattern&gt; +&lt;outbound&gt;</code>. Поддерживаются: <code>*.domain.com</code>,
+                  <code>domain.com</code>, <code>keyword:</code>, <code>ip:</code>, <code>geosite:</code>, <code>geoip:</code>,
+                  <code>port:</code>. Строка <code>* +direct</code> меняет fallback (final outbound). Префикс <code>!</code> делает правило выключенным.
+                </div>
+                <Textarea
+                  aria-label="Switchy text editor"
+                  value={switchyText}
+                  onChange={(e) => {
+                    setSwitchyText(e.target.value);
+                    setSwitchyDirty(true);
+                  }}
+                  minRows={16}
+                  classNames={{ input: 'font-mono text-sm' }}
+                />
+                {switchyErrors.length > 0 && (
+                  <div className="bg-red-50 border border-red-200 text-red-700 rounded-lg p-3 text-sm space-y-1">
+                    {switchyErrors.map((err) => (
+                      <div key={err}>{err}</div>
+                    ))}
+                  </div>
+                )}
+                <div className="flex flex-wrap gap-2">
+                  <Button variant="flat" onPress={handleReloadSwitchyText}>
+                    Reload from current rules
+                  </Button>
+                  <Button
+                    color="primary"
+                    onPress={handleApplySwitchyText}
+                    isLoading={isApplyingSwitchyText}
+                    isDisabled={!switchyText.trim()}
+                  >
+                    Apply text
+                  </Button>
+                </div>
+              </div>
+            </Tab>
+          </Tabs>
         </CardBody>
       </Card>
 
