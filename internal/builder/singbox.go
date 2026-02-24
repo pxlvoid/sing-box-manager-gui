@@ -65,18 +65,27 @@ type NTPConfig struct {
 	Server  string `json:"server,omitempty"`
 }
 
+// InboundUser represents a user for socks/http auth
+type InboundUser struct {
+	Username string `json:"username"`
+	Password string `json:"password"`
+}
+
 // Inbound represents inbound configuration
 type Inbound struct {
-	Type           string   `json:"type"`
-	Tag            string   `json:"tag"`
-	Listen         string   `json:"listen,omitempty"`
-	ListenPort     int      `json:"listen_port,omitempty"`
-	Address        []string `json:"address,omitempty"`
-	AutoRoute      bool     `json:"auto_route,omitempty"`
-	StrictRoute    bool     `json:"strict_route,omitempty"`
-	Stack          string   `json:"stack,omitempty"`
-	Sniff          bool     `json:"sniff,omitempty"`
+	Type           string        `json:"type"`
+	Tag            string        `json:"tag"`
+	Listen         string        `json:"listen,omitempty"`
+	ListenPort     int           `json:"listen_port,omitempty"`
+	Address        []string      `json:"address,omitempty"`
+	AutoRoute      bool          `json:"auto_route,omitempty"`
+	StrictRoute    bool          `json:"strict_route,omitempty"`
+	Stack          string        `json:"stack,omitempty"`
+	Sniff          bool          `json:"sniff,omitempty"`
 	SniffOverrideDestination bool `json:"sniff_override_destination,omitempty"`
+	Users          []InboundUser `json:"users,omitempty"`
+	Method         string        `json:"method,omitempty"`
+	Password       string        `json:"password,omitempty"`
 }
 
 // Outbound represents outbound configuration
@@ -356,17 +365,71 @@ func (b *ConfigBuilder) buildInbounds() []Inbound {
 		listenAddr = "0.0.0.0"
 	}
 
-	inbounds := []Inbound{
-		{
+	var inbounds []Inbound
+
+	// Mixed inbound (HTTP+SOCKS5 on one port)
+	if b.settings.MixedPort > 0 {
+		inbounds = append(inbounds, Inbound{
 			Type:       "mixed",
 			Tag:        "mixed-in",
 			Listen:     listenAddr,
 			ListenPort: b.settings.MixedPort,
 			Sniff:      true,
 			SniffOverrideDestination: true,
-		},
+		})
 	}
 
+	// SOCKS5 inbound
+	if b.settings.SocksPort > 0 {
+		socks := Inbound{
+			Type:       "socks",
+			Tag:        "socks-in",
+			Listen:     listenAddr,
+			ListenPort: b.settings.SocksPort,
+			Sniff:      true,
+			SniffOverrideDestination: true,
+		}
+		if b.settings.SocksAuth && b.settings.SocksUsername != "" {
+			socks.Users = []InboundUser{
+				{Username: b.settings.SocksUsername, Password: b.settings.SocksPassword},
+			}
+		}
+		inbounds = append(inbounds, socks)
+	}
+
+	// HTTP inbound
+	if b.settings.HttpPort > 0 {
+		http := Inbound{
+			Type:       "http",
+			Tag:        "http-in",
+			Listen:     listenAddr,
+			ListenPort: b.settings.HttpPort,
+			Sniff:      true,
+			SniffOverrideDestination: true,
+		}
+		if b.settings.HttpAuth && b.settings.HttpUsername != "" {
+			http.Users = []InboundUser{
+				{Username: b.settings.HttpUsername, Password: b.settings.HttpPassword},
+			}
+		}
+		inbounds = append(inbounds, http)
+	}
+
+	// Shadowsocks inbound
+	if b.settings.ShadowsocksPort > 0 {
+		inbounds = append(inbounds, Inbound{
+			Type:       "shadowsocks",
+			Tag:        "shadowsocks-in",
+			Listen:     listenAddr,
+			ListenPort: b.settings.ShadowsocksPort,
+			Sniff:      true,
+			SniffOverrideDestination: true,
+			Method:     b.settings.ShadowsocksMethod,
+			Password:   b.settings.ShadowsocksPassword,
+		})
+	}
+
+	// TUN inbound
 	if b.settings.TunEnabled {
 		inbounds = append(inbounds, Inbound{
 			Type:        "tun",

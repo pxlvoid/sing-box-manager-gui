@@ -434,106 +434,245 @@ export default function Settings() {
           <Download className="w-5 h-5 mr-2" />
           <h2 className="text-lg font-semibold">Inbound Configuration</h2>
         </CardHeader>
-        <CardBody className="space-y-4">
-          <Input
-            type="number"
-            label="Mixed Proxy Port"
-            placeholder="2080"
-            value={String(formData.mixed_port)}
-            onChange={(e) => setFormData({ ...formData, mixed_port: parseInt(e.target.value) || 2080 })}
-          />
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="font-medium">TUN Mode</p>
-              <p className="text-sm text-gray-500">Enable TUN mode for transparent proxying</p>
-            </div>
-            <Switch
-              isSelected={formData.tun_enabled}
-              onValueChange={(enabled) => setFormData({ ...formData, tun_enabled: enabled })}
-            />
-          </div>
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="font-medium flex items-center gap-2">
-                <Wifi className="w-4 h-4" />
-                Allow LAN Access
-              </p>
-              <p className="text-sm text-gray-500">Allow other devices on the LAN to access the internet through this proxy</p>
-            </div>
-            <Switch
-              isSelected={formData.allow_lan}
-              onValueChange={(enabled) => {
-                const updates: Partial<typeof formData> = { allow_lan: enabled };
-                if (enabled) {
-                  // Auto-generate secret when enabling LAN access and secret is empty
-                  if (!formData.clash_api_secret) {
-                    const charset = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
-                    let secret = '';
-                    for (let i = 0; i < 16; i++) {
-                      secret += charset.charAt(Math.floor(Math.random() * charset.length));
-                    }
-                    updates.clash_api_secret = secret;
-                  }
-                } else {
-                  // Clear secret when disabling LAN access
-                  updates.clash_api_secret = '';
-                }
-                setFormData({ ...formData, ...updates });
-              }}
+        <CardBody className="space-y-6">
+          {/* Mixed Inbound */}
+          <div>
+            <h3 className="font-medium mb-2">Mixed (HTTP+SOCKS5)</h3>
+            <Input
+              type="number"
+              label="Port"
+              placeholder="2080"
+              description="HTTP+SOCKS5 on one port. Set to 0 to disable."
+              value={String(formData.mixed_port)}
+              onChange={(e) => setFormData({ ...formData, mixed_port: parseInt(e.target.value) || 0 })}
             />
           </div>
 
-          {/* ClashAPI Secret - only shown when LAN access is enabled */}
-          {formData.allow_lan && (
-            <div className="p-4 rounded-lg bg-warning-50 dark:bg-warning-900/20 border border-warning-200 dark:border-warning-800">
-              <div className="flex items-center gap-2 mb-2">
-                <p className="font-medium text-warning-700 dark:text-warning-400">ClashAPI Secret</p>
-                <Chip size="sm" color="warning" variant="flat">Security</Chip>
-              </div>
-              <p className="text-sm text-warning-600 dark:text-warning-500 mb-3">
-                This secret is used for authentication when connecting external UIs. Please keep it safe.
-              </p>
-              <div className="flex items-center gap-2">
-                <Input
-                  type={showSecret ? "text" : "password"}
-                  value={formData.clash_api_secret || ''}
-                  onChange={(e) => setFormData({ ...formData, clash_api_secret: e.target.value })}
-                  placeholder="Will be auto-generated after saving settings"
-                  size="sm"
-                  className="flex-1"
-                  endContent={
-                    <Button
-                      isIconOnly
+          {/* SOCKS5 Inbound */}
+          <div className="pt-4 border-t border-divider">
+            <h3 className="font-medium mb-2">SOCKS5</h3>
+            <div className="space-y-3">
+              <Input
+                type="number"
+                label="Port"
+                placeholder="0"
+                description="Set to 0 to disable"
+                value={String(formData.socks_port)}
+                onChange={(e) => setFormData({ ...formData, socks_port: parseInt(e.target.value) || 0 })}
+              />
+              {formData.socks_port > 0 && (
+                <>
+                  <div className="flex items-center justify-between">
+                    <p className="text-sm">Authentication</p>
+                    <Switch
                       size="sm"
-                      variant="light"
-                      onPress={() => setShowSecret(!showSecret)}
-                    >
-                      {showSecret ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                    </Button>
-                  }
-                />
-                <Button
-                  isIconOnly
-                  size="sm"
-                  variant="flat"
-                  onPress={handleCopySecret}
-                  isDisabled={!formData.clash_api_secret}
-                  title="Copy Secret"
-                >
-                  <Copy className="w-4 h-4" />
-                </Button>
-                <Button
-                  isIconOnly
-                  size="sm"
-                  variant="flat"
-                  onPress={handleGenerateSecret}
-                  title="Regenerate"
-                >
-                  <RefreshCw className="w-4 h-4" />
-                </Button>
-              </div>
+                      isSelected={formData.socks_auth}
+                      onValueChange={(enabled) => setFormData({ ...formData, socks_auth: enabled })}
+                    />
+                  </div>
+                  {formData.socks_auth && (
+                    <div className="flex gap-3">
+                      <Input
+                        label="Username"
+                        size="sm"
+                        value={formData.socks_username || ''}
+                        onChange={(e) => setFormData({ ...formData, socks_username: e.target.value })}
+                      />
+                      <Input
+                        label="Password"
+                        size="sm"
+                        type="password"
+                        value={formData.socks_password || ''}
+                        onChange={(e) => setFormData({ ...formData, socks_password: e.target.value })}
+                      />
+                    </div>
+                  )}
+                </>
+              )}
             </div>
-          )}
+          </div>
+
+          {/* HTTP Inbound */}
+          <div className="pt-4 border-t border-divider">
+            <h3 className="font-medium mb-2">HTTP</h3>
+            <div className="space-y-3">
+              <Input
+                type="number"
+                label="Port"
+                placeholder="0"
+                description="Set to 0 to disable"
+                value={String(formData.http_port)}
+                onChange={(e) => setFormData({ ...formData, http_port: parseInt(e.target.value) || 0 })}
+              />
+              {formData.http_port > 0 && (
+                <>
+                  <div className="flex items-center justify-between">
+                    <p className="text-sm">Authentication</p>
+                    <Switch
+                      size="sm"
+                      isSelected={formData.http_auth}
+                      onValueChange={(enabled) => setFormData({ ...formData, http_auth: enabled })}
+                    />
+                  </div>
+                  {formData.http_auth && (
+                    <div className="flex gap-3">
+                      <Input
+                        label="Username"
+                        size="sm"
+                        value={formData.http_username || ''}
+                        onChange={(e) => setFormData({ ...formData, http_username: e.target.value })}
+                      />
+                      <Input
+                        label="Password"
+                        size="sm"
+                        type="password"
+                        value={formData.http_password || ''}
+                        onChange={(e) => setFormData({ ...formData, http_password: e.target.value })}
+                      />
+                    </div>
+                  )}
+                </>
+              )}
+            </div>
+          </div>
+
+          {/* Shadowsocks Inbound */}
+          <div className="pt-4 border-t border-divider">
+            <h3 className="font-medium mb-2">Shadowsocks</h3>
+            <div className="space-y-3">
+              <Input
+                type="number"
+                label="Port"
+                placeholder="0"
+                description="Set to 0 to disable"
+                value={String(formData.shadowsocks_port)}
+                onChange={(e) => setFormData({ ...formData, shadowsocks_port: parseInt(e.target.value) || 0 })}
+              />
+              {formData.shadowsocks_port > 0 && (
+                <>
+                  <Select
+                    label="Encryption Method"
+                    selectedKeys={formData.shadowsocks_method ? [formData.shadowsocks_method] : ['aes-256-gcm']}
+                    onSelectionChange={(keys) => {
+                      const selected = Array.from(keys)[0] as string;
+                      if (selected) setFormData({ ...formData, shadowsocks_method: selected });
+                    }}
+                  >
+                    <SelectItem key="aes-256-gcm">aes-256-gcm</SelectItem>
+                    <SelectItem key="aes-128-gcm">aes-128-gcm</SelectItem>
+                    <SelectItem key="chacha20-ietf-poly1305">chacha20-ietf-poly1305</SelectItem>
+                    <SelectItem key="2022-blake3-aes-256-gcm">2022-blake3-aes-256-gcm</SelectItem>
+                    <SelectItem key="2022-blake3-aes-128-gcm">2022-blake3-aes-128-gcm</SelectItem>
+                    <SelectItem key="2022-blake3-chacha20-poly1305">2022-blake3-chacha20-poly1305</SelectItem>
+                  </Select>
+                  <Input
+                    label="Password"
+                    type="password"
+                    value={formData.shadowsocks_password || ''}
+                    onChange={(e) => setFormData({ ...formData, shadowsocks_password: e.target.value })}
+                  />
+                </>
+              )}
+            </div>
+          </div>
+
+          {/* TUN Mode */}
+          <div className="pt-4 border-t border-divider">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="font-medium">TUN Mode</p>
+                <p className="text-sm text-gray-500">Enable TUN mode for transparent proxying</p>
+              </div>
+              <Switch
+                isSelected={formData.tun_enabled}
+                onValueChange={(enabled) => setFormData({ ...formData, tun_enabled: enabled })}
+              />
+            </div>
+          </div>
+
+          {/* Allow LAN */}
+          <div className="pt-4 border-t border-divider">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="font-medium flex items-center gap-2">
+                  <Wifi className="w-4 h-4" />
+                  Allow LAN Access
+                </p>
+                <p className="text-sm text-gray-500">Allow other devices on the LAN to access the internet through this proxy</p>
+              </div>
+              <Switch
+                isSelected={formData.allow_lan}
+                onValueChange={(enabled) => {
+                  const updates: Partial<typeof formData> = { allow_lan: enabled };
+                  if (enabled) {
+                    if (!formData.clash_api_secret) {
+                      const charset = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+                      let secret = '';
+                      for (let i = 0; i < 16; i++) {
+                        secret += charset.charAt(Math.floor(Math.random() * charset.length));
+                      }
+                      updates.clash_api_secret = secret;
+                    }
+                  } else {
+                    updates.clash_api_secret = '';
+                  }
+                  setFormData({ ...formData, ...updates });
+                }}
+              />
+            </div>
+
+            {/* ClashAPI Secret - only shown when LAN access is enabled */}
+            {formData.allow_lan && (
+              <div className="mt-3 p-4 rounded-lg bg-warning-50 dark:bg-warning-900/20 border border-warning-200 dark:border-warning-800">
+                <div className="flex items-center gap-2 mb-2">
+                  <p className="font-medium text-warning-700 dark:text-warning-400">ClashAPI Secret</p>
+                  <Chip size="sm" color="warning" variant="flat">Security</Chip>
+                </div>
+                <p className="text-sm text-warning-600 dark:text-warning-500 mb-3">
+                  This secret is used for authentication when connecting external UIs. Please keep it safe.
+                </p>
+                <div className="flex items-center gap-2">
+                  <Input
+                    type={showSecret ? "text" : "password"}
+                    value={formData.clash_api_secret || ''}
+                    onChange={(e) => setFormData({ ...formData, clash_api_secret: e.target.value })}
+                    placeholder="Will be auto-generated after saving settings"
+                    size="sm"
+                    className="flex-1"
+                    endContent={
+                      <Button
+                        isIconOnly
+                        size="sm"
+                        variant="light"
+                        onPress={() => setShowSecret(!showSecret)}
+                      >
+                        {showSecret ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                      </Button>
+                    }
+                  />
+                  <Button
+                    isIconOnly
+                    size="sm"
+                    variant="flat"
+                    onPress={handleCopySecret}
+                    isDisabled={!formData.clash_api_secret}
+                    title="Copy Secret"
+                  >
+                    <Copy className="w-4 h-4" />
+                  </Button>
+                  <Button
+                    isIconOnly
+                    size="sm"
+                    variant="flat"
+                    onPress={handleGenerateSecret}
+                    title="Regenerate"
+                  >
+                    <RefreshCw className="w-4 h-4" />
+                  </Button>
+                </div>
+              </div>
+            )}
+          </div>
         </CardBody>
       </Card>
 
