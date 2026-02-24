@@ -44,6 +44,13 @@ func generateRandomSecret(length int) string {
 	return hex.EncodeToString(bytes)[:length]
 }
 
+// UnsupportedNodeInfo represents a node that failed sing-box config validation
+type UnsupportedNodeInfo struct {
+	Tag   string    `json:"tag"`
+	Error string    `json:"error"`
+	Time  time.Time `json:"detected_at"`
+}
+
 // Server represents the API server
 type Server struct {
 	store          *storage.JSONStore
@@ -57,6 +64,9 @@ type Server struct {
 	sbmPath        string // sbm executable path
 	port           int    // Web service port
 	version        string // sbm version
+
+	unsupportedNodes   map[string]UnsupportedNodeInfo
+	unsupportedNodesMu sync.RWMutex
 }
 
 // NewServer creates an API server
@@ -69,17 +79,18 @@ func NewServer(store *storage.JSONStore, processManager *daemon.ProcessManager, 
 	kernelManager := kernel.NewManager(store.GetDataDir(), store.GetSettings)
 
 	s := &Server{
-		store:          store,
-		subService:     subService,
-		processManager: processManager,
-		launchdManager: launchdManager,
-		systemdManager: systemdManager,
-		kernelManager:  kernelManager,
-		scheduler:      service.NewScheduler(store, subService),
-		router:         gin.Default(),
-		sbmPath:        sbmPath,
-		port:           port,
-		version:        version,
+		store:            store,
+		subService:       subService,
+		processManager:   processManager,
+		launchdManager:   launchdManager,
+		systemdManager:   systemdManager,
+		kernelManager:    kernelManager,
+		scheduler:        service.NewScheduler(store, subService),
+		router:           gin.Default(),
+		sbmPath:          sbmPath,
+		port:             port,
+		version:          version,
+		unsupportedNodes: make(map[string]UnsupportedNodeInfo),
 	}
 
 	// Set scheduler update callback
@@ -194,6 +205,10 @@ func (s *Server) setupRoutes() {
 		api.POST("/nodes/parse-bulk", s.parseNodeURLsBulk)
 		api.POST("/nodes/health-check", s.healthCheckNodes)
 		api.POST("/nodes/health-check-single", s.healthCheckSingleNode)
+		api.GET("/nodes/unsupported", s.getUnsupportedNodes)
+		api.POST("/nodes/unsupported/recheck", s.recheckUnsupportedNodes)
+		api.DELETE("/nodes/unsupported", s.clearUnsupportedNodes)
+		api.POST("/nodes/unsupported/delete", s.deleteUnsupportedNodes)
 
 		// Manual nodes
 		api.GET("/manual-nodes", s.getManualNodes)
@@ -716,7 +731,7 @@ func (s *Server) previewConfig(c *gin.Context) {
 }
 
 func (s *Server) applyConfig(c *gin.Context) {
-	configJSON, err := s.buildConfig()
+	configJSON, newUnsupported, err := s.buildAndValidateConfig()
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -729,12 +744,6 @@ func (s *Server) applyConfig(c *gin.Context) {
 		return
 	}
 
-	// Check config
-	if err := s.processManager.Check(); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-
 	// Restart service
 	if s.processManager.IsRunning() {
 		if err := s.processManager.Restart(); err != nil {
@@ -743,7 +752,16 @@ func (s *Server) applyConfig(c *gin.Context) {
 		}
 	}
 
-	c.JSON(http.StatusOK, gin.H{"message": "Config applied"})
+	response := gin.H{"message": "Config applied"}
+	if len(newUnsupported) > 0 {
+		tags := make([]string, len(newUnsupported))
+		for i, u := range newUnsupported {
+			tags[i] = u.Tag
+		}
+		response["warning"] = fmt.Sprintf("%d unsupported node(s) excluded: %s", len(newUnsupported), strings.Join(tags, ", "))
+		response["unsupported_nodes"] = newUnsupported
+	}
+	c.JSON(http.StatusOK, response)
 }
 
 func (s *Server) buildConfig() (string, error) {
@@ -755,6 +773,135 @@ func (s *Server) buildConfig() (string, error) {
 
 	b := builder.NewConfigBuilder(settings, nodes, filters, rules, ruleGroups)
 	return b.BuildJSON()
+}
+
+// buildAndValidateConfig generates config, validates it with sing-box check,
+// and iteratively removes unsupported nodes until validation passes.
+func (s *Server) buildAndValidateConfig() (string, []UnsupportedNodeInfo, error) {
+	settings := s.store.GetSettings()
+	nodes := s.store.GetAllNodes()
+	filters := s.store.GetFilters()
+	rules := s.store.GetRules()
+	ruleGroups := s.store.GetRuleGroups()
+
+	excludeTags := make(map[string]bool)
+
+	// Copy currently known unsupported nodes into exclusion set
+	s.unsupportedNodesMu.RLock()
+	for tag := range s.unsupportedNodes {
+		excludeTags[tag] = true
+	}
+	s.unsupportedNodesMu.RUnlock()
+
+	var newUnsupported []UnsupportedNodeInfo
+	const maxIterations = 50
+
+	singboxPath := s.processManager.GetSingBoxPath()
+
+	for i := 0; i < maxIterations; i++ {
+		b := builder.NewConfigBuilderWithExclusions(settings, nodes, filters, rules, ruleGroups, excludeTags)
+		configJSON, indexToTag, err := b.BuildJSONWithNodeMap()
+		if err != nil {
+			return "", nil, err
+		}
+
+		// Write to temp file for validation
+		tmpFile, err := os.CreateTemp("", "sbm-validate-*.json")
+		if err != nil {
+			return "", nil, fmt.Errorf("failed to create temp file: %w", err)
+		}
+		tmpPath := tmpFile.Name()
+
+		if _, err := tmpFile.WriteString(configJSON); err != nil {
+			tmpFile.Close()
+			os.Remove(tmpPath)
+			return "", nil, fmt.Errorf("failed to write temp config: %w", err)
+		}
+		tmpFile.Close()
+
+		// Run sing-box check
+		checkCmd := exec.Command(singboxPath, "check", "-c", tmpPath)
+		output, checkErr := checkCmd.CombinedOutput()
+		os.Remove(tmpPath)
+
+		if checkErr == nil {
+			// Config is valid — store new unsupported nodes
+			if len(newUnsupported) > 0 {
+				s.unsupportedNodesMu.Lock()
+				for _, info := range newUnsupported {
+					s.unsupportedNodes[info.Tag] = info
+				}
+				s.unsupportedNodesMu.Unlock()
+
+				// Log excluded nodes
+				tags := make([]string, len(newUnsupported))
+				for i, u := range newUnsupported {
+					tags[i] = u.Tag
+				}
+				logger.Printf("[config] Excluded %d unsupported node(s): %s", len(newUnsupported), strings.Join(tags, ", "))
+			}
+			return configJSON, newUnsupported, nil
+		}
+
+		// Parse errors
+		checkErrors := builder.ParseCheckErrors(string(output))
+		if !checkErrors.HasErrors() {
+			// Unrecognized error, cannot auto-fix
+			return "", nil, fmt.Errorf("config check failed: %s", string(output))
+		}
+
+		// Build reverse map: tag -> list of outbound indices (for duplicate detection)
+		tagToIndices := make(map[string][]int)
+		for idx, tag := range indexToTag {
+			tagToIndices[tag] = append(tagToIndices[tag], idx)
+		}
+
+		foundNew := false
+
+		// Handle outbound index errors (outbounds[N].field: message)
+		for _, oe := range checkErrors.OutboundErrors {
+			tag, ok := indexToTag[oe.Index]
+			if !ok {
+				// Error in a non-node outbound (group/selector), cannot auto-fix
+				return "", nil, fmt.Errorf("config check failed: %s", string(output))
+			}
+			if !excludeTags[tag] {
+				excludeTags[tag] = true
+				info := UnsupportedNodeInfo{
+					Tag:   tag,
+					Error: oe.Message,
+					Time:  time.Now(),
+				}
+				newUnsupported = append(newUnsupported, info)
+				foundNew = true
+			}
+		}
+
+		// Handle duplicate tag errors (duplicate outbound/endpoint tag: <tag>)
+		// Node-level duplicates are already handled in the builder (deduplication).
+		// If this error still occurs, it's a conflict with a group/selector tag.
+		for _, dte := range checkErrors.DuplicateTagErrors {
+			// Try to find and exclude the node with conflicting tag
+			if _, isNodeTag := tagToIndices[dte.Tag]; isNodeTag {
+				if !excludeTags[dte.Tag] {
+					excludeTags[dte.Tag] = true
+					info := UnsupportedNodeInfo{
+						Tag:   dte.Tag,
+						Error: fmt.Sprintf("duplicate outbound tag: %s", dte.Tag),
+						Time:  time.Now(),
+					}
+					newUnsupported = append(newUnsupported, info)
+					foundNew = true
+				}
+			}
+		}
+
+		if !foundNew {
+			return "", nil, fmt.Errorf("config check failed: %s", string(output))
+		}
+	}
+
+	return "", nil, fmt.Errorf("config validation exceeded max iterations (%d)", maxIterations)
 }
 
 func (s *Server) saveConfigFile(path, content string) error {
@@ -776,8 +923,8 @@ func (s *Server) autoApplyConfig() error {
 		return nil
 	}
 
-	// Generate config
-	configJSON, err := s.buildConfig()
+	// Generate and validate config
+	configJSON, _, err := s.buildAndValidateConfig()
 	if err != nil {
 		return err
 	}
@@ -793,6 +940,94 @@ func (s *Server) autoApplyConfig() error {
 	}
 
 	return nil
+}
+
+// ==================== Unsupported Nodes API ====================
+
+func (s *Server) getUnsupportedNodes(c *gin.Context) {
+	s.unsupportedNodesMu.RLock()
+	defer s.unsupportedNodesMu.RUnlock()
+
+	nodes := make([]UnsupportedNodeInfo, 0, len(s.unsupportedNodes))
+	for _, info := range s.unsupportedNodes {
+		nodes = append(nodes, info)
+	}
+	c.JSON(http.StatusOK, gin.H{"data": nodes})
+}
+
+func (s *Server) recheckUnsupportedNodes(c *gin.Context) {
+	// Clear unsupported list
+	s.unsupportedNodesMu.Lock()
+	s.unsupportedNodes = make(map[string]UnsupportedNodeInfo)
+	s.unsupportedNodesMu.Unlock()
+
+	// Re-validate config
+	configJSON, newUnsupported, err := s.buildAndValidateConfig()
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	// Save the validated config
+	settings := s.store.GetSettings()
+	if err := s.saveConfigFile(s.resolvePath(settings.ConfigPath), configJSON); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	// Return updated list
+	s.unsupportedNodesMu.RLock()
+	defer s.unsupportedNodesMu.RUnlock()
+	nodes := make([]UnsupportedNodeInfo, 0, len(s.unsupportedNodes))
+	for _, info := range s.unsupportedNodes {
+		nodes = append(nodes, info)
+	}
+	c.JSON(http.StatusOK, gin.H{"data": nodes, "message": fmt.Sprintf("Recheck completed, %d unsupported node(s)", len(newUnsupported))})
+}
+
+func (s *Server) clearUnsupportedNodes(c *gin.Context) {
+	s.unsupportedNodesMu.Lock()
+	s.unsupportedNodes = make(map[string]UnsupportedNodeInfo)
+	s.unsupportedNodesMu.Unlock()
+	c.JSON(http.StatusOK, gin.H{"message": "Cleared"})
+}
+
+// deleteUnsupportedNodes permanently removes unsupported nodes from subscriptions and manual nodes
+func (s *Server) deleteUnsupportedNodes(c *gin.Context) {
+	var req struct {
+		Tags []string `json:"tags"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil || len(req.Tags) == 0 {
+		// If no tags specified, delete all unsupported
+		s.unsupportedNodesMu.RLock()
+		for tag := range s.unsupportedNodes {
+			req.Tags = append(req.Tags, tag)
+		}
+		s.unsupportedNodesMu.RUnlock()
+	}
+
+	if len(req.Tags) == 0 {
+		c.JSON(http.StatusOK, gin.H{"message": "No unsupported nodes to delete", "removed": 0})
+		return
+	}
+
+	removed, err := s.store.RemoveNodesByTags(req.Tags)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	// Clear them from unsupported list
+	s.unsupportedNodesMu.Lock()
+	for _, tag := range req.Tags {
+		delete(s.unsupportedNodes, tag)
+	}
+	s.unsupportedNodesMu.Unlock()
+
+	c.JSON(http.StatusOK, gin.H{
+		"message": fmt.Sprintf("Removed %d node(s)", removed),
+		"removed": removed,
+	})
 }
 
 // ==================== Service API ====================
