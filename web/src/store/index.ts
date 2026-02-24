@@ -99,20 +99,24 @@ export interface Settings {
   singbox_path: string;
   config_path: string;
   mixed_port: number;
+  mixed_address: string;
   tun_enabled: boolean;
   allow_lan: boolean;              // Allow LAN access
 
   socks_port: number;
+  socks_address: string;
   socks_auth: boolean;
   socks_username: string;
   socks_password: string;
 
   http_port: number;
+  http_address: string;
   http_auth: boolean;
   http_username: string;
   http_password: string;
 
   shadowsocks_port: number;
+  shadowsocks_address: string;
   shadowsocks_method: string;
   shadowsocks_password: string;
   proxy_dns: string;

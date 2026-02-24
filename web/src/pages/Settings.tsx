@@ -438,28 +438,48 @@ export default function Settings() {
           {/* Mixed Inbound */}
           <div>
             <h3 className="font-medium mb-2">Mixed (HTTP+SOCKS5)</h3>
-            <Input
-              type="number"
-              label="Port"
-              placeholder="2080"
-              description="HTTP+SOCKS5 on one port. Set to 0 to disable."
-              value={String(formData.mixed_port)}
-              onChange={(e) => setFormData({ ...formData, mixed_port: parseInt(e.target.value) || 0 })}
-            />
+            <div className="space-y-3">
+              <div className="flex gap-3">
+                <Input
+                  type="number"
+                  label="Port"
+                  placeholder="2080"
+                  description="HTTP+SOCKS5 on one port. Set to 0 to disable."
+                  value={String(formData.mixed_port)}
+                  onChange={(e) => setFormData({ ...formData, mixed_port: parseInt(e.target.value) || 0 })}
+                />
+                <Input
+                  label="Address"
+                  placeholder="example.com"
+                  description="Server address for proxy link"
+                  value={formData.mixed_address || ''}
+                  onChange={(e) => setFormData({ ...formData, mixed_address: e.target.value })}
+                />
+              </div>
+            </div>
           </div>
 
           {/* SOCKS5 Inbound */}
           <div className="pt-4 border-t border-divider">
             <h3 className="font-medium mb-2">SOCKS5</h3>
             <div className="space-y-3">
-              <Input
-                type="number"
-                label="Port"
-                placeholder="0"
-                description="Set to 0 to disable"
-                value={String(formData.socks_port)}
-                onChange={(e) => setFormData({ ...formData, socks_port: parseInt(e.target.value) || 0 })}
-              />
+              <div className="flex gap-3">
+                <Input
+                  type="number"
+                  label="Port"
+                  placeholder="0"
+                  description="Set to 0 to disable"
+                  value={String(formData.socks_port)}
+                  onChange={(e) => setFormData({ ...formData, socks_port: parseInt(e.target.value) || 0 })}
+                />
+                <Input
+                  label="Address"
+                  placeholder="example.com"
+                  description="Server address for proxy link"
+                  value={formData.socks_address || ''}
+                  onChange={(e) => setFormData({ ...formData, socks_address: e.target.value })}
+                />
+              </div>
               {formData.socks_port > 0 && (
                 <>
                   <div className="flex items-center justify-between">
@@ -496,14 +516,23 @@ export default function Settings() {
           <div className="pt-4 border-t border-divider">
             <h3 className="font-medium mb-2">HTTP</h3>
             <div className="space-y-3">
-              <Input
-                type="number"
-                label="Port"
-                placeholder="0"
-                description="Set to 0 to disable"
-                value={String(formData.http_port)}
-                onChange={(e) => setFormData({ ...formData, http_port: parseInt(e.target.value) || 0 })}
-              />
+              <div className="flex gap-3">
+                <Input
+                  type="number"
+                  label="Port"
+                  placeholder="0"
+                  description="Set to 0 to disable"
+                  value={String(formData.http_port)}
+                  onChange={(e) => setFormData({ ...formData, http_port: parseInt(e.target.value) || 0 })}
+                />
+                <Input
+                  label="Address"
+                  placeholder="example.com"
+                  description="Server address for proxy link"
+                  value={formData.http_address || ''}
+                  onChange={(e) => setFormData({ ...formData, http_address: e.target.value })}
+                />
+              </div>
               {formData.http_port > 0 && (
                 <>
                   <div className="flex items-center justify-between">
@@ -540,14 +569,23 @@ export default function Settings() {
           <div className="pt-4 border-t border-divider">
             <h3 className="font-medium mb-2">Shadowsocks</h3>
             <div className="space-y-3">
-              <Input
-                type="number"
-                label="Port"
-                placeholder="0"
-                description="Set to 0 to disable"
-                value={String(formData.shadowsocks_port)}
-                onChange={(e) => setFormData({ ...formData, shadowsocks_port: parseInt(e.target.value) || 0 })}
-              />
+              <div className="flex gap-3">
+                <Input
+                  type="number"
+                  label="Port"
+                  placeholder="0"
+                  description="Set to 0 to disable"
+                  value={String(formData.shadowsocks_port)}
+                  onChange={(e) => setFormData({ ...formData, shadowsocks_port: parseInt(e.target.value) || 0 })}
+                />
+                <Input
+                  label="Address"
+                  placeholder="example.com"
+                  description="Server address for proxy link"
+                  value={formData.shadowsocks_address || ''}
+                  onChange={(e) => setFormData({ ...formData, shadowsocks_address: e.target.value })}
+                />
+              </div>
               {formData.shadowsocks_port > 0 && (
                 <>
                   <Select
