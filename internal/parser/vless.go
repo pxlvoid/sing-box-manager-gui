@@ -53,6 +53,11 @@ func (p *VlessParser) Parse(rawURL string) (*storage.Node, error) {
 		extra["flow"] = flow
 	}
 
+	// Packet encoding (e.g. xudp)
+	if pe := params.Get("packetEncoding"); pe != "" {
+		extra["packet_encoding"] = pe
+	}
+
 	// Transport layer configuration
 	transportType := getParamString(params, "type", "tcp")
 	if transportType != "tcp" {
