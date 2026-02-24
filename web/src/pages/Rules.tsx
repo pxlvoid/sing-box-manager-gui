@@ -23,7 +23,7 @@ import {
 } from '@nextui-org/react';
 import { Shield, Globe, Tv, MessageCircle, Github, Bot, Apple, Monitor, Plus, Pencil, Trash2, CheckCircle, XCircle, RotateCcw } from 'lucide-react';
 import { useStore } from '../store';
-import { ruleApi, ruleSetApi, settingsApi } from '../api';
+import { ruleApi, ruleGroupApi, ruleSetApi, settingsApi } from '../api';
 import { toast } from '../components/Toast';
 import type { Rule, RuleGroup } from '../store';
 
@@ -130,6 +130,11 @@ export default function Rules() {
   const [switchyDirty, setSwitchyDirty] = useState(false);
   const [switchyErrors, setSwitchyErrors] = useState<string[]>([]);
   const [isApplyingSwitchyText, setIsApplyingSwitchyText] = useState(false);
+  const [presetRuleGroupsView, setPresetRuleGroupsView] = useState<'visual' | 'text'>('visual');
+  const [presetRuleGroupsText, setPresetRuleGroupsText] = useState('');
+  const [presetRuleGroupsDirty, setPresetRuleGroupsDirty] = useState(false);
+  const [presetRuleGroupsErrors, setPresetRuleGroupsErrors] = useState<string[]>([]);
+  const [isApplyingPresetRuleGroupsText, setIsApplyingPresetRuleGroupsText] = useState(false);
 
   // Rule group edit modal
   const { isOpen: isRuleGroupModalOpen, onOpen: onRuleGroupModalOpen, onClose: onRuleGroupModalClose } = useDisclosure();
@@ -523,6 +528,193 @@ export default function Rules() {
     setSwitchyText(buildSwitchyTextFromRules());
   }, [buildSwitchyTextFromRules, switchyDirty]);
 
+  const buildPresetRuleGroupsText = useCallback(() => {
+    return JSON.stringify(
+      ruleGroups.map((group) => ({
+        id: group.id,
+        name: group.name,
+        enabled: group.enabled,
+        outbound: group.outbound,
+        site_rules: group.site_rules || [],
+        ip_rules: group.ip_rules || [],
+      })),
+      null,
+      2,
+    );
+  }, [ruleGroups]);
+
+  const parsePresetRuleGroupsText = (): {
+    groups: RuleGroup[];
+    errors: string[];
+  } => {
+    let parsedData: unknown;
+    try {
+      parsedData = JSON.parse(presetRuleGroupsText);
+    } catch (error: any) {
+      return { groups: [], errors: [`Invalid JSON: ${error.message}`] };
+    }
+
+    if (!Array.isArray(parsedData)) {
+      return { groups: [], errors: ['Top-level value must be a JSON array'] };
+    }
+
+    const knownGroups = new Map(ruleGroups.map((group) => [group.id, group]));
+    const seenIDs = new Set<string>();
+    const knownOutbounds = new Map<string, string>();
+
+    for (const opt of getAllOutboundOptions()) {
+      knownOutbounds.set(opt.value.toLowerCase(), opt.value);
+    }
+    for (const group of ruleGroups) {
+      knownOutbounds.set(group.outbound.toLowerCase(), group.outbound);
+    }
+    for (const aliasTarget of Object.values(outboundAliases)) {
+      knownOutbounds.set(aliasTarget.toLowerCase(), aliasTarget);
+    }
+
+    const parseBooleanValue = (value: unknown): boolean | null => {
+      if (typeof value === 'boolean') return value;
+      if (typeof value !== 'string') return null;
+      const normalized = value.trim().toLowerCase();
+      if (normalized === 'true' || normalized === '1' || normalized === 'yes' || normalized === 'on') {
+        return true;
+      }
+      if (normalized === 'false' || normalized === '0' || normalized === 'no' || normalized === 'off') {
+        return false;
+      }
+      return null;
+    };
+
+    const parseStringList = (value: unknown): string[] | null => {
+      if (value === undefined || value === null) return [];
+      if (!Array.isArray(value)) return null;
+      const values: string[] = [];
+      for (const item of value) {
+        if (typeof item !== 'string') return null;
+        const trimmed = item.trim();
+        if (!trimmed) continue;
+        values.push(trimmed);
+      }
+      return values;
+    };
+
+    const groups: RuleGroup[] = [];
+    const errors: string[] = [];
+
+    parsedData.forEach((item, index) => {
+      const itemNumber = index + 1;
+      const itemErrors: string[] = [];
+
+      if (!item || typeof item !== 'object' || Array.isArray(item)) {
+        errors.push(`Item ${itemNumber}: expected object`);
+        return;
+      }
+
+      const raw = item as Record<string, unknown>;
+      const id = typeof raw.id === 'string' ? raw.id.trim() : '';
+      if (!id) {
+        itemErrors.push(`Item ${itemNumber}: id must be a non-empty string`);
+      } else if (!knownGroups.has(id)) {
+        itemErrors.push(`Item ${itemNumber}: unknown id "${id}"`);
+      } else if (seenIDs.has(id)) {
+        itemErrors.push(`Item ${itemNumber}: duplicate id "${id}"`);
+      } else {
+        seenIDs.add(id);
+      }
+
+      const name = typeof raw.name === 'string' ? raw.name.trim() : '';
+      if (!name) {
+        itemErrors.push(`Item ${itemNumber}: name must be a non-empty string`);
+      }
+
+      const enabled = parseBooleanValue(raw.enabled);
+      if (enabled === null) {
+        itemErrors.push(`Item ${itemNumber}: enabled must be boolean`);
+      }
+
+      const outboundRaw = typeof raw.outbound === 'string' ? raw.outbound.trim() : '';
+      const outbound = normalizeOutboundToken(outboundRaw, knownOutbounds);
+      if (!outbound) {
+        itemErrors.push(`Item ${itemNumber}: unknown outbound "${outboundRaw}"`);
+      }
+
+      const siteRules = parseStringList(raw.site_rules);
+      if (!siteRules) {
+        itemErrors.push(`Item ${itemNumber}: site_rules must be an array of strings`);
+      }
+
+      const ipRules = parseStringList(raw.ip_rules);
+      if (!ipRules) {
+        itemErrors.push(`Item ${itemNumber}: ip_rules must be an array of strings`);
+      }
+
+      if (siteRules && ipRules && siteRules.length === 0 && ipRules.length === 0) {
+        itemErrors.push(`Item ${itemNumber}: at least one of site_rules or ip_rules is required`);
+      }
+
+      if (itemErrors.length > 0) {
+        errors.push(...itemErrors);
+        return;
+      }
+
+      groups.push({
+        id,
+        name,
+        enabled: Boolean(enabled),
+        outbound,
+        site_rules: siteRules || [],
+        ip_rules: ipRules || [],
+      });
+    });
+
+    return { groups, errors };
+  };
+
+  const handleReloadPresetRuleGroupsText = () => {
+    setPresetRuleGroupsText(buildPresetRuleGroupsText());
+    setPresetRuleGroupsDirty(false);
+    setPresetRuleGroupsErrors([]);
+  };
+
+  const handleApplyPresetRuleGroupsText = async () => {
+    const parsed = parsePresetRuleGroupsText();
+    if (parsed.errors.length > 0) {
+      setPresetRuleGroupsErrors(parsed.errors.slice(0, 8));
+      toast.error(`Text parse failed: ${parsed.errors[0]}`);
+      return;
+    }
+
+    if (parsed.groups.length === 0) {
+      toast.error('Nothing to apply: no valid rule groups found');
+      return;
+    }
+
+    if (!confirm(`Apply ${parsed.groups.length} preset rule group(s) from text mode?`)) {
+      return;
+    }
+
+    setIsApplyingPresetRuleGroupsText(true);
+    setPresetRuleGroupsErrors([]);
+    try {
+      for (const group of parsed.groups) {
+        await ruleGroupApi.update(group.id, group);
+      }
+      await fetchRuleGroups();
+      toast.success(`Applied ${parsed.groups.length} preset rule group(s)`);
+      setPresetRuleGroupsDirty(false);
+    } catch (error: any) {
+      console.error('Failed to apply text rule groups:', error);
+      toast.error(error.response?.data?.error || 'Failed to apply text rule groups');
+    } finally {
+      setIsApplyingPresetRuleGroupsText(false);
+    }
+  };
+
+  useEffect(() => {
+    if (presetRuleGroupsDirty) return;
+    setPresetRuleGroupsText(buildPresetRuleGroupsText());
+  }, [buildPresetRuleGroupsText, presetRuleGroupsDirty]);
+
   const handleToggle = async (id: string, enabled: boolean) => {
     await toggleRuleGroup(id, enabled);
   };
@@ -673,92 +865,139 @@ export default function Rules() {
           </p>
         </CardHeader>
         <CardBody>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {ruleGroups.map((group) => {
-              const modified = isRuleGroupModified(group, defaultRuleGroups);
-              return (
-                <div
-                  key={group.id}
-                  className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 p-4 bg-gray-50 dark:bg-gray-800 rounded-lg"
-                >
-                  <div className="flex items-center gap-3 min-w-0 flex-1">
-                    <div className="p-2 bg-white dark:bg-gray-700 rounded-lg shrink-0">
-                      {iconMap[group.id] || <Globe className="w-5 h-5" />}
-                    </div>
-                    <div className="min-w-0">
-                      <div className="flex items-center gap-1.5 flex-wrap">
-                        <h3 className="font-medium truncate">{group.name}</h3>
-                        {modified && (
-                          <Chip size="sm" variant="dot" color="warning" className="shrink-0">
-                            modified
-                          </Chip>
-                        )}
-                      </div>
-                      <div className="flex gap-1 mt-1 flex-wrap">
-                        {(group.site_rules || []).slice(0, 2).map((rule) => (
-                          <Chip key={`site-${rule}`} size="sm" variant="flat">
-                            {rule}
-                          </Chip>
-                        ))}
-                        {(group.ip_rules || []).slice(0, 1).map((rule) => (
-                          <Chip key={`ip-${rule}`} size="sm" variant="flat" color="secondary">
-                            ip:{rule}
-                          </Chip>
-                        ))}
-                        {((group.site_rules || []).length + (group.ip_rules || []).length > 3) && (
-                          <Chip size="sm" variant="flat">
-                            +{(group.site_rules || []).length + (group.ip_rules || []).length - 3}
-                          </Chip>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-2 shrink-0 self-end sm:self-auto">
-                    {modified && (
-                      <Tooltip content="Reset to default">
-                        <Button
-                          isIconOnly
-                          size="sm"
-                          variant="light"
-                          color="warning"
-                          onPress={() => handleResetRuleGroup(group.id)}
-                        >
-                          <RotateCcw className="w-4 h-4" />
-                        </Button>
-                      </Tooltip>
-                    )}
-                    <Tooltip content="Edit rule group">
-                      <Button
-                        isIconOnly
-                        size="sm"
-                        variant="light"
-                        onPress={() => handleEditRuleGroup(group)}
-                      >
-                        <Pencil className="w-4 h-4" />
-                      </Button>
-                    </Tooltip>
-                    <Select
-                      size="sm"
-                      className="w-28 sm:w-32"
-                      selectedKeys={[group.outbound]}
-                      onChange={(e) => handleOutboundChange(group, e.target.value)}
-                      aria-label="Select outbound"
+          <Tabs
+            aria-label="Preset rule group editor view"
+            selectedKey={presetRuleGroupsView}
+            onSelectionChange={(key) => setPresetRuleGroupsView(String(key) as 'visual' | 'text')}
+          >
+            <Tab key="visual" title="Visual">
+              <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-4">
+                {ruleGroups.map((group) => {
+                  const modified = isRuleGroupModified(group, defaultRuleGroups);
+                  return (
+                    <div
+                      key={group.id}
+                      className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 p-4 bg-gray-50 dark:bg-gray-800 rounded-lg"
                     >
-                      {getAllOutboundOptions().map((opt) => (
-                        <SelectItem key={opt.value} value={opt.value}>
-                          {opt.value}
-                        </SelectItem>
-                      ))}
-                    </Select>
-                    <Switch
-                      isSelected={group.enabled}
-                      onValueChange={(enabled) => handleToggle(group.id, enabled)}
-                    />
-                  </div>
+                      <div className="flex items-center gap-3 min-w-0 flex-1">
+                        <div className="p-2 bg-white dark:bg-gray-700 rounded-lg shrink-0">
+                          {iconMap[group.id] || <Globe className="w-5 h-5" />}
+                        </div>
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            <h3 className="font-medium truncate">{group.name}</h3>
+                            {modified && (
+                              <Chip size="sm" variant="dot" color="warning" className="shrink-0">
+                                modified
+                              </Chip>
+                            )}
+                          </div>
+                          <div className="flex gap-1 mt-1 flex-wrap">
+                            {(group.site_rules || []).slice(0, 2).map((rule) => (
+                              <Chip key={`site-${rule}`} size="sm" variant="flat">
+                                {rule}
+                              </Chip>
+                            ))}
+                            {(group.ip_rules || []).slice(0, 1).map((rule) => (
+                              <Chip key={`ip-${rule}`} size="sm" variant="flat" color="secondary">
+                                ip:{rule}
+                              </Chip>
+                            ))}
+                            {((group.site_rules || []).length + (group.ip_rules || []).length > 3) && (
+                              <Chip size="sm" variant="flat">
+                                +{(group.site_rules || []).length + (group.ip_rules || []).length - 3}
+                              </Chip>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2 shrink-0 self-end sm:self-auto">
+                        {modified && (
+                          <Tooltip content="Reset to default">
+                            <Button
+                              isIconOnly
+                              size="sm"
+                              variant="light"
+                              color="warning"
+                              onPress={() => handleResetRuleGroup(group.id)}
+                            >
+                              <RotateCcw className="w-4 h-4" />
+                            </Button>
+                          </Tooltip>
+                        )}
+                        <Tooltip content="Edit rule group">
+                          <Button
+                            isIconOnly
+                            size="sm"
+                            variant="light"
+                            onPress={() => handleEditRuleGroup(group)}
+                          >
+                            <Pencil className="w-4 h-4" />
+                          </Button>
+                        </Tooltip>
+                        <Select
+                          size="sm"
+                          className="w-28 sm:w-32"
+                          selectedKeys={[group.outbound]}
+                          onChange={(e) => handleOutboundChange(group, e.target.value)}
+                          aria-label="Select outbound"
+                        >
+                          {getAllOutboundOptions().map((opt) => (
+                            <SelectItem key={opt.value} value={opt.value}>
+                              {opt.value}
+                            </SelectItem>
+                          ))}
+                        </Select>
+                        <Switch
+                          isSelected={group.enabled}
+                          onValueChange={(enabled) => handleToggle(group.id, enabled)}
+                        />
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </Tab>
+            <Tab key="text" title="Text (JSON)">
+              <div className="space-y-3 mt-4">
+                <div className="text-sm text-gray-500 dark:text-gray-400 bg-gray-100 dark:bg-gray-800 rounded-lg p-3">
+                  Формат: JSON-массив объектов с полями <code>id</code>, <code>name</code>, <code>enabled</code>, <code>outbound</code>, <code>site_rules</code>, <code>ip_rules</code>.
+                  <br />
+                  <code>id</code> должен совпадать с существующей группой, <code>site_rules</code>/<code>ip_rules</code> — массивы строк.
                 </div>
-              );
-            })}
-          </div>
+                <Textarea
+                  aria-label="Preset rule groups text editor"
+                  value={presetRuleGroupsText}
+                  onChange={(e) => {
+                    setPresetRuleGroupsText(e.target.value);
+                    setPresetRuleGroupsDirty(true);
+                  }}
+                  minRows={16}
+                  classNames={{ input: 'font-mono text-sm' }}
+                />
+                {presetRuleGroupsErrors.length > 0 && (
+                  <div className="bg-red-50 border border-red-200 text-red-700 rounded-lg p-3 text-sm space-y-1">
+                    {presetRuleGroupsErrors.map((err) => (
+                      <div key={err}>{err}</div>
+                    ))}
+                  </div>
+                )}
+                <div className="flex flex-wrap gap-2">
+                  <Button variant="flat" onPress={handleReloadPresetRuleGroupsText}>
+                    Reload from current groups
+                  </Button>
+                  <Button
+                    color="primary"
+                    onPress={handleApplyPresetRuleGroupsText}
+                    isLoading={isApplyingPresetRuleGroupsText}
+                    isDisabled={!presetRuleGroupsText.trim()}
+                  >
+                    Apply text
+                  </Button>
+                </div>
+              </div>
+            </Tab>
+          </Tabs>
         </CardBody>
       </Card>
 
