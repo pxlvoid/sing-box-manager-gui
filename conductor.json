@@ -1,0 +1,7 @@
+{
+    "scripts": {
+        "setup": "cd web && npm install",
+        "run": "cd web && npm run build && cd .. && go run ./cmd/sbm/ -port 9090"
+    },
+    "runScriptMode": "nonconcurrent"
+}

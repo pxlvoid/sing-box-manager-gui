@@ -24,7 +24,7 @@ import {
 } from '@nextui-org/react';
 import { Plus, RefreshCw, Trash2, Globe, Server, Pencil, Link, Filter as FilterIcon, ChevronDown, ChevronUp, List } from 'lucide-react';
 import { useStore } from '../store';
-import { nodeApi, manualNodeApi } from '../api';
+import { nodeApi } from '../api';
 import type { Subscription, ManualNode, Node, Filter } from '../store';
 
 function formatBytes(bytes: number): string {
