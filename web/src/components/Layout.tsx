@@ -63,11 +63,6 @@ export default function Layout({ children }: LayoutProps) {
 
         {/* Bottom links */}
         <div className="sticky bottom-4 left-4 right-4 mt-auto pt-4">
-          {serviceStatus?.sbm_version && (
-            <p className="text-center text-xs text-gray-400 dark:text-gray-500 mt-2">
-              v{serviceStatus.sbm_version}
-            </p>
-          )}
         </div>
       </aside>
 
