@@ -128,4 +128,11 @@ export const kernelApi = {
   getProgress: () => api.get('/kernel/progress'),
 };
 
+// Proxy group API (Clash API proxy)
+export const proxyApi = {
+  getGroups: () => api.get('/proxy/groups'),
+  switchGroup: (group: string, selected: string) =>
+    api.put(`/proxy/groups/${encodeURIComponent(group)}`, { name: selected }),
+};
+
 export default api;

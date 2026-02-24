@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { subscriptionApi, filterApi, ruleApi, ruleGroupApi, settingsApi, serviceApi, nodeApi, manualNodeApi, monitorApi } from '../api';
+import { subscriptionApi, filterApi, ruleApi, ruleGroupApi, settingsApi, serviceApi, nodeApi, manualNodeApi, monitorApi, proxyApi } from '../api';
 import { toast } from '../components/Toast';
 
 export interface NodeHealthResult {
@@ -146,6 +146,13 @@ export interface ServiceStatus {
   sbm_version: string;
 }
 
+export interface ProxyGroup {
+  name: string;
+  type: string;
+  now: string;
+  all: string[];
+}
+
 export interface ProcessStats {
   pid: number;
   cpu_percent: number;
@@ -179,6 +186,9 @@ interface AppState {
   healthMode: 'clash_api' | 'clash_api_temp' | 'tcp' | null;
   healthChecking: boolean;
   healthCheckingNodes: string[];
+
+  // Proxy groups (from Clash API)
+  proxyGroups: ProxyGroup[];
 
   // Unsupported nodes
   unsupportedNodes: UnsupportedNodeInfo[];
@@ -239,6 +249,10 @@ interface AppState {
   fetchUnsupportedNodes: () => Promise<void>;
   recheckUnsupportedNodes: () => Promise<void>;
   deleteUnsupportedNodes: (tags?: string[]) => Promise<void>;
+
+  // Proxy group operations
+  fetchProxyGroups: () => Promise<void>;
+  switchProxy: (group: string, selected: string) => Promise<void>;
 }
 
 export const useStore = create<AppState>((set, get) => ({
@@ -258,6 +272,7 @@ export const useStore = create<AppState>((set, get) => ({
   healthMode: null,
   healthChecking: false,
   healthCheckingNodes: [],
+  proxyGroups: [],
   unsupportedNodes: [],
   loading: false,
 
@@ -756,6 +771,26 @@ export const useStore = create<AppState>((set, get) => ({
     } catch (error: any) {
       console.error('Failed to delete unsupported nodes:', error);
       toast.error(error.response?.data?.error || 'Failed to delete nodes');
+    }
+  },
+
+  fetchProxyGroups: async () => {
+    try {
+      const res = await proxyApi.getGroups();
+      set({ proxyGroups: res.data.data || [] });
+    } catch (error) {
+      console.error('Failed to fetch proxy groups:', error);
+    }
+  },
+
+  switchProxy: async (group: string, selected: string) => {
+    try {
+      await proxyApi.switchGroup(group, selected);
+      await get().fetchProxyGroups();
+      toast.success(`Switched to ${selected}`);
+    } catch (error: any) {
+      console.error('Failed to switch proxy:', error);
+      toast.error(error.response?.data?.error || 'Failed to switch proxy');
     }
   },
 }));
