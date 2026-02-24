@@ -2439,30 +2439,61 @@ func (s *Server) debugDump(c *gin.Context) {
 	var memStats runtime.MemStats
 	runtime.ReadMemStats(&memStats)
 
+	type debugServiceStatus struct {
+		Running bool `json:"running"`
+		PID     int  `json:"pid"`
+	}
+	type debugRuntime struct {
+		Version    string  `json:"version"`
+		GoVersion  string  `json:"go_version"`
+		OS         string  `json:"os"`
+		Arch       string  `json:"arch"`
+		Goroutines int     `json:"goroutines"`
+		MemAllocMB float64 `json:"mem_alloc_mb"`
+		MemSysMB   float64 `json:"mem_sys_mb"`
+	}
+	type debugDumpData struct {
+		// System info first
+		Timestamp        time.Time                `json:"timestamp"`
+		Runtime          debugRuntime             `json:"runtime"`
+		Service          debugServiceStatus       `json:"service"`
+		Probe            daemon.ProbeStatus       `json:"probe"`
+		Settings         interface{}              `json:"settings"`
+		// Data
+		Subscriptions    interface{}              `json:"subscriptions"`
+		ManualNodes      interface{}              `json:"manual_nodes"`
+		Filters          interface{}              `json:"filters"`
+		Rules            interface{}              `json:"rules"`
+		RuleGroups       interface{}              `json:"rule_groups"`
+		CountryGroups    interface{}              `json:"country_groups"`
+		UnsupportedNodes []UnsupportedNodeInfo    `json:"unsupported_nodes"`
+	}
+
 	c.JSON(http.StatusOK, gin.H{
-		"data": gin.H{
-			"settings":          settings,
-			"subscriptions":     subscriptions,
-			"manual_nodes":      manualNodes,
-			"filters":           filters,
-			"rules":             rules,
-			"rule_groups":       ruleGroups,
-			"country_groups":    countryGroups,
-			"unsupported_nodes": unsupported,
-			"service": gin.H{
-				"running": serviceRunning,
-				"pid":     servicePID,
+		"data": debugDumpData{
+			Timestamp: time.Now().UTC(),
+			Runtime: debugRuntime{
+				Version:    s.version,
+				GoVersion:  runtime.Version(),
+				OS:         runtime.GOOS,
+				Arch:       runtime.GOARCH,
+				Goroutines: runtime.NumGoroutine(),
+				MemAllocMB: float64(memStats.Alloc) / 1024 / 1024,
+				MemSysMB:   float64(memStats.Sys) / 1024 / 1024,
 			},
-			"runtime": gin.H{
-				"version":      s.version,
-				"go_version":   runtime.Version(),
-				"os":           runtime.GOOS,
-				"arch":         runtime.GOARCH,
-				"goroutines":   runtime.NumGoroutine(),
-				"mem_alloc_mb": float64(memStats.Alloc) / 1024 / 1024,
-				"mem_sys_mb":   float64(memStats.Sys) / 1024 / 1024,
+			Service: debugServiceStatus{
+				Running: serviceRunning,
+				PID:     servicePID,
 			},
-			"timestamp": time.Now().UTC(),
+			Probe:            s.probeManager.Status(),
+			Settings:         settings,
+			Subscriptions:    subscriptions,
+			ManualNodes:      manualNodes,
+			Filters:          filters,
+			Rules:            rules,
+			RuleGroups:       ruleGroups,
+			CountryGroups:    countryGroups,
+			UnsupportedNodes: unsupported,
 		},
 	})
 }
