@@ -2,6 +2,12 @@ import { create } from 'zustand';
 import { subscriptionApi, filterApi, ruleApi, ruleGroupApi, settingsApi, serviceApi, nodeApi, manualNodeApi, monitorApi } from '../api';
 import { toast } from '../components/Toast';
 
+export interface NodeHealthResult {
+  alive: boolean;
+  tcp_latency_ms: number;
+  groups: Record<string, number>;
+}
+
 // Type definitions
 export interface Subscription {
   id: string;
@@ -152,6 +158,12 @@ interface AppState {
   serviceStatus: ServiceStatus | null;
   systemInfo: SystemInfo | null;
 
+  // Health check state
+  healthResults: Record<string, NodeHealthResult>;
+  healthMode: 'clash_api' | 'tcp' | null;
+  healthChecking: boolean;
+  healthCheckingNodes: string[];
+
   // Loading state
   loading: boolean;
 
@@ -194,6 +206,10 @@ interface AppState {
   updateFilter: (id: string, filter: Partial<Filter>) => Promise<void>;
   deleteFilter: (id: string) => Promise<void>;
   toggleFilter: (id: string, enabled: boolean) => Promise<void>;
+
+  // Health check operations
+  checkAllNodesHealth: (tags?: string[]) => Promise<void>;
+  checkSingleNodeHealth: (tag: string) => Promise<void>;
 }
 
 export const useStore = create<AppState>((set, get) => ({
@@ -206,6 +222,10 @@ export const useStore = create<AppState>((set, get) => ({
   settings: null,
   serviceStatus: null,
   systemInfo: null,
+  healthResults: {},
+  healthMode: null,
+  healthChecking: false,
+  healthCheckingNodes: [],
   loading: false,
 
   fetchSubscriptions: async () => {
@@ -578,6 +598,39 @@ export const useStore = create<AppState>((set, get) => ({
         console.error('Failed to toggle filter:', error);
         toast.error(error.response?.data?.error || 'Failed to toggle filter');
       }
+    }
+  },
+
+  checkAllNodesHealth: async (tags?: string[]) => {
+    set({ healthChecking: true });
+    try {
+      const res = await nodeApi.healthCheck(tags);
+      set({
+        healthResults: { ...get().healthResults, ...res.data.data },
+        healthMode: res.data.mode,
+      });
+      toast.success('Health check completed');
+    } catch (error: any) {
+      console.error('Failed to check nodes health:', error);
+      toast.error(error.response?.data?.error || 'Health check failed');
+    } finally {
+      set({ healthChecking: false });
+    }
+  },
+
+  checkSingleNodeHealth: async (tag: string) => {
+    set({ healthCheckingNodes: [...get().healthCheckingNodes, tag] });
+    try {
+      const res = await nodeApi.healthCheckSingle(tag);
+      set({
+        healthResults: { ...get().healthResults, ...res.data.data },
+        healthMode: res.data.mode,
+      });
+    } catch (error: any) {
+      console.error('Failed to check node health:', error);
+      toast.error(error.response?.data?.error || 'Health check failed');
+    } finally {
+      set({ healthCheckingNodes: get().healthCheckingNodes.filter(t => t !== tag) });
     }
   },
 }));

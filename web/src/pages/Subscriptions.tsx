@@ -22,10 +22,10 @@ import {
   Switch,
   Textarea,
 } from '@nextui-org/react';
-import { Plus, RefreshCw, Trash2, Globe, Server, Pencil, Link, Filter as FilterIcon, ChevronDown, ChevronUp, List } from 'lucide-react';
+import { Plus, RefreshCw, Trash2, Globe, Server, Pencil, Link, Filter as FilterIcon, ChevronDown, ChevronUp, List, Activity } from 'lucide-react';
 import { useStore } from '../store';
-import { nodeApi, manualNodeApi } from '../api';
-import type { Subscription, ManualNode, Node, Filter } from '../store';
+import { nodeApi } from '../api';
+import type { Subscription, ManualNode, Node, Filter, NodeHealthResult } from '../store';
 
 function formatBytes(bytes: number): string {
   if (bytes === 0) return '0 B';
@@ -95,6 +95,12 @@ export default function Subscriptions() {
     updateFilter,
     deleteFilter,
     toggleFilter,
+    healthResults,
+    healthMode,
+    healthChecking,
+    healthCheckingNodes,
+    checkAllNodesHealth,
+    checkSingleNodeHealth,
   } = useStore();
 
   const { isOpen: isSubOpen, onOpen: onSubOpen, onClose: onSubClose } = useDisclosure();
@@ -373,6 +379,15 @@ export default function Subscriptions() {
         <h1 className="text-2xl font-bold text-gray-800 dark:text-white">Node Management</h1>
         <div className="flex gap-2">
           <Button
+            color="warning"
+            variant="flat"
+            startContent={healthChecking ? <Spinner size="sm" /> : <Activity className="w-4 h-4" />}
+            onPress={() => checkAllNodesHealth()}
+            isDisabled={healthChecking}
+          >
+            Check All
+          </Button>
+          <Button
             color="secondary"
             variant="flat"
             startContent={<FilterIcon className="w-4 h-4" />}
@@ -426,6 +441,10 @@ export default function Subscriptions() {
                   onDelete={() => handleDeleteSubscription(sub.id)}
                   onToggle={() => handleToggleSubscription(sub)}
                   loading={loading}
+                  healthResults={healthResults}
+                  healthMode={healthMode}
+                  healthCheckingNodes={healthCheckingNodes}
+                  onHealthCheck={checkSingleNodeHealth}
                 />
               ))}
             </div>
@@ -452,9 +471,28 @@ export default function Subscriptions() {
                         <p className="text-sm text-gray-500">
                           {mn.node.type} · {mn.node.server}:{mn.node.server_port}
                         </p>
+                        <NodeHealthChips
+                          tag={mn.node.tag}
+                          healthResults={healthResults}
+                          healthMode={healthMode}
+                        />
                       </div>
                     </div>
                     <div className="flex items-center gap-2">
+                      <Button
+                        isIconOnly
+                        size="sm"
+                        variant="light"
+                        color="warning"
+                        onPress={() => checkSingleNodeHealth(mn.node.tag)}
+                        isDisabled={healthCheckingNodes.includes(mn.node.tag)}
+                      >
+                        {healthCheckingNodes.includes(mn.node.tag) ? (
+                          <Spinner size="sm" />
+                        ) : (
+                          <Activity className="w-4 h-4" />
+                        )}
+                      </Button>
                       <Button
                         isIconOnly
                         size="sm"
@@ -1020,6 +1058,45 @@ export default function Subscriptions() {
   );
 }
 
+// NodeHealthChips component to display health check results for a node
+function NodeHealthChips({ tag, healthResults, healthMode }: {
+  tag: string;
+  healthResults: Record<string, NodeHealthResult>;
+  healthMode: 'clash_api' | 'tcp' | null;
+}) {
+  const result = healthResults[tag];
+  if (!result) return null;
+
+  if (healthMode === 'clash_api' && Object.keys(result.groups).length > 0) {
+    return (
+      <div className="flex flex-wrap gap-1 mt-1">
+        {Object.entries(result.groups).map(([group, delay]) => (
+          <Chip
+            key={group}
+            size="sm"
+            variant="flat"
+            color={delay > 0 ? (delay < 300 ? 'success' : 'warning') : 'danger'}
+          >
+            {group}: {delay > 0 ? `${delay}ms` : 'Timeout'}
+          </Chip>
+        ))}
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex flex-wrap gap-1 mt-1">
+      <Chip
+        size="sm"
+        variant="flat"
+        color={result.alive ? (result.tcp_latency_ms < 300 ? 'success' : 'warning') : 'danger'}
+      >
+        {result.alive ? `TCP: ${result.tcp_latency_ms}ms` : 'Timeout'}
+      </Chip>
+    </div>
+  );
+}
+
 interface SubscriptionCardProps {
   subscription: Subscription;
   onRefresh: () => void;
@@ -1027,9 +1104,13 @@ interface SubscriptionCardProps {
   onDelete: () => void;
   onToggle: () => void;
   loading: boolean;
+  healthResults: Record<string, NodeHealthResult>;
+  healthMode: 'clash_api' | 'tcp' | null;
+  healthCheckingNodes: string[];
+  onHealthCheck: (tag: string) => void;
 }
 
-function SubscriptionCard({ subscription: sub, onRefresh, onEdit, onDelete, onToggle, loading }: SubscriptionCardProps) {
+function SubscriptionCard({ subscription: sub, onRefresh, onEdit, onDelete, onToggle, loading, healthResults, healthMode, healthCheckingNodes, onHealthCheck }: SubscriptionCardProps) {
   const [isExpanded, setIsExpanded] = useState(false);
 
   // Ensure nodes is an array, handle null or undefined cases
@@ -1143,16 +1224,33 @@ function SubscriptionCard({ subscription: sub, onRefresh, onEdit, onDelete, onTo
                   </div>
                 }
               >
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
                   {data.nodes.map((node, idx) => (
                     <div
                       key={idx}
                       className="flex items-center gap-2 p-2 bg-gray-50 dark:bg-gray-800 rounded text-sm"
                     >
-                      <span className="truncate flex-1">{node.tag}</span>
+                      <span className="truncate flex-1 min-w-0">
+                        <span className="block truncate">{node.tag}</span>
+                        <NodeHealthChips tag={node.tag} healthResults={healthResults} healthMode={healthMode} />
+                      </span>
                       <Chip size="sm" variant="flat">
                         {node.type}
                       </Chip>
+                      <Button
+                        isIconOnly
+                        size="sm"
+                        variant="light"
+                        color="warning"
+                        onPress={() => onHealthCheck(node.tag)}
+                        isDisabled={healthCheckingNodes.includes(node.tag)}
+                      >
+                        {healthCheckingNodes.includes(node.tag) ? (
+                          <Spinner size="sm" />
+                        ) : (
+                          <Activity className="w-3 h-3" />
+                        )}
+                      </Button>
                     </div>
                   ))}
                 </div>
