@@ -108,6 +108,7 @@ func (p *ShadowsocksParser) Parse(rawURL string) (*storage.Node, error) {
 		Extra: map[string]interface{}{
 			"method":   method,
 			"password": password,
+			"network":  []string{"tcp", "udp"},
 		},
 	}
 
