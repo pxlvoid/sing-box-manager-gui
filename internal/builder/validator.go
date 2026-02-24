@@ -24,7 +24,7 @@ type CheckErrors struct {
 	DuplicateTagErrors []DuplicateTagError
 }
 
-var outboundErrorRe = regexp.MustCompile(`outbounds\[(\d+)\]\.?([^:]*?):\s*(.+)`)
+var outboundErrorRe = regexp.MustCompile(`outbounds?\[(\d+)\]\.?([^:]*?):\s*(.+)`)
 var duplicateTagRe = regexp.MustCompile(`duplicate outbound/endpoint tag:\s*(.+)`)
 
 // ParseCheckErrors parses sing-box check output and extracts all recognizable errors.
@@ -34,8 +34,8 @@ func ParseCheckErrors(output string) CheckErrors {
 	for _, line := range strings.Split(output, "\n") {
 		line = strings.TrimSpace(line)
 
-		// Check for outbound index errors: outbounds[N].field: message
-		if strings.Contains(line, "outbounds[") {
+		// Check for outbound index errors: outbounds[N].field: message or initialize outbound[N]: message
+		if strings.Contains(line, "outbound[") || strings.Contains(line, "outbounds[") {
 			matches := outboundErrorRe.FindStringSubmatch(line)
 			if len(matches) >= 4 {
 				idx, err := strconv.Atoi(matches[1])
