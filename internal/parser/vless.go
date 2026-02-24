@@ -86,7 +86,15 @@ func (p *VlessParser) Parse(rawURL string) (*storage.Node, error) {
 			if serviceName := params.Get("serviceName"); serviceName != "" {
 				transport["service_name"] = serviceName
 			}
-			// mode is parsed from URL but not added to config (sing-box doesn't support it)
+			if idleTimeout := params.Get("idleTimeout"); idleTimeout != "" {
+				transport["idle_timeout"] = idleTimeout
+			}
+			if pingTimeout := params.Get("pingTimeout"); pingTimeout != "" {
+				transport["ping_timeout"] = pingTimeout
+			}
+			if permitWithoutStream := getParamBool(params, "permitWithoutStream"); permitWithoutStream {
+				transport["permit_without_stream"] = true
+			}
 		case "quic":
 			if security := params.Get("quicSecurity"); security != "" {
 				transport["security"] = security

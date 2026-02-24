@@ -75,6 +75,15 @@ func (p *TrojanParser) Parse(rawURL string) (*storage.Node, error) {
 			if serviceName := params.Get("serviceName"); serviceName != "" {
 				transport["service_name"] = serviceName
 			}
+			if idleTimeout := params.Get("idleTimeout"); idleTimeout != "" {
+				transport["idle_timeout"] = idleTimeout
+			}
+			if pingTimeout := params.Get("pingTimeout"); pingTimeout != "" {
+				transport["ping_timeout"] = pingTimeout
+			}
+			if permitWithoutStream := getParamBool(params, "permitWithoutStream"); permitWithoutStream {
+				transport["permit_without_stream"] = true
+			}
 		}
 
 		extra["transport"] = transport
