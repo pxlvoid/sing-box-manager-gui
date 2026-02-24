@@ -10,3 +10,4 @@ web/dist/*
 data/
 data/*
 web/package-lock.json
+.DS_Store
