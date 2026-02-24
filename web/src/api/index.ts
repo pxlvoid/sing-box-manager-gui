@@ -34,7 +34,9 @@ export const ruleApi = {
 // Rule group API
 export const ruleGroupApi = {
   getAll: () => api.get('/rule-groups'),
+  getDefaults: () => api.get('/rule-groups/defaults'),
   update: (id: string, data: any) => api.put(`/rule-groups/${id}`, data),
+  reset: (id: string) => api.post(`/rule-groups/${id}/reset`),
 };
 
 // Ruleset validation API

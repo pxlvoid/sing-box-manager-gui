@@ -155,6 +155,7 @@ interface AppState {
   filters: Filter[];
   rules: Rule[];
   ruleGroups: RuleGroup[];
+  defaultRuleGroups: RuleGroup[];
   settings: Settings | null;
   serviceStatus: ServiceStatus | null;
   systemInfo: SystemInfo | null;
@@ -179,6 +180,7 @@ interface AppState {
   fetchFilters: () => Promise<void>;
   fetchRules: () => Promise<void>;
   fetchRuleGroups: () => Promise<void>;
+  fetchDefaultRuleGroups: () => Promise<void>;
   fetchSettings: () => Promise<void>;
   fetchServiceStatus: () => Promise<void>;
   fetchSystemInfo: () => Promise<void>;
@@ -202,6 +204,8 @@ interface AppState {
   // Rule group operations
   toggleRuleGroup: (id: string, enabled: boolean) => Promise<void>;
   updateRuleGroupOutbound: (id: string, outbound: string) => Promise<void>;
+  updateRuleGroup: (id: string, data: Partial<RuleGroup>) => Promise<void>;
+  resetRuleGroup: (id: string) => Promise<void>;
 
   // Custom rule operations
   addRule: (rule: Omit<Rule, 'id'>) => Promise<void>;
@@ -226,6 +230,7 @@ export const useStore = create<AppState>((set, get) => ({
   filters: [],
   rules: [],
   ruleGroups: [],
+  defaultRuleGroups: [],
   settings: null,
   serviceStatus: null,
   systemInfo: null,
@@ -288,6 +293,15 @@ export const useStore = create<AppState>((set, get) => ({
       set({ ruleGroups: res.data.data || [] });
     } catch (error) {
       console.error('Failed to fetch rule groups:', error);
+    }
+  },
+
+  fetchDefaultRuleGroups: async () => {
+    try {
+      const res = await ruleGroupApi.getDefaults();
+      set({ defaultRuleGroups: res.data.data || [] });
+    } catch (error) {
+      console.error('Failed to fetch default rule groups:', error);
     }
   },
 
@@ -527,6 +541,35 @@ export const useStore = create<AppState>((set, get) => ({
         console.error('Failed to update rule group outbound:', error);
         toast.error(error.response?.data?.error || 'Failed to update rule group outbound');
       }
+    }
+  },
+
+  updateRuleGroup: async (id: string, data: Partial<RuleGroup>) => {
+    const ruleGroup = get().ruleGroups.find(r => r.id === id);
+    if (ruleGroup) {
+      try {
+        const res = await ruleGroupApi.update(id, { ...ruleGroup, ...data });
+        await get().fetchRuleGroups();
+        if (res.data.warning) {
+          toast.info(res.data.warning);
+        } else {
+          toast.success('Rule group updated');
+        }
+      } catch (error: any) {
+        console.error('Failed to update rule group:', error);
+        toast.error(error.response?.data?.error || 'Failed to update rule group');
+      }
+    }
+  },
+
+  resetRuleGroup: async (id: string) => {
+    try {
+      await ruleGroupApi.reset(id);
+      await get().fetchRuleGroups();
+      toast.success('Rule group reset to default');
+    } catch (error: any) {
+      console.error('Failed to reset rule group:', error);
+      toast.error(error.response?.data?.error || 'Failed to reset rule group');
     }
   },
 

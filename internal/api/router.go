@@ -136,7 +136,9 @@ func (s *Server) setupRoutes() {
 
 		// Rule group management
 		api.GET("/rule-groups", s.getRuleGroups)
+		api.GET("/rule-groups/defaults", s.getDefaultRuleGroups)
 		api.PUT("/rule-groups/:id", s.updateRuleGroup)
+		api.POST("/rule-groups/:id/reset", s.resetRuleGroup)
 
 		// Rule set validation
 		api.GET("/ruleset/validate", s.validateRuleSet)
@@ -513,6 +515,50 @@ func (s *Server) updateRuleGroup(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{"message": "Updated successfully"})
+}
+
+func (s *Server) getDefaultRuleGroups(c *gin.Context) {
+	c.JSON(http.StatusOK, gin.H{"data": storage.DefaultRuleGroups()})
+}
+
+func (s *Server) resetRuleGroup(c *gin.Context) {
+	id := c.Param("id")
+
+	// Find default rule group by ID
+	var defaultGroup *storage.RuleGroup
+	for _, dg := range storage.DefaultRuleGroups() {
+		if dg.ID == id {
+			defaultGroup = &dg
+			break
+		}
+	}
+
+	if defaultGroup == nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "No default rule group found for ID: " + id})
+		return
+	}
+
+	// Keep current enabled and outbound, reset name/site_rules/ip_rules
+	current := s.store.GetRuleGroups()
+	for _, rg := range current {
+		if rg.ID == id {
+			defaultGroup.Enabled = rg.Enabled
+			defaultGroup.Outbound = rg.Outbound
+			break
+		}
+	}
+
+	if err := s.store.UpdateRuleGroup(*defaultGroup); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	if err := s.autoApplyConfig(); err != nil {
+		c.JSON(http.StatusOK, gin.H{"message": "Reset successfully, but auto-apply config failed: " + err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": "Reset successfully"})
 }
 
 // ==================== Rule Set Validation API ====================

@@ -17,8 +17,9 @@ import {
   Textarea,
   useDisclosure,
   Spinner,
+  Tooltip,
 } from '@nextui-org/react';
-import { Shield, Globe, Tv, MessageCircle, Github, Bot, Apple, Monitor, Plus, Pencil, Trash2, CheckCircle, XCircle } from 'lucide-react';
+import { Shield, Globe, Tv, MessageCircle, Github, Bot, Apple, Monitor, Plus, Pencil, Trash2, CheckCircle, XCircle, RotateCcw } from 'lucide-react';
 import { useStore } from '../store';
 import { ruleSetApi } from '../api';
 import type { Rule, RuleGroup } from '../store';
@@ -72,68 +73,98 @@ const defaultRule: Omit<Rule, 'id'> = {
   priority: 100,
 };
 
+// Check if a rule group differs from its default version
+function isRuleGroupModified(group: RuleGroup, defaults: RuleGroup[]): boolean {
+  const defaultGroup = defaults.find((d) => d.id === group.id);
+  if (!defaultGroup) return false;
+  return (
+    group.name !== defaultGroup.name ||
+    JSON.stringify(group.site_rules || []) !== JSON.stringify(defaultGroup.site_rules || []) ||
+    JSON.stringify(group.ip_rules || []) !== JSON.stringify(defaultGroup.ip_rules || [])
+  );
+}
+
 export default function Rules() {
   const {
     ruleGroups,
+    defaultRuleGroups,
     rules,
     filters,
     countryGroups,
     fetchRuleGroups,
+    fetchDefaultRuleGroups,
     fetchRules,
     fetchFilters,
     fetchCountryGroups,
     toggleRuleGroup,
     updateRuleGroupOutbound,
+    updateRuleGroup,
+    resetRuleGroup,
     addRule,
     updateRule,
     deleteRule,
   } = useStore();
 
+  // Custom rule modal
   const { isOpen, onOpen, onClose } = useDisclosure();
   const [editingRule, setEditingRule] = useState<Rule | null>(null);
   const [formData, setFormData] = useState<Omit<Rule, 'id'>>(defaultRule);
   const [valuesText, setValuesText] = useState('');
 
-  // Rule set validation state
+  // Rule group edit modal
+  const { isOpen: isRuleGroupModalOpen, onOpen: onRuleGroupModalOpen, onClose: onRuleGroupModalClose } = useDisclosure();
+  const [editingRuleGroup, setEditingRuleGroup] = useState<RuleGroup | null>(null);
+  const [rgName, setRgName] = useState('');
+  const [rgSiteRulesText, setRgSiteRulesText] = useState('');
+  const [rgIpRulesText, setRgIpRulesText] = useState('');
+
+  // Rule set validation state (shared between both modals)
   const [validationResults, setValidationResults] = useState<Record<string, ValidationResult>>({});
   const [isValidating, setIsValidating] = useState(false);
   const validationTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  // Rule group validation state
+  const [rgSiteValidation, setRgSiteValidation] = useState<Record<string, ValidationResult>>({});
+  const [rgIpValidation, setRgIpValidation] = useState<Record<string, ValidationResult>>({});
+  const [rgSiteValidating, setRgSiteValidating] = useState(false);
+  const [rgIpValidating, setRgIpValidating] = useState(false);
+  const rgSiteTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const rgIpTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
   useEffect(() => {
     fetchRuleGroups();
+    fetchDefaultRuleGroups();
     fetchRules();
     fetchFilters();
     fetchCountryGroups();
   }, []);
 
-  // Validate rule set (debounced)
-  const validateRuleSet = useCallback(async (type: 'geosite' | 'geoip', names: string[]) => {
-    if (names.length === 0) {
-      setValidationResults({});
-      return;
-    }
-
-    setIsValidating(true);
+  // Validate rule sets helper
+  const doValidate = useCallback(async (type: 'geosite' | 'geoip', names: string[]): Promise<Record<string, ValidationResult>> => {
     const results: Record<string, ValidationResult> = {};
-
     for (const name of names) {
       if (!name.trim()) continue;
       try {
         const response = await ruleSetApi.validate(type, name.trim());
         results[name] = response.data;
       } catch (error) {
-        results[name] = {
-          valid: false,
-          url: '',
-          tag: '',
-          message: 'Validation request failed',
-        };
+        results[name] = { valid: false, url: '', tag: '', message: 'Validation request failed' };
       }
     }
+    return results;
+  }, []);
 
+  // Validate rule set for custom rules (debounced)
+  const validateRuleSet = useCallback(async (type: 'geosite' | 'geoip', names: string[]) => {
+    if (names.length === 0) {
+      setValidationResults({});
+      return;
+    }
+    setIsValidating(true);
+    const results = await doValidate(type, names);
     setValidationResults(results);
     setIsValidating(false);
-  }, []);
+  }, [doValidate]);
 
   // Trigger validation when rule values change (debounce 500ms)
   useEffect(() => {
@@ -167,6 +198,36 @@ export default function Rules() {
     };
   }, [valuesText, formData.rule_type, validateRuleSet]);
 
+  // Rule group site_rules validation (debounced)
+  useEffect(() => {
+    if (!isRuleGroupModalOpen) return;
+    const names = rgSiteRulesText.split('\n').map((v) => v.trim()).filter((v) => v);
+    if (names.length === 0) { setRgSiteValidation({}); return; }
+    if (rgSiteTimerRef.current) clearTimeout(rgSiteTimerRef.current);
+    rgSiteTimerRef.current = setTimeout(async () => {
+      setRgSiteValidating(true);
+      const results = await doValidate('geosite', names);
+      setRgSiteValidation(results);
+      setRgSiteValidating(false);
+    }, 500);
+    return () => { if (rgSiteTimerRef.current) clearTimeout(rgSiteTimerRef.current); };
+  }, [rgSiteRulesText, isRuleGroupModalOpen, doValidate]);
+
+  // Rule group ip_rules validation (debounced)
+  useEffect(() => {
+    if (!isRuleGroupModalOpen) return;
+    const names = rgIpRulesText.split('\n').map((v) => v.trim()).filter((v) => v);
+    if (names.length === 0) { setRgIpValidation({}); return; }
+    if (rgIpTimerRef.current) clearTimeout(rgIpTimerRef.current);
+    rgIpTimerRef.current = setTimeout(async () => {
+      setRgIpValidating(true);
+      const results = await doValidate('geoip', names);
+      setRgIpValidation(results);
+      setRgIpValidating(false);
+    }, 500);
+    return () => { if (rgIpTimerRef.current) clearTimeout(rgIpTimerRef.current); };
+  }, [rgIpRulesText, isRuleGroupModalOpen, doValidate]);
+
   // Check if all rule sets passed validation
   const allValidationsPassed = useCallback(() => {
     if (formData.rule_type !== 'geosite' && formData.rule_type !== 'geoip') {
@@ -182,6 +243,19 @@ export default function Rules() {
 
     return names.every((name) => validationResults[name]?.valid);
   }, [formData.rule_type, valuesText, validationResults]);
+
+  // Check if rule group form validation passes
+  const rgValidationsPassed = useCallback(() => {
+    const siteNames = rgSiteRulesText.split('\n').map((v) => v.trim()).filter((v) => v);
+    const ipNames = rgIpRulesText.split('\n').map((v) => v.trim()).filter((v) => v);
+
+    if (siteNames.length === 0 && ipNames.length === 0) return false;
+
+    const sitesOk = siteNames.length === 0 || siteNames.every((n) => rgSiteValidation[n]?.valid);
+    const ipsOk = ipNames.length === 0 || ipNames.every((n) => rgIpValidation[n]?.valid);
+
+    return sitesOk && ipsOk;
+  }, [rgSiteRulesText, rgIpRulesText, rgSiteValidation, rgIpValidation]);
 
   // Get all available outbound options (including country node groups and filters)
   const getAllOutboundOptions = () => {
@@ -211,6 +285,37 @@ export default function Rules() {
     await updateRuleGroupOutbound(group.id, outbound);
   };
 
+  // Rule group edit handlers
+  const handleEditRuleGroup = (group: RuleGroup) => {
+    setEditingRuleGroup(group);
+    setRgName(group.name);
+    setRgSiteRulesText((group.site_rules || []).join('\n'));
+    setRgIpRulesText((group.ip_rules || []).join('\n'));
+    setRgSiteValidation({});
+    setRgIpValidation({});
+    onRuleGroupModalOpen();
+  };
+
+  const handleRuleGroupSubmit = async () => {
+    if (!editingRuleGroup) return;
+
+    const siteRules = rgSiteRulesText.split('\n').map((v) => v.trim()).filter((v) => v);
+    const ipRules = rgIpRulesText.split('\n').map((v) => v.trim()).filter((v) => v);
+
+    await updateRuleGroup(editingRuleGroup.id, {
+      name: rgName,
+      site_rules: siteRules,
+      ip_rules: ipRules,
+    });
+
+    onRuleGroupModalClose();
+  };
+
+  const handleResetRuleGroup = async (id: string) => {
+    await resetRuleGroup(id);
+  };
+
+  // Custom rule handlers
   const handleAddRule = () => {
     setEditingRule(null);
     setFormData(defaultRule);
@@ -264,6 +369,49 @@ export default function Rules() {
     await updateRule(rule.id, { ...rule, enabled: !rule.enabled });
   };
 
+  // Render validation results inline
+  const renderValidationList = (
+    text: string,
+    results: Record<string, ValidationResult>,
+    validating: boolean,
+  ) => {
+    const names = text.split('\n').map((v) => v.trim()).filter((v) => v);
+    if (names.length === 0) return null;
+    return (
+      <div className="space-y-2">
+        <div className="flex items-center gap-2 text-sm text-gray-600 dark:text-gray-400">
+          <span>Rule Set Validation Results</span>
+          {validating && <Spinner size="sm" />}
+        </div>
+        <div className="space-y-1 max-h-32 overflow-y-auto">
+          {names.map((name) => {
+            const result = results[name];
+            if (!result) {
+              return (
+                <div key={name} className="flex items-center gap-2 text-sm text-gray-500">
+                  <Spinner size="sm" />
+                  <span>{name} - Validating...</span>
+                </div>
+              );
+            }
+            return (
+              <div
+                key={name}
+                className={`flex items-center gap-2 text-sm ${
+                  result.valid ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'
+                }`}
+              >
+                {result.valid ? <CheckCircle className="w-4 h-4" /> : <XCircle className="w-4 h-4" />}
+                <span className="font-medium">{name}</span>
+                <span className="text-xs opacity-75">- {result.message}</span>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    );
+  };
+
   return (
     <div className="space-y-6">
       <div className="flex justify-between items-center">
@@ -272,65 +420,111 @@ export default function Rules() {
 
       {/* Preset Rule Groups */}
       <Card>
-        <CardHeader>
+        <CardHeader className="flex-col items-start gap-1">
           <h2 className="text-lg font-semibold">Preset Rule Groups</h2>
+          <p className="text-sm text-gray-500 dark:text-gray-400">
+            Предустановленные группы правил маршрутизации по сервисам. Каждая группа содержит GeoSite/GeoIP rule set и направляет трафик на выбранный outbound. Нажмите на карандаш, чтобы изменить правила группы. Изменённые группы помечаются меткой «modified» — их можно сбросить до стандартных.
+          </p>
         </CardHeader>
         <CardBody>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {ruleGroups.map((group) => (
-              <div
-                key={group.id}
-                className="flex items-center justify-between p-4 bg-gray-50 dark:bg-gray-800 rounded-lg"
-              >
-                <div className="flex items-center gap-3">
-                  <div className="p-2 bg-white dark:bg-gray-700 rounded-lg">
-                    {iconMap[group.id] || <Globe className="w-5 h-5" />}
-                  </div>
-                  <div>
-                    <h3 className="font-medium">{group.name}</h3>
-                    <div className="flex gap-1 mt-1">
-                      {group.site_rules.slice(0, 2).map((rule) => (
-                        <Chip key={rule} size="sm" variant="flat">
-                          {rule}
-                        </Chip>
-                      ))}
-                      {group.site_rules.length > 2 && (
-                        <Chip size="sm" variant="flat">
-                          +{group.site_rules.length - 2}
-                        </Chip>
-                      )}
+            {ruleGroups.map((group) => {
+              const modified = isRuleGroupModified(group, defaultRuleGroups);
+              return (
+                <div
+                  key={group.id}
+                  className="flex items-center justify-between p-4 bg-gray-50 dark:bg-gray-800 rounded-lg"
+                >
+                  <div className="flex items-center gap-3 min-w-0 flex-1">
+                    <div className="p-2 bg-white dark:bg-gray-700 rounded-lg shrink-0">
+                      {iconMap[group.id] || <Globe className="w-5 h-5" />}
+                    </div>
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-1.5">
+                        <h3 className="font-medium truncate">{group.name}</h3>
+                        {modified && (
+                          <Chip size="sm" variant="dot" color="warning" className="shrink-0">
+                            modified
+                          </Chip>
+                        )}
+                      </div>
+                      <div className="flex gap-1 mt-1 flex-wrap">
+                        {(group.site_rules || []).slice(0, 2).map((rule) => (
+                          <Chip key={`site-${rule}`} size="sm" variant="flat">
+                            {rule}
+                          </Chip>
+                        ))}
+                        {(group.ip_rules || []).slice(0, 1).map((rule) => (
+                          <Chip key={`ip-${rule}`} size="sm" variant="flat" color="secondary">
+                            ip:{rule}
+                          </Chip>
+                        ))}
+                        {((group.site_rules || []).length + (group.ip_rules || []).length > 3) && (
+                          <Chip size="sm" variant="flat">
+                            +{(group.site_rules || []).length + (group.ip_rules || []).length - 3}
+                          </Chip>
+                        )}
+                      </div>
                     </div>
                   </div>
+                  <div className="flex items-center gap-2 shrink-0">
+                    {modified && (
+                      <Tooltip content="Reset to default">
+                        <Button
+                          isIconOnly
+                          size="sm"
+                          variant="light"
+                          color="warning"
+                          onPress={() => handleResetRuleGroup(group.id)}
+                        >
+                          <RotateCcw className="w-4 h-4" />
+                        </Button>
+                      </Tooltip>
+                    )}
+                    <Tooltip content="Edit rule group">
+                      <Button
+                        isIconOnly
+                        size="sm"
+                        variant="light"
+                        onPress={() => handleEditRuleGroup(group)}
+                      >
+                        <Pencil className="w-4 h-4" />
+                      </Button>
+                    </Tooltip>
+                    <Select
+                      size="sm"
+                      className="w-32"
+                      selectedKeys={[group.outbound]}
+                      onChange={(e) => handleOutboundChange(group, e.target.value)}
+                      aria-label="Select outbound"
+                    >
+                      {getAllOutboundOptions().map((opt) => (
+                        <SelectItem key={opt.value} value={opt.value}>
+                          {opt.value}
+                        </SelectItem>
+                      ))}
+                    </Select>
+                    <Switch
+                      isSelected={group.enabled}
+                      onValueChange={(enabled) => handleToggle(group.id, enabled)}
+                    />
+                  </div>
                 </div>
-                <div className="flex items-center gap-3">
-                  <Select
-                    size="sm"
-                    className="w-32"
-                    selectedKeys={[group.outbound]}
-                    onChange={(e) => handleOutboundChange(group, e.target.value)}
-                    aria-label="Select outbound"
-                  >
-                    {getAllOutboundOptions().map((opt) => (
-                      <SelectItem key={opt.value} value={opt.value}>
-                        {opt.value}
-                      </SelectItem>
-                    ))}
-                  </Select>
-                  <Switch
-                    isSelected={group.enabled}
-                    onValueChange={(enabled) => handleToggle(group.id, enabled)}
-                  />
-                </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         </CardBody>
       </Card>
 
       {/* Custom Rules */}
       <Card>
-        <CardHeader className="flex justify-between items-center">
-          <h2 className="text-lg font-semibold">Custom Rules</h2>
+        <CardHeader className="flex justify-between items-start">
+          <div className="flex-col gap-1">
+            <h2 className="text-lg font-semibold">Custom Rules</h2>
+            <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
+              Собственные правила маршрутизации. Поддерживаются domain suffix, keyword, full domain, IP CIDR, GeoSite/GeoIP rule set и порты. Правила с меньшим приоритетом (числом) обрабатываются первыми.
+            </p>
+          </div>
           <Button
             color="primary"
             size="sm"
@@ -420,7 +614,7 @@ export default function Rules() {
         </CardBody>
       </Card>
 
-      {/* Add/Edit Rule Modal */}
+      {/* Add/Edit Custom Rule Modal */}
       <Modal isOpen={isOpen} onClose={onClose} size="lg">
         <ModalContent>
           <ModalHeader>{editingRule ? 'Edit Rule' : 'Add Rule'}</ModalHeader>
@@ -464,47 +658,8 @@ export default function Rules() {
               />
 
               {/* Rule set validation results */}
-              {(formData.rule_type === 'geosite' || formData.rule_type === 'geoip') && valuesText.trim() && (
-                <div className="space-y-2">
-                  <div className="flex items-center gap-2 text-sm text-gray-600 dark:text-gray-400">
-                    <span>Rule Set Validation Results</span>
-                    {isValidating && <Spinner size="sm" />}
-                  </div>
-                  <div className="space-y-1 max-h-32 overflow-y-auto">
-                    {valuesText
-                      .split('\n')
-                      .map((v) => v.trim())
-                      .filter((v) => v)
-                      .map((name) => {
-                        const result = validationResults[name];
-                        if (!result) {
-                          return (
-                            <div key={name} className="flex items-center gap-2 text-sm text-gray-500">
-                              <Spinner size="sm" />
-                              <span>{name} - Validating...</span>
-                            </div>
-                          );
-                        }
-                        return (
-                          <div
-                            key={name}
-                            className={`flex items-center gap-2 text-sm ${
-                              result.valid ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'
-                            }`}
-                          >
-                            {result.valid ? (
-                              <CheckCircle className="w-4 h-4" />
-                            ) : (
-                              <XCircle className="w-4 h-4" />
-                            )}
-                            <span className="font-medium">{name}</span>
-                            <span className="text-xs opacity-75">- {result.message}</span>
-                          </div>
-                        );
-                      })}
-                  </div>
-                </div>
-              )}
+              {(formData.rule_type === 'geosite' || formData.rule_type === 'geoip') && valuesText.trim() &&
+                renderValidationList(valuesText, validationResults, isValidating)}
 
               <Select
                 label="Outbound"
@@ -547,6 +702,58 @@ export default function Rules() {
               isDisabled={!formData.name || !valuesText.trim() || isValidating || !allValidationsPassed()}
             >
               {editingRule ? 'Save' : 'Add'}
+            </Button>
+          </ModalFooter>
+        </ModalContent>
+      </Modal>
+
+      {/* Edit Rule Group Modal */}
+      <Modal isOpen={isRuleGroupModalOpen} onClose={onRuleGroupModalClose} size="lg">
+        <ModalContent>
+          <ModalHeader>Edit Rule Group</ModalHeader>
+          <ModalBody>
+            <div className="space-y-4">
+              <div className="text-sm text-gray-500 dark:text-gray-400 bg-gray-100 dark:bg-gray-800 rounded-lg p-3">
+                Укажите название группы и списки GeoSite/GeoIP rule set (по одному на строку). Они определяют, какой трафик попадёт в эту группу. Outbound и статус вкл/выкл задаются на основной странице.
+              </div>
+              <Input
+                label="Group Name"
+                placeholder="e.g.: Google"
+                value={rgName}
+                onChange={(e) => setRgName(e.target.value)}
+              />
+
+              <Textarea
+                label="GeoSite Rules"
+                placeholder="One geosite rule set name per line, e.g.:\ngoogle\nyoutube"
+                value={rgSiteRulesText}
+                onChange={(e) => setRgSiteRulesText(e.target.value)}
+                minRows={3}
+              />
+
+              {rgSiteRulesText.trim() && renderValidationList(rgSiteRulesText, rgSiteValidation, rgSiteValidating)}
+
+              <Textarea
+                label="GeoIP Rules"
+                placeholder="One geoip rule set name per line, e.g.:\ngoogle\ncn"
+                value={rgIpRulesText}
+                onChange={(e) => setRgIpRulesText(e.target.value)}
+                minRows={2}
+              />
+
+              {rgIpRulesText.trim() && renderValidationList(rgIpRulesText, rgIpValidation, rgIpValidating)}
+            </div>
+          </ModalBody>
+          <ModalFooter>
+            <Button variant="flat" onPress={onRuleGroupModalClose}>
+              Cancel
+            </Button>
+            <Button
+              color="primary"
+              onPress={handleRuleGroupSubmit}
+              isDisabled={!rgName || rgSiteValidating || rgIpValidating || !rgValidationsPassed()}
+            >
+              Save
             </Button>
           </ModalFooter>
         </ModalContent>
