@@ -79,8 +79,8 @@ function isRuleGroupModified(group: RuleGroup, defaults: RuleGroup[]): boolean {
   if (!defaultGroup) return false;
   return (
     group.name !== defaultGroup.name ||
-    JSON.stringify(group.site_rules) !== JSON.stringify(defaultGroup.site_rules) ||
-    JSON.stringify(group.ip_rules) !== JSON.stringify(defaultGroup.ip_rules)
+    JSON.stringify(group.site_rules || []) !== JSON.stringify(defaultGroup.site_rules || []) ||
+    JSON.stringify(group.ip_rules || []) !== JSON.stringify(defaultGroup.ip_rules || [])
   );
 }
 
@@ -289,8 +289,8 @@ export default function Rules() {
   const handleEditRuleGroup = (group: RuleGroup) => {
     setEditingRuleGroup(group);
     setRgName(group.name);
-    setRgSiteRulesText(group.site_rules.join('\n'));
-    setRgIpRulesText(group.ip_rules.join('\n'));
+    setRgSiteRulesText((group.site_rules || []).join('\n'));
+    setRgIpRulesText((group.ip_rules || []).join('\n'));
     setRgSiteValidation({});
     setRgIpValidation({});
     onRuleGroupModalOpen();
@@ -446,19 +446,19 @@ export default function Rules() {
                         )}
                       </div>
                       <div className="flex gap-1 mt-1 flex-wrap">
-                        {group.site_rules.slice(0, 2).map((rule) => (
+                        {(group.site_rules || []).slice(0, 2).map((rule) => (
                           <Chip key={`site-${rule}`} size="sm" variant="flat">
                             {rule}
                           </Chip>
                         ))}
-                        {group.ip_rules.slice(0, 1).map((rule) => (
+                        {(group.ip_rules || []).slice(0, 1).map((rule) => (
                           <Chip key={`ip-${rule}`} size="sm" variant="flat" color="secondary">
                             ip:{rule}
                           </Chip>
                         ))}
-                        {(group.site_rules.length + group.ip_rules.length > 3) && (
+                        {((group.site_rules || []).length + (group.ip_rules || []).length > 3) && (
                           <Chip size="sm" variant="flat">
-                            +{group.site_rules.length + group.ip_rules.length - 3}
+                            +{(group.site_rules || []).length + (group.ip_rules || []).length - 3}
                           </Chip>
                         )}
                       </div>
