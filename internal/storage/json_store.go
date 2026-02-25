@@ -533,3 +533,38 @@ func (s *JSONStore) GetCountryGroups() []CountryGroup {
 func (s *JSONStore) GetDataDir() string {
 	return s.dataDir
 }
+
+// FindManualNodeByServerPort finds a manual node by server:port
+func (s *JSONStore) FindManualNodeByServerPort(server string, port int) *ManualNode {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	for i := range s.data.ManualNodes {
+		if s.data.ManualNodes[i].Node.Server == server && s.data.ManualNodes[i].Node.ServerPort == port {
+			return &s.data.ManualNodes[i]
+		}
+	}
+	return nil
+}
+
+// Close is a no-op for JSONStore
+func (s *JSONStore) Close() error { return nil }
+
+// ==================== Unsupported Nodes (stubs) ====================
+
+func (s *JSONStore) GetUnsupportedNodes() []UnsupportedNode       { return nil }
+func (s *JSONStore) AddUnsupportedNode(_ UnsupportedNode) error    { return nil }
+func (s *JSONStore) ClearUnsupportedNodes() error                  { return nil }
+func (s *JSONStore) DeleteUnsupportedNodesByTags(_ []string) error { return nil }
+
+// ==================== Measurements (stubs) ====================
+
+func (s *JSONStore) AddHealthMeasurements(_ []HealthMeasurement) error { return nil }
+func (s *JSONStore) GetHealthMeasurements(_ string, _ int, _ int) ([]HealthMeasurement, error) {
+	return nil, nil
+}
+func (s *JSONStore) GetHealthStats(_ string, _ int) (*HealthStats, error) { return nil, nil }
+func (s *JSONStore) AddSiteMeasurements(_ []SiteMeasurement) error       { return nil }
+func (s *JSONStore) GetSiteMeasurements(_ string, _ int, _ int) ([]SiteMeasurement, error) {
+	return nil, nil
+}

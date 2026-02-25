@@ -12,11 +12,11 @@ import (
 
 // SubscriptionService handles subscription operations
 type SubscriptionService struct {
-	store *storage.JSONStore
+	store storage.Store
 }
 
 // NewSubscriptionService creates a new subscription service
-func NewSubscriptionService(store *storage.JSONStore) *SubscriptionService {
+func NewSubscriptionService(store storage.Store) *SubscriptionService {
 	return &SubscriptionService{
 		store: store,
 	}

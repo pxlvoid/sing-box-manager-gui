@@ -10,7 +10,7 @@ import (
 
 // Scheduler scheduled task scheduler
 type Scheduler struct {
-	store      *storage.JSONStore
+	store      storage.Store
 	subService *SubscriptionService
 	onUpdate   func() error // Callback after subscription update
 
@@ -21,7 +21,7 @@ type Scheduler struct {
 }
 
 // NewScheduler creates a scheduler
-func NewScheduler(store *storage.JSONStore, subService *SubscriptionService) *Scheduler {
+func NewScheduler(store storage.Store, subService *SubscriptionService) *Scheduler {
 	return &Scheduler{
 		store:      store,
 		subService: subService,

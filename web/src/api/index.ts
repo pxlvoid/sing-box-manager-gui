@@ -154,4 +154,16 @@ export const debugApi = {
   probeLogs: (lines: number = 500) => api.get(`/debug/logs/probe?lines=${lines}`),
 };
 
+// Measurement API
+export const measurementApi = {
+  getHealth: (server: string, port: number, limit?: number) =>
+    api.get('/measurements/health', { params: { server, port, limit } }),
+  getHealthStats: (server: string, port: number) =>
+    api.get('/measurements/health/stats', { params: { server, port } }),
+  getSite: (server: string, port: number, limit?: number) =>
+    api.get('/measurements/site', { params: { server, port, limit } }),
+  importFromLocalStorage: (data: object) =>
+    api.post('/measurements/import', data),
+};
+
 export default api;

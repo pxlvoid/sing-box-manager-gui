@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { subscriptionApi, filterApi, ruleApi, ruleGroupApi, settingsApi, serviceApi, nodeApi, manualNodeApi, monitorApi, proxyApi, probeApi } from '../api';
+import { subscriptionApi, filterApi, ruleApi, ruleGroupApi, settingsApi, serviceApi, nodeApi, manualNodeApi, monitorApi, proxyApi, probeApi, measurementApi } from '../api';
 import { toast } from '../components/Toast';
 
 export interface NodeHealthResult {
@@ -159,6 +159,7 @@ export interface ManualNode {
   node: Node;
   enabled: boolean;
   group_tag?: string;
+  source_subscription_id?: string;
 }
 
 export interface CountryGroup {
@@ -389,6 +390,49 @@ interface AppState {
 }
 
 const measurementCache = loadMeasurementCache();
+
+// Helper: server:port key for a node
+export function nodeServerPortKey(node: { server: string; server_port: number }): string {
+  return `${node.server}:${node.server_port}`;
+}
+
+// One-time migration of localStorage measurements to backend
+function migrateLocalStorageMeasurements() {
+  if (typeof window === 'undefined') return;
+  const MIGRATION_KEY = 'sbm.measurements.migrated';
+  if (window.localStorage.getItem(MIGRATION_KEY)) return;
+
+  const raw = window.localStorage.getItem(MEASUREMENT_STORAGE_KEY);
+  if (!raw) {
+    window.localStorage.setItem(MIGRATION_KEY, '1');
+    return;
+  }
+
+  try {
+    const parsed = JSON.parse(raw);
+    const data: Record<string, any> = {};
+    if (isObject(parsed.healthHistory)) data.healthHistory = parsed.healthHistory;
+    if (isObject(parsed.siteCheckHistory)) data.siteCheckHistory = parsed.siteCheckHistory;
+
+    if (Object.keys(data).length > 0) {
+      measurementApi.importFromLocalStorage(data)
+        .then(() => {
+          window.localStorage.setItem(MIGRATION_KEY, '1');
+          console.log('[measurements] localStorage data migrated to backend');
+        })
+        .catch((err: any) => {
+          console.warn('[measurements] Failed to migrate localStorage data:', err);
+        });
+    } else {
+      window.localStorage.setItem(MIGRATION_KEY, '1');
+    }
+  } catch {
+    window.localStorage.setItem(MIGRATION_KEY, '1');
+  }
+}
+
+// Trigger migration on load
+migrateLocalStorageMeasurements();
 
 export const useStore = create<AppState>((set, get) => ({
   subscriptions: [],

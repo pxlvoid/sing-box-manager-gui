@@ -35,10 +35,58 @@ type Node struct {
 
 // ManualNode represents a manually added node
 type ManualNode struct {
-	ID       string `json:"id"`
-	Node     Node   `json:"node"`
-	Enabled  bool   `json:"enabled"`
-	GroupTag string `json:"group_tag,omitempty"`
+	ID                   string `json:"id"`
+	Node                 Node   `json:"node"`
+	Enabled              bool   `json:"enabled"`
+	GroupTag             string `json:"group_tag,omitempty"`
+	SourceSubscriptionID string `json:"source_subscription_id,omitempty"`
+}
+
+// UnsupportedNode represents a node that failed sing-box config validation (persisted)
+type UnsupportedNode struct {
+	Server     string    `json:"server"`
+	ServerPort int       `json:"server_port"`
+	NodeTag    string    `json:"tag"`
+	Error      string    `json:"error"`
+	DetectedAt time.Time `json:"detected_at"`
+}
+
+// ServerPortKey identifies a node by server:port
+type ServerPortKey struct {
+	Server     string `json:"server"`
+	ServerPort int    `json:"server_port"`
+}
+
+// HealthMeasurement represents a single health check measurement
+type HealthMeasurement struct {
+	ID         int64     `json:"id,omitempty"`
+	Server     string    `json:"server"`
+	ServerPort int       `json:"server_port"`
+	NodeTag    string    `json:"node_tag"`
+	Timestamp  time.Time `json:"timestamp"`
+	Alive      bool      `json:"alive"`
+	LatencyMs  int       `json:"latency_ms"`
+	Mode       string    `json:"mode"`
+}
+
+// SiteMeasurement represents a single site check measurement
+type SiteMeasurement struct {
+	ID         int64     `json:"id,omitempty"`
+	Server     string    `json:"server"`
+	ServerPort int       `json:"server_port"`
+	NodeTag    string    `json:"node_tag"`
+	Timestamp  time.Time `json:"timestamp"`
+	Site       string    `json:"site"`
+	DelayMs    int       `json:"delay_ms"`
+	Mode       string    `json:"mode"`
+}
+
+// HealthStats represents aggregated health statistics for a node
+type HealthStats struct {
+	TotalChecks   int     `json:"total_checks"`
+	AliveChecks   int     `json:"alive_checks"`
+	UptimePercent float64 `json:"uptime_percent"`
+	AvgLatencyMs  float64 `json:"avg_latency_ms"`
 }
 
 // CountryGroup represents a country-based node group
