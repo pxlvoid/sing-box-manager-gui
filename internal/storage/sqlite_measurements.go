@@ -1,6 +1,9 @@
 package storage
 
-import "time"
+import (
+	"fmt"
+	"time"
+)
 
 func (s *SQLiteStore) AddHealthMeasurements(measurements []HealthMeasurement) error {
 	if len(measurements) == 0 {
@@ -54,10 +57,13 @@ func (s *SQLiteStore) GetHealthMeasurements(server string, port int, limit int) 
 		var m HealthMeasurement
 		var alive int
 		if err := rows.Scan(&m.ID, &m.Server, &m.ServerPort, &m.NodeTag, &m.Timestamp, &alive, &m.LatencyMs, &m.Mode); err != nil {
-			continue
+			return nil, fmt.Errorf("scanning health measurement row: %w", err)
 		}
 		m.Alive = alive != 0
 		measurements = append(measurements, m)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterating health measurement rows: %w", err)
 	}
 	return measurements, nil
 }
@@ -80,6 +86,58 @@ func (s *SQLiteStore) GetHealthStats(server string, port int) (*HealthStats, err
 		stats.UptimePercent = float64(stats.AliveChecks) / float64(stats.TotalChecks) * 100
 	}
 	return &stats, nil
+}
+
+func (s *SQLiteStore) GetBulkHealthStats(days int) ([]NodeStabilityStats, error) {
+	if days <= 0 {
+		days = 7
+	}
+
+	now := time.Now()
+	cutoff := now.AddDate(0, 0, -days)
+	midpoint := cutoff.Add(time.Duration(days) * 12 * time.Hour)
+
+	rows, err := s.db.Query(`SELECT
+		server, server_port,
+		COUNT(*) as total,
+		SUM(CASE WHEN alive = 1 THEN 1 ELSE 0 END) as alive_count,
+		COALESCE(AVG(CASE WHEN alive = 1 AND latency_ms > 0 THEN latency_ms END), 0) as avg_lat,
+		COALESCE(AVG(CASE WHEN alive = 1 AND latency_ms > 0 AND timestamp >= ? THEN latency_ms END), 0) as recent_avg,
+		COALESCE(AVG(CASE WHEN alive = 1 AND latency_ms > 0 AND timestamp < ? THEN latency_ms END), 0) as older_avg
+		FROM health_measurements
+		WHERE timestamp >= ?
+		GROUP BY server, server_port`, midpoint, midpoint, cutoff)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var results []NodeStabilityStats
+	for rows.Next() {
+		var st NodeStabilityStats
+		var recentAvg, olderAvg float64
+		if err := rows.Scan(&st.Server, &st.ServerPort, &st.TotalChecks, &st.AliveChecks, &st.AvgLatencyMs, &recentAvg, &olderAvg); err != nil {
+			return nil, fmt.Errorf("scanning health stats row: %w", err)
+		}
+		if st.TotalChecks > 0 {
+			st.UptimePercent = float64(st.AliveChecks) / float64(st.TotalChecks) * 100
+		}
+		// Determine latency trend
+		if olderAvg == 0 {
+			st.LatencyTrend = "stable"
+		} else if recentAvg > olderAvg*1.1 {
+			st.LatencyTrend = "up"
+		} else if recentAvg < olderAvg*0.9 {
+			st.LatencyTrend = "down"
+		} else {
+			st.LatencyTrend = "stable"
+		}
+		results = append(results, st)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterating health stats rows: %w", err)
+	}
+	return results, nil
 }
 
 func (s *SQLiteStore) AddSiteMeasurements(measurements []SiteMeasurement) error {
@@ -129,9 +187,12 @@ func (s *SQLiteStore) GetSiteMeasurements(server string, port int, limit int) ([
 	for rows.Next() {
 		var m SiteMeasurement
 		if err := rows.Scan(&m.ID, &m.Server, &m.ServerPort, &m.NodeTag, &m.Timestamp, &m.Site, &m.DelayMs, &m.Mode); err != nil {
-			continue
+			return nil, fmt.Errorf("scanning site measurement row: %w", err)
 		}
 		measurements = append(measurements, m)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterating site measurement rows: %w", err)
 	}
 	return measurements, nil
 }

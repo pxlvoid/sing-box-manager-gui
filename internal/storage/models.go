@@ -89,6 +89,17 @@ type HealthStats struct {
 	AvgLatencyMs  float64 `json:"avg_latency_ms"`
 }
 
+// NodeStabilityStats represents aggregated stability statistics for a node over N days
+type NodeStabilityStats struct {
+	Server        string  `json:"server"`
+	ServerPort    int     `json:"server_port"`
+	TotalChecks   int     `json:"total_checks"`
+	AliveChecks   int     `json:"alive_checks"`
+	UptimePercent float64 `json:"uptime_percent"`
+	AvgLatencyMs  float64 `json:"avg_latency_ms"`
+	LatencyTrend  string  `json:"latency_trend"` // "up", "down", "stable"
+}
+
 // CountryGroup represents a country-based node group
 type CountryGroup struct {
 	Code      string `json:"code"`       // country code (e.g. HK, US, JP)

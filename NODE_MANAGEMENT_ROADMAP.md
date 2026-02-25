@@ -547,6 +547,103 @@ DELETE /api/manual-nodes/tags/:tag   → deleteGroupTag()   // clears tag from n
 
 ---
 
+## Отчёт о реализации Этапа 4
+
+**Дата:** 2026-02-25
+**Статус:** ✅ Реализовано полностью, `go build ./...` и `npm run build` проходят без ошибок.
+
+### Что было сделано
+
+#### 1. Backend: модель `NodeStabilityStats` (`internal/storage/models.go`)
+
+Новая структура с полями: `Server`, `ServerPort`, `TotalChecks`, `AliveChecks`, `UptimePercent`, `AvgLatencyMs`, `LatencyTrend` ("up"/"down"/"stable").
+
+#### 2. Backend: интерфейс Store + реализации
+
+- Интерфейс `Store` расширен методом `GetBulkHealthStats(days int) ([]NodeStabilityStats, error)`
+- **SQLiteStore** (`sqlite_measurements.go`): один SQL-запрос с `GROUP BY server, server_port`:
+  - Период разбивается на две половины (midpoint = now - days/2)
+  - `recent_avg` vs `older_avg` для определения тренда (порог ±10%)
+  - Покрывается существующим индексом `idx_health_server_ts`
+- **JSONStore** (`json_store.go`): stub `return nil, nil`
+
+#### 3. Backend: API эндпоинт (`internal/api/router.go`)
+
+```
+GET /api/measurements/health/stats/bulk?days=7  → getBulkHealthStats()
+```
+- `days` default=7, max=90
+- Возвращает `{"data": [NodeStabilityStats, ...]}`
+- Пустой массив `[]` вместо `null` если нет данных
+
+#### 4. Frontend: API клиент (`web/src/api/index.ts`)
+
+Добавлен `measurementApi.getBulkHealthStats(days?)` — GET запрос с query параметром.
+
+#### 5. Frontend: типы (`web/src/features/nodes/types.ts`)
+
+- Новый интерфейс `NodeStabilityStats` с типизированным `latency_trend: 'up' | 'down' | 'stable'`
+- `SortColumn` расширен: `+ 'stability' | 'avgLatency'`
+
+#### 6. Frontend: Zustand store (`web/src/store/index.ts`)
+
+- State: `stabilityStats: Record<string, NodeStabilityStats>` (ключ: `"server:port"`)
+- Action: `fetchStabilityStats(days?)` — загружает bulk stats, конвертирует массив в Record
+- Триггеры: вызывается после `checkAllNodesHealth` и `checkSingleNodeHealth` (автообновление)
+
+#### 7. Frontend: компонент `StabilityCell` (новый файл)
+
+`web/src/features/nodes/components/StabilityCell.tsx`:
+- **Uptime %** как `Chip` с цветом: `success` (≥80%), `warning` (50–79%), `danger` (<50%)
+- **Tooltip**: "{alive}/{total} checks successful"
+- **Avg latency** в мс + иконка тренда: `TrendingUp` (красная), `TrendingDown` (зелёная), `Minus` (серая)
+- Если `total_checks === 0` → "No data" серым текстом
+
+#### 8. Frontend: хук `useUnifiedTab` (`web/src/features/nodes/hooks/useUnifiedTab.ts`)
+
+- Загрузка `stabilityStats` из store + `fetchStabilityStats()` при маунте
+- Фильтр `minStability` (state): отсеивает ноды с `uptime_percent < minStability`
+- Сортировка по `stability` (сравнение `uptime_percent`, ноды без данных в конец)
+- Сортировка по `avgLatency` (сравнение `avg_latency_ms`, ноды без данных в конец)
+- Возвращает `stabilityStats`, `minStability`, `setMinStability`
+
+#### 9. Frontend: таблица Unified (`web/src/features/nodes/tabs/UnifiedNodesTab.tsx`)
+
+- Новая колонка **"Stability"** (width=130) между Source и Latency
+  - Header: кликабельный с сортировкой (стрелка вверх/вниз)
+  - Cell: `<StabilityCell stats={stabilityStats[spKey(un.node)]} />`
+- Фильтр стабильности в тулбаре: Select с опциями "Any stability", "> 50%", "> 80%", "> 95%"
+- Props расширены: `stabilityStats`, `minStability`, `setMinStability`, `handleColumnSort` принимает `SortColumn`
+
+#### 10. Frontend: оркестратор (`web/src/pages/Subscriptions.tsx`)
+
+Новые пропсы автоматически прокидываются через `{...unified}` spread — изменения не потребовались.
+
+### Верификация
+
+- ✅ `go build ./...` — компиляция без ошибок
+- ✅ `cd web && npm run build` — фронтенд собирается без ошибок
+- ✅ TypeScript strict mode — все типы проверены
+
+### Файлы затронуты
+
+**Новые файлы (1):**
+- `web/src/features/nodes/components/StabilityCell.tsx`
+
+**Изменённые файлы (10):**
+- `internal/storage/models.go` — +`NodeStabilityStats`
+- `internal/storage/store.go` — +`GetBulkHealthStats` в интерфейс
+- `internal/storage/sqlite_measurements.go` — +реализация bulk stats (SQL GROUP BY с trend)
+- `internal/storage/json_store.go` — +stub
+- `internal/api/router.go` — +1 роут, +1 хендлер (`getBulkHealthStats`)
+- `web/src/api/index.ts` — +1 метод в `measurementApi`
+- `web/src/features/nodes/types.ts` — +тип `NodeStabilityStats`, расширение `SortColumn`
+- `web/src/store/index.ts` — +state `stabilityStats`, +action `fetchStabilityStats`, триггеры после health check
+- `web/src/features/nodes/hooks/useUnifiedTab.ts` — +фильтр `minStability`, +сортировка stability/avgLatency, +fetch при маунте
+- `web/src/features/nodes/tabs/UnifiedNodesTab.tsx` — +колонка Stability, +фильтр UI, +`StabilityCell`
+
+---
+
 ## Этап 5: Auto-pipeline
 
 **Задачи:**

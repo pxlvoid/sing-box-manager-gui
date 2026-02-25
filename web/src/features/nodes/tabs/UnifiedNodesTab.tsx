@@ -19,9 +19,10 @@ import {
 } from '@nextui-org/react';
 import { Search, ArrowUp, ArrowDown, Activity, Globe, Copy, ClipboardCheck, Pencil, Trash2, FolderInput, Server } from 'lucide-react';
 import type { Subscription, ManualNode, NodeHealthResult, HealthCheckMode, NodeSiteCheckResult } from '../../../store';
-import type { UnifiedNode, HealthFilter, SortConfig } from '../types';
+import type { UnifiedNode, HealthFilter, SortConfig, NodeStabilityStats, SortColumn } from '../types';
 import { spKey, SITE_CHECK_TARGETS } from '../types';
 import NodeHealthChips from '../components/NodeHealthChips';
+import StabilityCell from '../components/StabilityCell';
 import BulkActionsBar from '../components/BulkActionsBar';
 
 interface UnifiedNodesTabProps {
@@ -29,7 +30,7 @@ interface UnifiedNodesTabProps {
   healthFilter: HealthFilter;
   setHealthFilter: (f: HealthFilter) => void;
   sortConfig: SortConfig;
-  handleColumnSort: (col: 'name' | 'type' | 'source' | 'latency') => void;
+  handleColumnSort: (col: SortColumn) => void;
   searchQuery: string;
   setSearchQuery: (q: string) => void;
   sourceFilter: string;
@@ -73,6 +74,10 @@ interface UnifiedNodesTabProps {
   onEditNode: (mn: ManualNode) => void;
   onDeleteNode: (id: string) => void;
   onToggleNode: (mn: ManualNode) => void;
+  // Stability
+  stabilityStats: Record<string, NodeStabilityStats>;
+  minStability: number;
+  setMinStability: (v: number) => void;
   // Copy Alive
   hasAliveNodes: boolean;
   healthChecking: boolean;
@@ -118,6 +123,9 @@ export default function UnifiedNodesTab({
   siteCheckingNodes,
   checkSingleNodeSites,
   probeStatus,
+  stabilityStats,
+  minStability,
+  setMinStability,
   copiedNodeId,
   onCopyNode,
   onCopyToManual,
@@ -170,6 +178,21 @@ export default function UnifiedNodesTab({
             </Chip>
           ))}
         </div>
+        <Select
+          size="sm"
+          selectedKeys={[String(minStability)]}
+          onChange={(e) => setMinStability(Number(e.target.value) || 0)}
+          className="w-32"
+          aria-label="Stability filter"
+          items={[
+            { key: '0', label: 'Any stability' },
+            { key: '50', label: '> 50%' },
+            { key: '80', label: '> 80%' },
+            { key: '95', label: '> 95%' },
+          ]}
+        >
+          {(item) => <SelectItem key={item.key}>{item.label}</SelectItem>}
+        </Select>
         {hasAliveNodes && !healthChecking && (
           <Button
             size="sm"
@@ -271,6 +294,12 @@ export default function UnifiedNodesTab({
                 {sortConfig.column === 'source' && (sortConfig.direction === 'asc' ? <ArrowUp className="w-3 h-3" /> : <ArrowDown className="w-3 h-3" />)}
               </span>
             </TableColumn>
+            <TableColumn width={130}>
+              <span className="cursor-pointer flex items-center gap-1" onClick={() => handleColumnSort('stability')}>
+                Stability
+                {sortConfig.column === 'stability' && (sortConfig.direction === 'asc' ? <ArrowUp className="w-3 h-3" /> : <ArrowDown className="w-3 h-3" />)}
+              </span>
+            </TableColumn>
             <TableColumn width={180}>
               <span className="cursor-pointer flex items-center gap-1" onClick={() => handleColumnSort('latency')}>
                 Latency
@@ -317,6 +346,9 @@ export default function UnifiedNodesTab({
                     >
                       {un.sourceName}
                     </Chip>
+                  </TableCell>
+                  <TableCell>
+                    <StabilityCell stats={stabilityStats[spKey(un.node)]} />
                   </TableCell>
                   <TableCell>
                     <NodeHealthChips
