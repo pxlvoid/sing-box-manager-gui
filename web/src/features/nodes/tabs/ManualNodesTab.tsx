@@ -30,6 +30,8 @@ interface ManualNodesTabProps {
   onEditNode: (mn: ManualNode) => void;
   onDeleteNode: (id: string) => void;
   onToggleNode: (mn: ManualNode) => void;
+  onRenameTag: (oldTag: string, newTag: string) => Promise<void>;
+  onDeleteTag: (tag: string) => Promise<void>;
 }
 
 export default function ManualNodesTab({
@@ -52,6 +54,8 @@ export default function ManualNodesTab({
   onEditNode,
   onDeleteNode,
   onToggleNode,
+  onRenameTag,
+  onDeleteTag,
 }: ManualNodesTabProps) {
   if (manualNodes.length === 0) {
     return (
@@ -70,11 +74,31 @@ export default function ManualNodesTab({
       ? manualNodes.filter(n => !n.group_tag)
       : manualNodes.filter(n => n.group_tag === selectedGroupTag);
 
+  const handleRenameTag = async (tag: string) => {
+    const newTag = prompt(`Rename tag "${tag}" to:`, tag);
+    if (newTag && newTag.trim() && newTag.trim() !== tag) {
+      await onRenameTag(tag, newTag.trim());
+      if (selectedGroupTag === tag) {
+        setSelectedGroupTag(newTag.trim());
+      }
+    }
+  };
+
+  const handleDeleteTag = (tag: string) => {
+    const count = manualNodes.filter(n => n.group_tag === tag).length;
+    if (confirm(`Clear tag "${tag}" from ${count} node(s)? Nodes will not be deleted.`)) {
+      onDeleteTag(tag);
+      if (selectedGroupTag === tag) {
+        setSelectedGroupTag(null);
+      }
+    }
+  };
+
   return (
     <div className="space-y-3 mt-4">
       <div className="flex justify-between items-center">
         {manualNodeTags.length > 0 && (
-          <div className="flex flex-wrap gap-2">
+          <div className="flex flex-wrap gap-2 items-center">
             <Chip
               variant={selectedGroupTag === null ? 'solid' : 'flat'}
               color="primary"
@@ -91,15 +115,39 @@ export default function ManualNodesTab({
               No tag ({manualNodes.filter(n => !n.group_tag).length})
             </Chip>
             {manualNodeTags.map(tag => (
-              <Chip
-                key={tag}
-                variant={selectedGroupTag === tag ? 'solid' : 'flat'}
-                color="secondary"
-                className="cursor-pointer"
-                onClick={() => setSelectedGroupTag(tag)}
-              >
-                {tag} ({manualNodes.filter(n => n.group_tag === tag).length})
-              </Chip>
+              <div key={tag} className="flex items-center gap-0.5">
+                <Chip
+                  variant={selectedGroupTag === tag ? 'solid' : 'flat'}
+                  color="secondary"
+                  className="cursor-pointer"
+                  onClick={() => setSelectedGroupTag(tag)}
+                >
+                  {tag} ({manualNodes.filter(n => n.group_tag === tag).length})
+                </Chip>
+                {selectedGroupTag === tag && (
+                  <>
+                    <Button
+                      isIconOnly
+                      size="sm"
+                      variant="light"
+                      onPress={() => handleRenameTag(tag)}
+                      title="Rename tag"
+                    >
+                      <Pencil className="w-3 h-3" />
+                    </Button>
+                    <Button
+                      isIconOnly
+                      size="sm"
+                      variant="light"
+                      color="danger"
+                      onPress={() => handleDeleteTag(tag)}
+                      title="Clear tag from nodes"
+                    >
+                      <Trash2 className="w-3 h-3" />
+                    </Button>
+                  </>
+                )}
+              </div>
             ))}
           </div>
         )}

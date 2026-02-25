@@ -9,8 +9,9 @@ import {
 import { Plus, Globe, Activity, List, Filter as FilterIcon, Download, ClipboardPaste } from 'lucide-react';
 import { useStore } from '../store';
 import { manualNodeApi, nodeApi } from '../api';
-import type { ManualNode, Node } from '../store';
-import { SITE_CHECK_TARGETS } from '../features/nodes/types';
+import type { ManualNode, Node, Subscription } from '../store';
+import { spKey, SITE_CHECK_TARGETS } from '../features/nodes/types';
+import { toast } from '../components/Toast';
 
 // Hooks
 import { useSubscriptionForm } from '../features/nodes/hooks/useSubscriptionForm';
@@ -38,6 +39,7 @@ import FilterModal from '../features/nodes/modals/FilterModal';
 import ExportModal from '../features/nodes/modals/ExportModal';
 import ImportModal from '../features/nodes/modals/ImportModal';
 import CountryNodesModal from '../features/nodes/modals/CountryNodesModal';
+import GroupTagSelectModal from '../features/nodes/modals/GroupTagSelectModal';
 
 export default function Subscriptions() {
   const {
@@ -79,6 +81,9 @@ export default function Subscriptions() {
     deleteUnsupportedNodes,
     probeStatus,
     fetchProbeStatus,
+    renameGroupTag,
+    deleteGroupTag,
+    addManualNodesBulk,
   } = useStore();
 
   // Form hooks
@@ -99,6 +104,15 @@ export default function Subscriptions() {
   const [countryNodes, setCountryNodes] = useState<Node[]>([]);
   const [countryNodesLoading, setCountryNodesLoading] = useState(false);
   const [countryNodesError, setCountryNodesError] = useState<string | null>(null);
+
+  // Group tag modal state
+  const [isGroupTagModalOpen, setIsGroupTagModalOpen] = useState(false);
+  const [groupTagModalDefaultTag, setGroupTagModalDefaultTag] = useState('');
+  const [groupTagModalNodes, setGroupTagModalNodes] = useState<Array<{ node: Node; sourceId?: string }>>([]);
+  const [groupTagCopying, setGroupTagCopying] = useState(false);
+
+  // Health Check & Copy state
+  const [healthCheckAndCopySubId, setHealthCheckAndCopySubId] = useState<string | null>(null);
 
   // Initial data loading
   useEffect(() => {
@@ -168,7 +182,7 @@ export default function Subscriptions() {
     }
   };
 
-  const handleToggleSubscription = async (sub: import('../store').Subscription) => {
+  const handleToggleSubscription = async (sub: Subscription) => {
     await toggleSubscription(sub.id, !sub.enabled);
   };
 
@@ -197,6 +211,95 @@ export default function Subscriptions() {
     } finally {
       setCountryNodesLoading(false);
     }
+  };
+
+  // === Group Tag Modal: shared confirm handler ===
+  const handleGroupTagConfirm = async (tag: string) => {
+    setGroupTagCopying(true);
+    try {
+      const nodes = groupTagModalNodes.map(item => ({
+        node: item.node,
+        enabled: true,
+        source_subscription_id: item.sourceId,
+      }));
+      await addManualNodesBulk(nodes, tag);
+      setIsGroupTagModalOpen(false);
+    } catch (error: any) {
+      toast.error(error.response?.data?.error || 'Failed to copy nodes');
+    } finally {
+      setGroupTagCopying(false);
+    }
+  };
+
+  // === Copy Alive to Manual (Unified tab button) ===
+  const handleCopyAliveToManual = () => {
+    const aliveNodes = unified.aliveSubNodes;
+    if (aliveNodes.length === 0) return;
+
+    const sourceIds = new Set(aliveNodes.map(n => n.sourceId));
+    let defaultTag: string;
+    if (sourceIds.size === 1) {
+      defaultTag = `${aliveNodes[0].sourceName} ${new Date().toISOString().slice(0, 10)}`;
+    } else {
+      defaultTag = `Mixed ${new Date().toISOString().slice(0, 10)}`;
+    }
+
+    setGroupTagModalDefaultTag(defaultTag);
+    setGroupTagModalNodes(aliveNodes.map(un => ({
+      node: un.node,
+      sourceId: un.source === 'subscription' ? un.sourceId : undefined,
+    })));
+    setIsGroupTagModalOpen(true);
+  };
+
+  // === Health Check & Copy Alive (Subscription card action) ===
+  const handleHealthCheckAndCopy = async (sub: Subscription) => {
+    setHealthCheckAndCopySubId(sub.id);
+    try {
+      const tags = (sub.nodes || []).map(n => n.tag);
+      await checkAllNodesHealth(tags);
+
+      const currentHealthResults = useStore.getState().healthResults;
+      const aliveNodes = (sub.nodes || []).filter(n =>
+        currentHealthResults[spKey(n)]?.alive === true
+      );
+
+      if (aliveNodes.length === 0) {
+        toast.info('No alive nodes found after health check');
+        return;
+      }
+
+      const defaultTag = `${sub.name} ${new Date().toISOString().slice(0, 10)}`;
+      setGroupTagModalDefaultTag(defaultTag);
+      setGroupTagModalNodes(aliveNodes.map(n => ({
+        node: n,
+        sourceId: sub.id,
+      })));
+      setIsGroupTagModalOpen(true);
+    } catch {
+      toast.error('Health check failed');
+    } finally {
+      setHealthCheckAndCopySubId(null);
+    }
+  };
+
+  // === Bulk Copy to Manual with tag selection ===
+  const handleBulkCopyToManualWithTag = () => {
+    const subNodes = unified.selectedSubNodes;
+    if (subNodes.length === 0) return;
+
+    const sourceIds = new Set(subNodes.map(n => n.sourceId));
+    let defaultTag = '';
+    if (sourceIds.size === 1) {
+      defaultTag = `${subNodes[0].sourceName} ${new Date().toISOString().slice(0, 10)}`;
+    }
+
+    setGroupTagModalDefaultTag(defaultTag);
+    setGroupTagModalNodes(subNodes.map(un => ({
+      node: un.node,
+      sourceId: un.source === 'subscription' ? un.sourceId : undefined,
+    })));
+    setIsGroupTagModalOpen(true);
   };
 
   return (
@@ -300,6 +403,7 @@ export default function Subscriptions() {
         <Tab key="unified" title={<span>Unified{unified.unifiedNodes.length > 0 && <span className="ml-1.5 text-xs opacity-60">({unified.unifiedNodes.length})</span>}</span>}>
           <UnifiedNodesTab
             {...unified}
+            handleBulkCopyToManual={handleBulkCopyToManualWithTag}
             subscriptions={subscriptions}
             manualNodes={manualNodes}
             healthResults={healthResults}
@@ -317,6 +421,9 @@ export default function Subscriptions() {
             onEditNode={nodeForm.handleOpenEdit}
             onDeleteNode={handleDeleteNode}
             onToggleNode={handleToggleNode}
+            hasAliveNodes={unified.hasAliveNodes}
+            healthChecking={healthChecking}
+            onCopyAliveToManual={handleCopyAliveToManual}
           />
         </Tab>
 
@@ -341,6 +448,8 @@ export default function Subscriptions() {
             onEditNode={nodeForm.handleOpenEdit}
             onDeleteNode={handleDeleteNode}
             onToggleNode={handleToggleNode}
+            onRenameTag={renameGroupTag}
+            onDeleteTag={deleteGroupTag}
           />
         </Tab>
 
@@ -361,6 +470,8 @@ export default function Subscriptions() {
             onEdit={subForm.handleOpenEdit}
             onDelete={handleDeleteSubscription}
             onToggle={handleToggleSubscription}
+            onHealthCheckAndCopy={handleHealthCheckAndCopy}
+            healthCheckAndCopySubId={healthCheckAndCopySubId}
           />
         </Tab>
 
@@ -466,6 +577,16 @@ export default function Subscriptions() {
         siteCheckResults={siteCheckResults}
         siteCheckingNodes={siteCheckingNodes}
         onSiteCheck={(tag) => checkSingleNodeSites(tag, SITE_CHECK_TARGETS)}
+      />
+
+      <GroupTagSelectModal
+        isOpen={isGroupTagModalOpen}
+        onClose={() => setIsGroupTagModalOpen(false)}
+        existingTags={manualNodeTags}
+        defaultTag={groupTagModalDefaultTag}
+        nodeCount={groupTagModalNodes.length}
+        onConfirm={handleGroupTagConfirm}
+        isLoading={groupTagCopying}
       />
     </div>
   );

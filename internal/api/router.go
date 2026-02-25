@@ -235,6 +235,8 @@ func (s *Server) setupRoutes() {
 		api.PUT("/manual-nodes/:id", s.updateManualNode)
 		api.DELETE("/manual-nodes/:id", s.deleteManualNode)
 		api.POST("/manual-nodes/export", s.exportManualNodes)
+		api.PUT("/manual-nodes/tags/:tag", s.renameGroupTag)
+		api.DELETE("/manual-nodes/tags/:tag", s.deleteGroupTag)
 
 		// Kernel management
 		api.GET("/kernel/info", s.getKernelInfo)
@@ -2360,6 +2362,48 @@ func (s *Server) exportManualNodes(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{"data": urls})
+}
+
+// ==================== Group Tag Management API ====================
+
+func (s *Server) renameGroupTag(c *gin.Context) {
+	oldTag := c.Param("tag")
+	var req struct {
+		NewTag string `json:"new_tag" binding:"required"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	affected, err := s.store.RenameGroupTag(oldTag, req.NewTag)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	resp := gin.H{
+		"affected": affected,
+		"message":  fmt.Sprintf("Renamed tag '%s' to '%s' (%d nodes)", oldTag, req.NewTag, affected),
+	}
+	if err := s.autoApplyConfig(); err != nil {
+		resp["warning"] = "auto-apply config failed: " + err.Error()
+	}
+	c.JSON(http.StatusOK, resp)
+}
+
+func (s *Server) deleteGroupTag(c *gin.Context) {
+	tag := c.Param("tag")
+	affected, err := s.store.ClearGroupTag(tag)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"affected": affected,
+		"message":  fmt.Sprintf("Cleared tag '%s' from %d nodes", tag, affected),
+	})
 }
 
 // ==================== Kernel Management API ====================

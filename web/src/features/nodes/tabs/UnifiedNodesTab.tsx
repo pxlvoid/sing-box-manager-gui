@@ -73,6 +73,10 @@ interface UnifiedNodesTabProps {
   onEditNode: (mn: ManualNode) => void;
   onDeleteNode: (id: string) => void;
   onToggleNode: (mn: ManualNode) => void;
+  // Copy Alive
+  hasAliveNodes: boolean;
+  healthChecking: boolean;
+  onCopyAliveToManual: () => void;
 }
 
 export default function UnifiedNodesTab({
@@ -120,6 +124,9 @@ export default function UnifiedNodesTab({
   onEditNode,
   onDeleteNode,
   onToggleNode,
+  hasAliveNodes,
+  healthChecking,
+  onCopyAliveToManual,
 }: UnifiedNodesTabProps) {
   return (
     <div className="space-y-3 mt-4">
@@ -163,6 +170,17 @@ export default function UnifiedNodesTab({
             </Chip>
           ))}
         </div>
+        {hasAliveNodes && !healthChecking && (
+          <Button
+            size="sm"
+            variant="flat"
+            color="success"
+            startContent={<FolderInput className="w-3.5 h-3.5" />}
+            onPress={onCopyAliveToManual}
+          >
+            Copy Alive to Manual
+          </Button>
+        )}
         <span className="text-xs text-gray-400 ml-auto">
           {filteredAndSortedNodes.length === unifiedNodes.length
             ? `${unifiedNodes.length} nodes`

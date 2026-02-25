@@ -122,6 +122,10 @@ export const manualNodeApi = {
   update: (id: string, data: any) => api.put(`/manual-nodes/${id}`, data),
   delete: (id: string) => api.delete(`/manual-nodes/${id}`),
   export: (ids?: string[]) => api.post('/manual-nodes/export', ids ? { ids } : {}),
+  renameTag: (tag: string, newTag: string) =>
+    api.put(`/manual-nodes/tags/${encodeURIComponent(tag)}`, { new_tag: newTag }),
+  deleteTag: (tag: string) =>
+    api.delete(`/manual-nodes/tags/${encodeURIComponent(tag)}`),
 };
 
 // Kernel management API

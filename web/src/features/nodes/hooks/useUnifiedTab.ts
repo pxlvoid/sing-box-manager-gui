@@ -63,6 +63,13 @@ export function useUnifiedTab() {
     return result;
   }, [manualNodes, subscriptions, unsupportedNodes]);
 
+  const aliveSubNodes = useMemo(() =>
+    unifiedNodes.filter(n =>
+      n.source === 'subscription' && healthResults[spKey(n.node)]?.alive === true
+    ), [unifiedNodes, healthResults]);
+
+  const hasAliveNodes = aliveSubNodes.length > 0;
+
   const filteredAndSortedNodes = useMemo(() => {
     let nodes = [...unifiedNodes];
 
@@ -249,5 +256,7 @@ export function useUnifiedTab() {
     handleBulkToggle,
     handleBulkCopyToManual,
     clearSelection,
+    aliveSubNodes,
+    hasAliveNodes,
   };
 }

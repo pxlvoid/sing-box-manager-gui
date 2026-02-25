@@ -10,7 +10,7 @@ import {
   Spinner,
   Switch,
 } from '@nextui-org/react';
-import { RefreshCw, Pencil, Trash2, ChevronDown, ChevronUp, Activity, Globe } from 'lucide-react';
+import { RefreshCw, Pencil, Trash2, ChevronDown, ChevronUp, Activity, Globe, FolderInput } from 'lucide-react';
 import type { Subscription, Node, ManualNode, NodeHealthResult, HealthCheckMode, NodeSiteCheckResult, UnsupportedNodeInfo } from '../../../store';
 import { formatBytes, spKey } from '../types';
 import NodeHealthChips from './NodeHealthChips';
@@ -32,6 +32,8 @@ interface SubscriptionCardProps {
   siteTargets: string[];
   unsupportedNodes: UnsupportedNodeInfo[];
   manualNodes?: ManualNode[];
+  onHealthCheckAndCopy: () => void;
+  healthCheckAndCopying?: boolean;
 }
 
 export default function SubscriptionCard({
@@ -51,6 +53,8 @@ export default function SubscriptionCard({
   siteTargets,
   unsupportedNodes,
   manualNodes,
+  onHealthCheckAndCopy,
+  healthCheckAndCopying,
 }: SubscriptionCardProps) {
   const [isExpanded, setIsExpanded] = useState(false);
 
@@ -116,6 +120,16 @@ export default function SubscriptionCard({
             isDisabled={loading}
           >
             Refresh
+          </Button>
+          <Button
+            size="sm"
+            variant="flat"
+            color="success"
+            startContent={healthCheckAndCopying ? <Spinner size="sm" /> : <FolderInput className="w-4 h-4" />}
+            onPress={onHealthCheckAndCopy}
+            isDisabled={healthCheckAndCopying || !sub.enabled || totalNodes === 0}
+          >
+            Check & Copy
           </Button>
           <Button
             size="sm"

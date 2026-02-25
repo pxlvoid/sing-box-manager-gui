@@ -38,6 +38,8 @@ type Store interface {
 	DeleteManualNode(id string) error
 	RemoveNodesByTags(tags []string) (int, error)
 	FindManualNodeByServerPort(server string, port int) *ManualNode
+	RenameGroupTag(oldTag, newTag string) (int, error)
+	ClearGroupTag(tag string) (int, error)
 
 	// Helpers
 	GetAllNodes() []Node

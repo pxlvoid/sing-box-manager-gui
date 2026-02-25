@@ -429,6 +429,102 @@ web/src/
 
 ---
 
+## Отчёт о реализации Этапа 3
+
+**Дата:** 2026-02-25
+**Статус:** ✅ Реализовано полностью, `go build ./...` и `npm run build` проходят без ошибок.
+
+### Что было сделано
+
+#### 1. Backend: методы Store для управления group tags
+
+- Интерфейс `Store` расширен двумя методами: `RenameGroupTag(oldTag, newTag string) (int, error)` и `ClearGroupTag(tag string) (int, error)`
+- **SQLiteStore** (`sqlite_manual_nodes.go`): эффективные SQL UPDATE запросы, используют существующий индекс `idx_manual_group`
+  - `UPDATE manual_nodes SET group_tag = ? WHERE group_tag = ?` (rename)
+  - `UPDATE manual_nodes SET group_tag = '' WHERE group_tag = ?` (clear)
+- **JSONStore** (`json_store.go`): полная реализация (iterate + mutate + `saveInternal()`), аналог `RemoveNodesByTags`
+
+#### 2. Backend: API эндпоинты для group tags
+
+Два новых роута в `router.go`:
+```
+PUT    /api/manual-nodes/tags/:tag   → renameGroupTag()  // body: {new_tag: "..."}
+DELETE /api/manual-nodes/tags/:tag   → deleteGroupTag()   // clears tag from nodes
+```
+- Rename вызывает `autoApplyConfig()` после изменения
+- Оба возвращают `{affected, message}` — количество затронутых нод
+
+#### 3. Frontend: API + Store для group tags
+
+- `manualNodeApi` расширен: `renameTag(tag, newTag)` и `deleteTag(tag)`
+- Zustand store: `renameGroupTag(oldTag, newTag)` и `deleteGroupTag(tag)` — вызывают API, обновляют `manualNodes` + `manualNodeTags`, показывают toast
+
+#### 4. GroupTagSelectModal — переиспользуемая модалка
+
+Новый файл `web/src/features/nodes/modals/GroupTagSelectModal.tsx`:
+- RadioGroup для выбора существующего тега или создания нового
+- Input для нового тега с авто-заполнением (`"{sub name} YYYY-MM-DD"`)
+- Показывает количество нод для копирования
+- Используется в 3 сценариях: Copy Alive, Check & Copy, Bulk Copy to Manual
+
+#### 5. Кнопка "Copy Alive to Manual" (Unified tab)
+
+- `useUnifiedTab.ts`: добавлен computed `aliveSubNodes` — фильтрует subscription ноды со статусом alive
+- `UnifiedNodesTab.tsx`: кнопка "Copy Alive to Manual" появляется в тулбаре когда есть alive ноды и health check завершён
+- Автоматический `defaultTag`: `"{имя подписки} YYYY-MM-DD"` если все из одной подписки, `"Mixed YYYY-MM-DD"` если из нескольких
+- При нажатии открывает `GroupTagSelectModal`, после подтверждения — bulk copy через `manualNodeApi.addBulk()` с toast результата
+
+#### 6. Кнопка "Check & Copy" на карточке подписки
+
+- `SubscriptionCard.tsx`: новая кнопка "Check & Copy" в header actions с иконкой FolderInput
+- Spinner во время проверки, disabled если подписка выключена или нет нод
+- `Subscriptions.tsx` обработчик `handleHealthCheckAndCopy(sub)`:
+  1. Запускает health check только для нод этой подписки
+  2. Берёт alive ноды из обновлённого состояния store
+  3. Если нет alive → toast info "No alive nodes found"
+  4. Иначе → открывает `GroupTagSelectModal` с `defaultTag = "{sub.name} YYYY-MM-DD"`
+- `SubscriptionsTab.tsx`: прокидывает `onHealthCheckAndCopy` и `healthCheckAndCopySubId` в каждую карточку
+
+#### 7. Управление group tags в ManualNodesTab
+
+- При выборе тега появляются мини-кнопки:
+  - **Pencil** (rename) — `prompt()` для ввода нового имени, вызывает `renameGroupTag`
+  - **Trash2** (delete) — `confirm()` с указанием количества нод, вызывает `deleteGroupTag`, сбрасывает фильтр на "All"
+- Совпадает с паттернами проекта (`confirm()` / `prompt()` как в `handleDeleteSubscription`)
+
+#### 8. Bulk copy с выбором group tag
+
+- Существующая кнопка "Copy to Manual" в BulkActionsBar теперь открывает `GroupTagSelectModal` вместо прямого копирования
+- `handleBulkCopyToManualWithTag` в `Subscriptions.tsx` заменяет `unified.handleBulkCopyToManual`
+- Авто-заполнение тега аналогично Copy Alive
+
+### Верификация
+
+- ✅ `go build ./...` — компиляция без ошибок
+- ✅ `cd web && npm run build` — фронтенд собирается без ошибок
+- ✅ TypeScript strict mode — все типы проверены
+
+### Файлы затронуты
+
+**Новые файлы (1):**
+- `web/src/features/nodes/modals/GroupTagSelectModal.tsx`
+
+**Изменённые файлы (11):**
+- `internal/storage/store.go` — +2 метода в интерфейс (`RenameGroupTag`, `ClearGroupTag`)
+- `internal/storage/sqlite_manual_nodes.go` — +2 реализации (SQL UPDATE)
+- `internal/storage/json_store.go` — +2 реализации (iterate + saveInternal)
+- `internal/api/router.go` — +2 роута, +2 обработчика (`renameGroupTag`, `deleteGroupTag`)
+- `web/src/api/index.ts` — +2 метода в `manualNodeApi`
+- `web/src/store/index.ts` — +2 экшена (`renameGroupTag`, `deleteGroupTag`)
+- `web/src/features/nodes/hooks/useUnifiedTab.ts` — +`aliveSubNodes` и `hasAliveNodes` computed
+- `web/src/features/nodes/tabs/UnifiedNodesTab.tsx` — +кнопка "Copy Alive to Manual", +3 пропса
+- `web/src/features/nodes/tabs/ManualNodesTab.tsx` — +rename/delete tag UI, +2 пропса
+- `web/src/features/nodes/components/SubscriptionCard.tsx` — +кнопка "Check & Copy", +2 пропса
+- `web/src/features/nodes/tabs/SubscriptionsTab.tsx` — +2 пропса (passthrough)
+- `web/src/pages/Subscriptions.tsx` — оркестрация: GroupTagSelectModal, handleCopyAliveToManual, handleHealthCheckAndCopy, handleBulkCopyToManualWithTag
+
+---
+
 ## Этап 4: Статистика и стабильность нод
 
 **Задачи:**
