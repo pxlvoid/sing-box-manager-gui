@@ -55,6 +55,12 @@ type Store interface {
 	ClearUnsupportedNodes() error
 	DeleteUnsupportedNodesByTags(tags []string) error
 
+	// Pipeline
+	GetManualNodesBySourceSubscription(subscriptionID string) ([]ManualNode, error)
+	GetPipelineLogs(subscriptionID string, limit int) ([]PipelineLog, error)
+	AddPipelineLog(log PipelineLog) error
+	GetConsecutiveFailures(server string, port int, maxCount int) (int, error)
+
 	// Measurements
 	AddHealthMeasurements(measurements []HealthMeasurement) error
 	GetHealthMeasurements(server string, port int, limit int) ([]HealthMeasurement, error)

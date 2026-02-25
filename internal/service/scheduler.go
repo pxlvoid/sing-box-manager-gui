@@ -13,6 +13,7 @@ type Scheduler struct {
 	store      storage.Store
 	subService *SubscriptionService
 	onUpdate   func() error // Callback after subscription update
+	onPipeline func() bool  // Callback to run pipelines; returns true if config was already applied
 
 	stopCh   chan struct{}
 	running  bool
@@ -32,6 +33,12 @@ func NewScheduler(store storage.Store, subService *SubscriptionService) *Schedul
 // SetUpdateCallback sets the update callback
 func (s *Scheduler) SetUpdateCallback(callback func() error) {
 	s.onUpdate = callback
+}
+
+// SetPipelineCallback sets the pipeline callback (runs after subscription update, before auto-apply).
+// The callback should return true if it already applied the config.
+func (s *Scheduler) SetPipelineCallback(callback func() bool) {
+	s.onPipeline = callback
 }
 
 // Start starts the scheduler
@@ -110,8 +117,16 @@ func (s *Scheduler) updateSubscriptions() {
 
 	log.Println("[Scheduler] Subscription update completed")
 
-	// Call update callback (auto-apply config)
-	if s.onUpdate != nil {
+	// Run pipelines (may add/remove manual nodes)
+	alreadyApplied := false
+	if s.onPipeline != nil {
+		log.Println("[Scheduler] Running auto-pipelines...")
+		alreadyApplied = s.onPipeline()
+		log.Println("[Scheduler] Auto-pipelines completed")
+	}
+
+	// Call update callback (auto-apply config) — skip if pipelines already applied
+	if s.onUpdate != nil && !alreadyApplied {
 		if err := s.onUpdate(); err != nil {
 			log.Printf("[Scheduler] Failed to auto-apply config: %v\n", err)
 		} else {

@@ -32,6 +32,8 @@ interface ManualNodesTabProps {
   onToggleNode: (mn: ManualNode) => void;
   onRenameTag: (oldTag: string, newTag: string) => Promise<void>;
   onDeleteTag: (tag: string) => Promise<void>;
+  staleNodeKeys: Set<string>;
+  onDeleteStale: () => void;
 }
 
 export default function ManualNodesTab({
@@ -56,6 +58,8 @@ export default function ManualNodesTab({
   onToggleNode,
   onRenameTag,
   onDeleteTag,
+  staleNodeKeys,
+  onDeleteStale,
 }: ManualNodesTabProps) {
   if (manualNodes.length === 0) {
     return (
@@ -151,15 +155,28 @@ export default function ManualNodesTab({
             ))}
           </div>
         )}
-        <Button
-          size="sm"
-          variant="flat"
-          startContent={copiedAll ? <ClipboardCheck className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
-          color={copiedAll ? 'success' : 'default'}
-          onPress={onCopyAllNodes}
-        >
-          {copiedAll ? 'Copied!' : 'Copy All'}
-        </Button>
+        <div className="flex gap-2">
+          {staleNodeKeys.size > 0 && (
+            <Button
+              size="sm"
+              variant="flat"
+              color="warning"
+              startContent={<Trash2 className="w-4 h-4" />}
+              onPress={onDeleteStale}
+            >
+              Delete Stale ({manualNodes.filter(mn => staleNodeKeys.has(spKey(mn.node))).length})
+            </Button>
+          )}
+          <Button
+            size="sm"
+            variant="flat"
+            startContent={copiedAll ? <ClipboardCheck className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
+            color={copiedAll ? 'success' : 'default'}
+            onPress={onCopyAllNodes}
+          >
+            {copiedAll ? 'Copied!' : 'Copy All'}
+          </Button>
+        </div>
       </div>
       {filteredNodes.map((mn) => (
         <Card key={mn.id}>
@@ -176,6 +193,9 @@ export default function ManualNodesTab({
                     <Chip size="sm" variant="flat" color="warning" title={unsupportedNodes.find(u => u.tag === mn.node.tag)?.error}>
                       Unsupported
                     </Chip>
+                  )}
+                  {staleNodeKeys.has(spKey(mn.node)) && (
+                    <Chip size="sm" variant="flat" color="warning">Stale</Chip>
                   )}
                 </div>
                 <p className="text-xs text-gray-500 truncate">{mn.node.type} • {mn.node.server}:{mn.node.server_port}</p>

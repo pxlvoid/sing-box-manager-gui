@@ -11,9 +11,10 @@ import {
   Switch,
 } from '@nextui-org/react';
 import { RefreshCw, Pencil, Trash2, ChevronDown, ChevronUp, Activity, Globe, FolderInput } from 'lucide-react';
-import type { Subscription, Node, ManualNode, NodeHealthResult, HealthCheckMode, NodeSiteCheckResult, UnsupportedNodeInfo } from '../../../store';
+import type { Subscription, Node, ManualNode, NodeHealthResult, HealthCheckMode, NodeSiteCheckResult, UnsupportedNodeInfo, PipelineSettings as PipelineSettingsType } from '../../../store';
 import { formatBytes, spKey } from '../types';
 import NodeHealthChips from './NodeHealthChips';
+import PipelineSettings from './PipelineSettings';
 
 interface SubscriptionCardProps {
   subscription: Subscription;
@@ -34,6 +35,10 @@ interface SubscriptionCardProps {
   manualNodes?: ManualNode[];
   onHealthCheckAndCopy: () => void;
   healthCheckAndCopying?: boolean;
+  manualNodeTags: string[];
+  onUpdatePipeline: (id: string, settings: PipelineSettingsType) => Promise<void>;
+  onRunPipeline: (id: string) => Promise<any>;
+  pipelineRunningSubId: string | null;
 }
 
 export default function SubscriptionCard({
@@ -55,6 +60,10 @@ export default function SubscriptionCard({
   manualNodes,
   onHealthCheckAndCopy,
   healthCheckAndCopying,
+  manualNodeTags,
+  onUpdatePipeline,
+  onRunPipeline,
+  pipelineRunningSubId,
 }: SubscriptionCardProps) {
   const [isExpanded, setIsExpanded] = useState(false);
 
@@ -94,6 +103,9 @@ export default function SubscriptionCard({
           >
             {sub.enabled ? 'Enabled' : 'Disabled'}
           </Chip>
+          {sub.auto_pipeline && (
+            <Chip color="secondary" variant="flat" size="sm">AUTO</Chip>
+          )}
           <div className="min-w-0">
             <h3 className="text-lg font-semibold truncate">{sub.name}</h3>
             <p className="text-sm text-gray-500">
@@ -176,7 +188,15 @@ export default function SubscriptionCard({
             </div>
           )}
 
-          <Accordion variant="bordered" selectionMode="multiple">
+          <PipelineSettings
+            subscription={sub}
+            manualNodeTags={manualNodeTags}
+            onUpdatePipeline={onUpdatePipeline}
+            onRunPipeline={onRunPipeline}
+            pipelineRunning={pipelineRunningSubId === sub.id}
+          />
+
+          <Accordion variant="bordered" selectionMode="multiple" className="mt-3">
             {Object.entries(nodesByCountry).map(([country, data]) => (
               <AccordionItem
                 key={country}

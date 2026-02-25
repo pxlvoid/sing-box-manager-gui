@@ -22,6 +22,7 @@ func (s *SQLiteStore) migrate() error {
 
 	migrations := []func() error{
 		s.migrateV1,
+		s.migrateV2,
 	}
 
 	for i, m := range migrations {
@@ -204,6 +205,49 @@ func (s *SQLiteStore) migrateV1() error {
 		`CREATE INDEX IF NOT EXISTS idx_manual_source ON manual_nodes(source_subscription_id)`,
 		`CREATE INDEX IF NOT EXISTS idx_health_server_ts ON health_measurements(server, server_port, timestamp)`,
 		`CREATE INDEX IF NOT EXISTS idx_site_server_ts ON site_measurements(server, server_port, timestamp)`,
+	}
+
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	for _, stmt := range stmts {
+		if _, err := tx.Exec(stmt); err != nil {
+			return fmt.Errorf("exec %q: %w", stmt[:60], err)
+		}
+	}
+
+	return tx.Commit()
+}
+
+// migrateV2 adds auto-pipeline columns to subscriptions and pipeline_logs table.
+func (s *SQLiteStore) migrateV2() error {
+	stmts := []string{
+		// Pipeline settings on subscription
+		`ALTER TABLE subscriptions ADD COLUMN auto_pipeline INTEGER NOT NULL DEFAULT 0`,
+		`ALTER TABLE subscriptions ADD COLUMN pipeline_group_tag TEXT NOT NULL DEFAULT ''`,
+		`ALTER TABLE subscriptions ADD COLUMN pipeline_min_stability REAL NOT NULL DEFAULT 0`,
+		`ALTER TABLE subscriptions ADD COLUMN pipeline_remove_dead INTEGER NOT NULL DEFAULT 0`,
+		`ALTER TABLE subscriptions ADD COLUMN pipeline_last_run TIMESTAMP`,
+		`ALTER TABLE subscriptions ADD COLUMN pipeline_last_result_json TEXT`,
+
+		// Pipeline execution log
+		`CREATE TABLE IF NOT EXISTS pipeline_logs (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			subscription_id TEXT NOT NULL REFERENCES subscriptions(id) ON DELETE CASCADE,
+			timestamp TIMESTAMP NOT NULL,
+			total_nodes INTEGER NOT NULL DEFAULT 0,
+			checked_nodes INTEGER NOT NULL DEFAULT 0,
+			alive_nodes INTEGER NOT NULL DEFAULT 0,
+			copied_nodes INTEGER NOT NULL DEFAULT 0,
+			skipped_nodes INTEGER NOT NULL DEFAULT 0,
+			removed_stale INTEGER NOT NULL DEFAULT 0,
+			error TEXT NOT NULL DEFAULT '',
+			duration_ms INTEGER NOT NULL DEFAULT 0
+		)`,
+		`CREATE INDEX IF NOT EXISTS idx_pipeline_logs_sub_ts ON pipeline_logs(subscription_id, timestamp)`,
 	}
 
 	tx, err := s.db.Begin()

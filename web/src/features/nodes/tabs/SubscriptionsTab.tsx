@@ -1,6 +1,6 @@
 import { Card, CardBody } from '@nextui-org/react';
 import { Globe } from 'lucide-react';
-import type { Subscription, ManualNode, NodeHealthResult, HealthCheckMode, NodeSiteCheckResult, UnsupportedNodeInfo } from '../../../store';
+import type { Subscription, ManualNode, NodeHealthResult, HealthCheckMode, NodeSiteCheckResult, UnsupportedNodeInfo, PipelineSettings } from '../../../store';
 import { SITE_CHECK_TARGETS } from '../types';
 import SubscriptionCard from '../components/SubscriptionCard';
 
@@ -22,6 +22,10 @@ interface SubscriptionsTabProps {
   onToggle: (sub: Subscription) => void;
   onHealthCheckAndCopy: (sub: Subscription) => void;
   healthCheckAndCopySubId: string | null;
+  manualNodeTags: string[];
+  onUpdatePipeline: (id: string, settings: PipelineSettings) => Promise<void>;
+  onRunPipeline: (id: string) => Promise<any>;
+  pipelineRunningSubId: string | null;
 }
 
 export default function SubscriptionsTab({
@@ -42,6 +46,10 @@ export default function SubscriptionsTab({
   onToggle,
   onHealthCheckAndCopy,
   healthCheckAndCopySubId,
+  manualNodeTags,
+  onUpdatePipeline,
+  onRunPipeline,
+  pipelineRunningSubId,
 }: SubscriptionsTabProps) {
   if (subscriptions.length === 0) {
     return (
@@ -77,6 +85,10 @@ export default function SubscriptionsTab({
           manualNodes={manualNodes}
           onHealthCheckAndCopy={() => onHealthCheckAndCopy(sub)}
           healthCheckAndCopying={healthCheckAndCopySubId === sub.id}
+          manualNodeTags={manualNodeTags}
+          onUpdatePipeline={onUpdatePipeline}
+          onRunPipeline={onRunPipeline}
+          pipelineRunningSubId={pipelineRunningSubId}
         />
       ))}
     </div>

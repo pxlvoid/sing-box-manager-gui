@@ -107,8 +107,9 @@ func NewServer(store storage.Store, processManager *daemon.ProcessManager, probe
 		logger.Printf("[startup] Loaded %d unsupported node(s) from store", len(persisted))
 	}
 
-	// Set scheduler update callback
+	// Set scheduler callbacks
 	s.scheduler.SetUpdateCallback(s.autoApplyConfig)
+	s.scheduler.SetPipelineCallback(s.RunAllPipelines)
 
 	s.setupRoutes()
 	return s
@@ -226,6 +227,14 @@ func (s *Server) setupRoutes() {
 		api.POST("/nodes/unsupported/recheck", s.recheckUnsupportedNodes)
 		api.DELETE("/nodes/unsupported", s.clearUnsupportedNodes)
 		api.POST("/nodes/unsupported/delete", s.deleteUnsupportedNodes)
+
+		// Pipeline
+		api.PUT("/subscriptions/:id/pipeline", s.updateSubscriptionPipeline)
+		api.POST("/subscriptions/:id/pipeline/run", s.runSubscriptionPipeline)
+		api.GET("/subscriptions/:id/pipeline/logs", s.getSubscriptionPipelineLogs)
+		api.GET("/subscriptions/:id/stale-nodes", s.getStaleNodesHandler)
+		api.POST("/subscriptions/:id/stale-nodes/delete", s.deleteStaleNodesHandler)
+		api.GET("/manual-nodes/stale", s.getAllStaleNodes)
 
 		// Manual nodes
 		api.GET("/manual-nodes", s.getManualNodes)
