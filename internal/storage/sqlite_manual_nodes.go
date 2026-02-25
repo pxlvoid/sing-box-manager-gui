@@ -86,6 +86,24 @@ func (s *SQLiteStore) FindManualNodeByServerPort(server string, port int) *Manua
 	return &mn
 }
 
+func (s *SQLiteStore) RenameGroupTag(oldTag, newTag string) (int, error) {
+	res, err := s.db.Exec(`UPDATE manual_nodes SET group_tag = ? WHERE group_tag = ?`, newTag, oldTag)
+	if err != nil {
+		return 0, err
+	}
+	n, _ := res.RowsAffected()
+	return int(n), nil
+}
+
+func (s *SQLiteStore) ClearGroupTag(tag string) (int, error) {
+	res, err := s.db.Exec(`UPDATE manual_nodes SET group_tag = '' WHERE group_tag = ?`, tag)
+	if err != nil {
+		return 0, err
+	}
+	n, _ := res.RowsAffected()
+	return int(n), nil
+}
+
 func scanManualNode(rows *sql.Rows) (ManualNode, error) {
 	var mn ManualNode
 	var extraJSON sql.NullString

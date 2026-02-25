@@ -20,6 +20,8 @@ interface SubscriptionsTabProps {
   onEdit: (sub: Subscription) => void;
   onDelete: (id: string) => void;
   onToggle: (sub: Subscription) => void;
+  onHealthCheckAndCopy: (sub: Subscription) => void;
+  healthCheckAndCopySubId: string | null;
 }
 
 export default function SubscriptionsTab({
@@ -38,6 +40,8 @@ export default function SubscriptionsTab({
   onEdit,
   onDelete,
   onToggle,
+  onHealthCheckAndCopy,
+  healthCheckAndCopySubId,
 }: SubscriptionsTabProps) {
   if (subscriptions.length === 0) {
     return (
@@ -71,6 +75,8 @@ export default function SubscriptionsTab({
           siteTargets={SITE_CHECK_TARGETS}
           unsupportedNodes={unsupportedNodes}
           manualNodes={manualNodes}
+          onHealthCheckAndCopy={() => onHealthCheckAndCopy(sub)}
+          healthCheckAndCopying={healthCheckAndCopySubId === sub.id}
         />
       ))}
     </div>

@@ -547,6 +547,40 @@ func (s *JSONStore) FindManualNodeByServerPort(server string, port int) *ManualN
 	return nil
 }
 
+func (s *JSONStore) RenameGroupTag(oldTag, newTag string) (int, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	count := 0
+	for i := range s.data.ManualNodes {
+		if s.data.ManualNodes[i].GroupTag == oldTag {
+			s.data.ManualNodes[i].GroupTag = newTag
+			count++
+		}
+	}
+	if count > 0 {
+		return count, s.saveInternal()
+	}
+	return 0, nil
+}
+
+func (s *JSONStore) ClearGroupTag(tag string) (int, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	count := 0
+	for i := range s.data.ManualNodes {
+		if s.data.ManualNodes[i].GroupTag == tag {
+			s.data.ManualNodes[i].GroupTag = ""
+			count++
+		}
+	}
+	if count > 0 {
+		return count, s.saveInternal()
+	}
+	return 0, nil
+}
+
 // Close is a no-op for JSONStore
 func (s *JSONStore) Close() error { return nil }
 

@@ -353,6 +353,8 @@ interface AppState {
   addManualNode: (node: Omit<ManualNode, 'id'>) => Promise<void>;
   updateManualNode: (id: string, node: Partial<ManualNode>) => Promise<void>;
   deleteManualNode: (id: string) => Promise<void>;
+  renameGroupTag: (oldTag: string, newTag: string) => Promise<void>;
+  deleteGroupTag: (tag: string) => Promise<void>;
 
   updateSettings: (settings: Settings) => Promise<void>;
 
@@ -734,6 +736,30 @@ export const useStore = create<AppState>((set, get) => ({
     }
   },
 
+  renameGroupTag: async (oldTag: string, newTag: string) => {
+    try {
+      const res = await manualNodeApi.renameTag(oldTag, newTag);
+      await get().fetchManualNodes();
+      await get().fetchManualNodeTags();
+      toast.success(res.data.message || 'Tag renamed');
+    } catch (error: any) {
+      toast.error(error.response?.data?.error || 'Failed to rename tag');
+      throw error;
+    }
+  },
+
+  deleteGroupTag: async (tag: string) => {
+    try {
+      const res = await manualNodeApi.deleteTag(tag);
+      await get().fetchManualNodes();
+      await get().fetchManualNodeTags();
+      toast.success(res.data.message || 'Tag cleared');
+    } catch (error: any) {
+      toast.error(error.response?.data?.error || 'Failed to clear tag');
+      throw error;
+    }
+  },
+
   updateSettings: async (settings: Settings) => {
     try {
       const res = await settingsApi.update(settings);
@@ -936,6 +962,7 @@ export const useStore = create<AppState>((set, get) => ({
     } catch (error: any) {
       console.error('Failed to check nodes health:', error);
       toast.error(error.response?.data?.error || 'Health check failed');
+      throw error;
     } finally {
       set({ healthChecking: false });
     }
