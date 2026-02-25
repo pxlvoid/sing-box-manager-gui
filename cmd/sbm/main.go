@@ -57,12 +57,13 @@ func main() {
 	logger.Printf("Data directory: %s", dataDir)
 	logger.Printf("Web port: %d", port)
 
-	// Initialize storage
-	store, err := storage.NewJSONStore(dataDir)
+	// Initialize storage (SQLite)
+	store, err := storage.NewSQLiteStore(dataDir)
 	if err != nil {
 		logger.Printf("Failed to initialize storage: %v", err)
 		os.Exit(1)
 	}
+	defer store.Close()
 
 	// Initialize process manager
 	// sing-box binary file path is fixed at dataDir/bin/sing-box

@@ -53,7 +53,7 @@ type UnsupportedNodeInfo struct {
 
 // Server represents the API server
 type Server struct {
-	store          *storage.JSONStore
+	store          storage.Store
 	subService     *service.SubscriptionService
 	processManager *daemon.ProcessManager
 	probeManager   *daemon.ProbeManager
@@ -71,7 +71,7 @@ type Server struct {
 }
 
 // NewServer creates an API server
-func NewServer(store *storage.JSONStore, processManager *daemon.ProcessManager, probeManager *daemon.ProbeManager, launchdManager *daemon.LaunchdManager, systemdManager *daemon.SystemdManager, sbmPath string, port int, version string) *Server {
+func NewServer(store storage.Store, processManager *daemon.ProcessManager, probeManager *daemon.ProbeManager, launchdManager *daemon.LaunchdManager, systemdManager *daemon.SystemdManager, sbmPath string, port int, version string) *Server {
 	gin.SetMode(gin.ReleaseMode)
 
 	subService := service.NewSubscriptionService(store)
@@ -93,6 +93,18 @@ func NewServer(store *storage.JSONStore, processManager *daemon.ProcessManager, 
 		port:             port,
 		version:          version,
 		unsupportedNodes: make(map[string]UnsupportedNodeInfo),
+	}
+
+	// Hydrate unsupported nodes from store (survive restart)
+	if persisted := store.GetUnsupportedNodes(); len(persisted) > 0 {
+		for _, un := range persisted {
+			s.unsupportedNodes[un.NodeTag] = UnsupportedNodeInfo{
+				Tag:   un.NodeTag,
+				Error: un.Error,
+				Time:  un.DetectedAt,
+			}
+		}
+		logger.Printf("[startup] Loaded %d unsupported node(s) from store", len(persisted))
 	}
 
 	// Set scheduler update callback
@@ -244,6 +256,14 @@ func (s *Server) setupRoutes() {
 		// Probe management
 		api.GET("/probe/status", s.getProbeStatus)
 		api.POST("/probe/stop", s.stopProbe)
+
+		// Measurements API
+		api.GET("/measurements/health", s.getHealthMeasurements)
+		api.GET("/measurements/health/stats", s.getHealthStats)
+		api.POST("/measurements/health", s.saveHealthMeasurements)
+		api.GET("/measurements/site", s.getSiteMeasurements)
+		api.POST("/measurements/site", s.saveSiteMeasurements)
+		api.POST("/measurements/import", s.importMeasurements)
 	}
 
 	// Static file service (frontend, using embedded file system)
@@ -877,11 +897,33 @@ func (s *Server) buildAndValidateConfig() (string, []UnsupportedNodeInfo, error)
 		if checkErr == nil {
 			// Config is valid — store new unsupported nodes
 			if len(newUnsupported) > 0 {
+				// Build tag→Node map to resolve server:port
+				tagToNode := make(map[string]storage.Node)
+				for _, n := range nodes {
+					tagToNode[n.Tag] = n
+				}
+
 				s.unsupportedNodesMu.Lock()
 				for _, info := range newUnsupported {
 					s.unsupportedNodes[info.Tag] = info
 				}
 				s.unsupportedNodesMu.Unlock()
+
+				// Persist to store
+				for _, info := range newUnsupported {
+					un := storage.UnsupportedNode{
+						NodeTag:    info.Tag,
+						Error:      info.Error,
+						DetectedAt: info.Time,
+					}
+					if n, ok := tagToNode[info.Tag]; ok {
+						un.Server = n.Server
+						un.ServerPort = n.ServerPort
+					}
+					if err := s.store.AddUnsupportedNode(un); err != nil {
+						logger.Printf("[config] Failed to persist unsupported node %s: %v", info.Tag, err)
+					}
+				}
 
 				// Log excluded nodes
 				tags := make([]string, len(newUnsupported))
@@ -1006,10 +1048,13 @@ func (s *Server) getUnsupportedNodes(c *gin.Context) {
 }
 
 func (s *Server) recheckUnsupportedNodes(c *gin.Context) {
-	// Clear unsupported list
+	// Clear unsupported list (in-memory + store)
 	s.unsupportedNodesMu.Lock()
 	s.unsupportedNodes = make(map[string]UnsupportedNodeInfo)
 	s.unsupportedNodesMu.Unlock()
+	if err := s.store.ClearUnsupportedNodes(); err != nil {
+		logger.Printf("[unsupported] Failed to clear from store: %v", err)
+	}
 
 	// Re-validate config
 	configJSON, newUnsupported, err := s.buildAndValidateConfig()
@@ -1039,6 +1084,10 @@ func (s *Server) clearUnsupportedNodes(c *gin.Context) {
 	s.unsupportedNodesMu.Lock()
 	s.unsupportedNodes = make(map[string]UnsupportedNodeInfo)
 	s.unsupportedNodesMu.Unlock()
+	if err := s.store.ClearUnsupportedNodes(); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("Failed to clear from store: %v", err)})
+		return
+	}
 	c.JSON(http.StatusOK, gin.H{"message": "Cleared"})
 }
 
@@ -1067,12 +1116,15 @@ func (s *Server) deleteUnsupportedNodes(c *gin.Context) {
 		return
 	}
 
-	// Clear them from unsupported list
+	// Clear them from unsupported list (in-memory + store)
 	s.unsupportedNodesMu.Lock()
 	for _, tag := range req.Tags {
 		delete(s.unsupportedNodes, tag)
 	}
 	s.unsupportedNodesMu.Unlock()
+	if err := s.store.DeleteUnsupportedNodesByTags(req.Tags); err != nil {
+		logger.Printf("[unsupported] Failed to delete from store: %v", err)
+	}
 
 	c.JSON(http.StatusOK, gin.H{
 		"message": fmt.Sprintf("Removed %d node(s)", removed),
@@ -1853,7 +1905,18 @@ func (s *Server) clashProxyDelay(port int, secret, nodeTag string) int {
 }
 
 func (s *Server) performHealthCheck(nodes []storage.Node) (map[string]*NodeHealthResult, string, error) {
-	port, err := s.probeManager.EnsureRunning(nodes)
+	// Deduplicate nodes by server:port — check each endpoint only once
+	seen := make(map[string]bool, len(nodes))
+	uniqueNodes := make([]storage.Node, 0, len(nodes))
+	for _, n := range nodes {
+		key := fmt.Sprintf("%s:%d", n.Server, n.ServerPort)
+		if !seen[key] {
+			seen[key] = true
+			uniqueNodes = append(uniqueNodes, n)
+		}
+	}
+
+	port, err := s.probeManager.EnsureRunning(uniqueNodes)
 	if err != nil {
 		return nil, "", err
 	}
@@ -1863,7 +1926,7 @@ func (s *Server) performHealthCheck(nodes []storage.Node) (map[string]*NodeHealt
 	sem := make(chan struct{}, 50)
 	var wg sync.WaitGroup
 
-	for _, node := range nodes {
+	for _, node := range uniqueNodes {
 		wg.Add(1)
 		go func(n storage.Node) {
 			defer wg.Done()
@@ -1881,13 +1944,45 @@ func (s *Server) performHealthCheck(nodes []storage.Node) (map[string]*NodeHealt
 			result.TCPLatencyMs = 0
 			result.Groups["Proxy"] = delay
 
+			key := fmt.Sprintf("%s:%d", n.Server, n.ServerPort)
 			mu.Lock()
-			results[n.Tag] = result
+			results[key] = result
 			mu.Unlock()
 		}(node)
 	}
 
 	wg.Wait()
+
+	// Auto-save measurements to store (one per unique server:port)
+	now := time.Now()
+	var measurements []storage.HealthMeasurement
+	for _, n := range uniqueNodes {
+		key := fmt.Sprintf("%s:%d", n.Server, n.ServerPort)
+		if r, ok := results[key]; ok {
+			latency := 0
+			for _, d := range r.Groups {
+				if d > 0 {
+					latency = d
+					break
+				}
+			}
+			measurements = append(measurements, storage.HealthMeasurement{
+				Server:     n.Server,
+				ServerPort: n.ServerPort,
+				NodeTag:    n.Tag,
+				Timestamp:  now,
+				Alive:      r.Alive,
+				LatencyMs:  latency,
+				Mode:       "probe",
+			})
+		}
+	}
+	if len(measurements) > 0 {
+		if err := s.store.AddHealthMeasurements(measurements); err != nil {
+			logger.Printf("[health] Failed to save measurements: %v", err)
+		}
+	}
+
 	return results, "probe", nil
 }
 
@@ -1963,7 +2058,18 @@ func (s *Server) healthCheckSingleNode(c *gin.Context) {
 }
 
 func (s *Server) performSiteCheck(nodes []storage.Node, targets []string) (map[string]*NodeSiteCheckResult, string, error) {
-	port, err := s.probeManager.EnsureRunning(nodes)
+	// Deduplicate nodes by server:port — check each endpoint only once
+	seen := make(map[string]bool, len(nodes))
+	uniqueNodes := make([]storage.Node, 0, len(nodes))
+	for _, n := range nodes {
+		key := fmt.Sprintf("%s:%d", n.Server, n.ServerPort)
+		if !seen[key] {
+			seen[key] = true
+			uniqueNodes = append(uniqueNodes, n)
+		}
+	}
+
+	port, err := s.probeManager.EnsureRunning(uniqueNodes)
 	if err != nil {
 		return nil, "", err
 	}
@@ -1973,7 +2079,7 @@ func (s *Server) performSiteCheck(nodes []storage.Node, targets []string) (map[s
 	sem := make(chan struct{}, 80)
 	var wg sync.WaitGroup
 
-	for _, node := range nodes {
+	for _, node := range uniqueNodes {
 		wg.Add(1)
 		go func(n storage.Node) {
 			defer wg.Done()
@@ -1987,13 +2093,40 @@ func (s *Server) performSiteCheck(nodes []storage.Node, targets []string) (map[s
 				result.Sites[target] = s.clashProxyDelayWithURL(port, "", n.Tag, normalizeSiteCheckURL(target), 5000)
 			}
 
+			key := fmt.Sprintf("%s:%d", n.Server, n.ServerPort)
 			mu.Lock()
-			results[n.Tag] = result
+			results[key] = result
 			mu.Unlock()
 		}(node)
 	}
 
 	wg.Wait()
+
+	// Auto-save site measurements to store (one per unique server:port)
+	now := time.Now()
+	var measurements []storage.SiteMeasurement
+	for _, n := range uniqueNodes {
+		key := fmt.Sprintf("%s:%d", n.Server, n.ServerPort)
+		if r, ok := results[key]; ok {
+			for site, delay := range r.Sites {
+				measurements = append(measurements, storage.SiteMeasurement{
+					Server:     n.Server,
+					ServerPort: n.ServerPort,
+					NodeTag:    n.Tag,
+					Timestamp:  now,
+					Site:       site,
+					DelayMs:    delay,
+					Mode:       "probe",
+				})
+			}
+		}
+	}
+	if len(measurements) > 0 {
+		if err := s.store.AddSiteMeasurements(measurements); err != nil {
+			logger.Printf("[site-check] Failed to save measurements: %v", err)
+		}
+	}
+
 	return results, "probe", nil
 }
 
@@ -2061,6 +2194,15 @@ func (s *Server) addManualNode(c *gin.Context) {
 		return
 	}
 
+	// Deduplication check
+	if existing := s.store.FindManualNodeByServerPort(node.Node.Server, node.Node.ServerPort); existing != nil {
+		c.JSON(http.StatusConflict, gin.H{
+			"error":    fmt.Sprintf("Node %s:%d already exists as '%s'", node.Node.Server, node.Node.ServerPort, existing.Node.Tag),
+			"existing": existing,
+		})
+		return
+	}
+
 	// Generate ID
 	node.ID = uuid.New().String()
 
@@ -2080,8 +2222,9 @@ func (s *Server) addManualNode(c *gin.Context) {
 
 func (s *Server) addManualNodesBulk(c *gin.Context) {
 	var req struct {
-		Nodes    []storage.ManualNode `json:"nodes" binding:"required"`
-		GroupTag string               `json:"group_tag"`
+		Nodes                []storage.ManualNode `json:"nodes" binding:"required"`
+		GroupTag             string               `json:"group_tag"`
+		SourceSubscriptionID string               `json:"source_subscription_id"`
 	}
 
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -2089,24 +2232,42 @@ func (s *Server) addManualNodesBulk(c *gin.Context) {
 		return
 	}
 
+	var added []storage.ManualNode
+	skipped := 0
+
 	for i := range req.Nodes {
+		// Deduplication check
+		if existing := s.store.FindManualNodeByServerPort(req.Nodes[i].Node.Server, req.Nodes[i].Node.ServerPort); existing != nil {
+			skipped++
+			continue
+		}
+
 		req.Nodes[i].ID = uuid.New().String()
 		if req.GroupTag != "" && req.Nodes[i].GroupTag == "" {
 			req.Nodes[i].GroupTag = req.GroupTag
+		}
+		if req.SourceSubscriptionID != "" && req.Nodes[i].SourceSubscriptionID == "" {
+			req.Nodes[i].SourceSubscriptionID = req.SourceSubscriptionID
 		}
 		if err := s.store.AddManualNode(req.Nodes[i]); err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 			return
 		}
+		added = append(added, req.Nodes[i])
 	}
 
 	// Auto-apply config
+	msg := fmt.Sprintf("Added %d nodes", len(added))
+	if skipped > 0 {
+		msg += fmt.Sprintf(", skipped %d duplicates", skipped)
+	}
+
 	if err := s.autoApplyConfig(); err != nil {
-		c.JSON(http.StatusOK, gin.H{"data": req.Nodes, "warning": fmt.Sprintf("Added %d nodes, but auto-apply config failed: %s", len(req.Nodes), err.Error())})
+		c.JSON(http.StatusOK, gin.H{"data": added, "added": len(added), "skipped": skipped, "message": msg, "warning": "auto-apply config failed: " + err.Error()})
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{"data": req.Nodes})
+	c.JSON(http.StatusOK, gin.H{"data": added, "added": len(added), "skipped": skipped, "message": msg})
 }
 
 func (s *Server) getManualNodeTags(c *gin.Context) {
@@ -2597,4 +2758,202 @@ func (s *Server) getProbeStatus(c *gin.Context) {
 func (s *Server) stopProbe(c *gin.Context) {
 	s.probeManager.Stop()
 	c.JSON(http.StatusOK, gin.H{"message": "Probe stopped"})
+}
+
+// ==================== Measurements API ====================
+
+func (s *Server) getHealthMeasurements(c *gin.Context) {
+	server := c.Query("server")
+	port, _ := strconv.Atoi(c.Query("port"))
+	limit, _ := strconv.Atoi(c.Query("limit"))
+	if server == "" || port == 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "server and port required"})
+		return
+	}
+	measurements, err := s.store.GetHealthMeasurements(server, port, limit)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"data": measurements})
+}
+
+func (s *Server) getHealthStats(c *gin.Context) {
+	server := c.Query("server")
+	port, _ := strconv.Atoi(c.Query("port"))
+	if server == "" || port == 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "server and port required"})
+		return
+	}
+	stats, err := s.store.GetHealthStats(server, port)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"data": stats})
+}
+
+func (s *Server) saveHealthMeasurements(c *gin.Context) {
+	var req struct {
+		Measurements []storage.HealthMeasurement `json:"measurements"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	if err := s.store.AddHealthMeasurements(req.Measurements); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"message": fmt.Sprintf("Saved %d measurements", len(req.Measurements))})
+}
+
+func (s *Server) getSiteMeasurements(c *gin.Context) {
+	server := c.Query("server")
+	port, _ := strconv.Atoi(c.Query("port"))
+	limit, _ := strconv.Atoi(c.Query("limit"))
+	if server == "" || port == 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "server and port required"})
+		return
+	}
+	measurements, err := s.store.GetSiteMeasurements(server, port, limit)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"data": measurements})
+}
+
+func (s *Server) saveSiteMeasurements(c *gin.Context) {
+	var req struct {
+		Measurements []storage.SiteMeasurement `json:"measurements"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	if err := s.store.AddSiteMeasurements(req.Measurements); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"message": fmt.Sprintf("Saved %d measurements", len(req.Measurements))})
+}
+
+func (s *Server) importMeasurements(c *gin.Context) {
+	var req struct {
+		HealthHistory    map[string][]json.RawMessage `json:"healthHistory"`
+		SiteCheckHistory map[string][]json.RawMessage `json:"siteCheckHistory"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	// Build tag→Node lookup
+	allNodes := s.store.GetAllNodesIncludeDisabled()
+	tagToNode := make(map[string]storage.Node)
+	for _, n := range allNodes {
+		tagToNode[n.Tag] = n
+	}
+
+	imported := 0
+	failed := 0
+
+	// Import health history
+	for tag, entries := range req.HealthHistory {
+		node, ok := tagToNode[tag]
+		if !ok {
+			continue
+		}
+		var measurements []storage.HealthMeasurement
+		for _, raw := range entries {
+			var entry struct {
+				Timestamp string `json:"timestamp"`
+				Mode      string `json:"mode"`
+				Result    struct {
+					Alive      bool           `json:"alive"`
+					Groups     map[string]int `json:"groups"`
+				} `json:"result"`
+			}
+			if json.Unmarshal(raw, &entry) != nil {
+				continue
+			}
+			ts, _ := time.Parse(time.RFC3339, entry.Timestamp)
+			latency := 0
+			for _, d := range entry.Result.Groups {
+				if d > 0 {
+					latency = d
+					break
+				}
+			}
+			measurements = append(measurements, storage.HealthMeasurement{
+				Server:     node.Server,
+				ServerPort: node.ServerPort,
+				NodeTag:    tag,
+				Timestamp:  ts,
+				Alive:      entry.Result.Alive,
+				LatencyMs:  latency,
+				Mode:       entry.Mode,
+			})
+		}
+		if len(measurements) > 0 {
+			if err := s.store.AddHealthMeasurements(measurements); err != nil {
+				logger.Printf("[import] Failed to save health measurements for %s: %v", tag, err)
+				failed += len(measurements)
+			} else {
+				imported += len(measurements)
+			}
+		}
+	}
+
+	// Import site history
+	for tag, entries := range req.SiteCheckHistory {
+		node, ok := tagToNode[tag]
+		if !ok {
+			continue
+		}
+		var measurements []storage.SiteMeasurement
+		for _, raw := range entries {
+			var entry struct {
+				Timestamp string `json:"timestamp"`
+				Mode      string `json:"mode"`
+				Result    struct {
+					Sites map[string]int `json:"sites"`
+				} `json:"result"`
+			}
+			if json.Unmarshal(raw, &entry) != nil {
+				continue
+			}
+			ts, _ := time.Parse(time.RFC3339, entry.Timestamp)
+			for site, delay := range entry.Result.Sites {
+				measurements = append(measurements, storage.SiteMeasurement{
+					Server:     node.Server,
+					ServerPort: node.ServerPort,
+					NodeTag:    tag,
+					Timestamp:  ts,
+					Site:       site,
+					DelayMs:    delay,
+					Mode:       entry.Mode,
+				})
+			}
+		}
+		if len(measurements) > 0 {
+			if err := s.store.AddSiteMeasurements(measurements); err != nil {
+				logger.Printf("[import] Failed to save site measurements for %s: %v", tag, err)
+				failed += len(measurements)
+			} else {
+				imported += len(measurements)
+			}
+		}
+	}
+
+	if failed > 0 {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error":    fmt.Sprintf("Partial import: %d saved, %d failed", imported, failed),
+			"imported": imported,
+			"failed":   failed,
+		})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"message": fmt.Sprintf("Imported %d measurements", imported), "imported": imported})
 }

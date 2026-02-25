@@ -105,6 +105,156 @@
 
 ---
 
+## Отчёт о реализации Этапа 1
+
+**Дата:** 2026-02-25
+**Статус:** ✅ Реализовано полностью, сборка Go и фронтенда проходит без ошибок.
+
+### Что было сделано
+
+#### 1. Зависимость `modernc.org/sqlite`
+- Добавлена чистая Go-реализация SQLite (без CGO) через `go get modernc.org/sqlite`
+- go.mod обновлён, go.sum синхронизирован
+
+#### 2. Новые модели (`internal/storage/models.go`)
+- `ManualNode` расширен полем `SourceSubscriptionID string` — отслеживает из какой подписки скопирована нода
+- Добавлены типы: `UnsupportedNode`, `ServerPortKey`, `HealthMeasurement`, `SiteMeasurement`, `HealthStats`
+- Все новые типы используют `server:port` как реальный идентификатор ноды
+
+#### 3. Интерфейс Store (`internal/storage/store.go`)
+- Создан интерфейс `Store` с 37 методами, покрывающий все операции:
+  - Subscriptions (5), Filters (5), Rules (5), RuleGroups (2), Settings (2)
+  - ManualNodes (5 + `FindManualNodeByServerPort`), Helpers (6)
+  - UnsupportedNodes (4), Measurements (5), Lifecycle (1)
+- Compile-time проверка: `var _ Store = (*JSONStore)(nil)` и `var _ Store = (*SQLiteStore)(nil)`
+
+#### 4. JSONStore stub-методы (`internal/storage/json_store.go`)
+- Все новые методы интерфейса реализованы как no-op/nil-return
+- `FindManualNodeByServerPort` — полная реализация (поиск по server:port)
+- `Close()` — no-op
+- JSONStore остаётся как legacy fallback
+
+#### 5. SQLiteStore — 11 новых файлов
+
+| Файл | Строк | Содержимое |
+|------|-------|-----------|
+| `sqlite_store.go` | ~115 | Конструктор, прагмы (WAL, FK, busy_timeout, synchronous=NORMAL), ensureDefaults, Close |
+| `sqlite_migrations.go` | ~165 | Таблица `schema_version`, миграция V1: 12 таблиц + 6 индексов |
+| `sqlite_subscriptions.go` | ~200 | CRUD подписок, транзакционный UPDATE (DELETE nodes + INSERT batch) |
+| `sqlite_filters.go` | ~120 | CRUD фильтров, JSON-блобы для массивов (include/exclude/countries/subscriptions) |
+| `sqlite_rules.go` | ~140 | CRUD правил + ReplaceRules (транзакция), CRUD rule groups |
+| `sqlite_settings.go` | ~135 | Settings UPSERT (id=1), host_entries в отдельной таблице |
+| `sqlite_manual_nodes.go` | ~100 | CRUD manual nodes, `FindManualNodeByServerPort` для дедупликации |
+| `sqlite_helpers.go` | ~175 | GetAllNodes, GetAllNodesIncludeDisabled, GetNodesByCountry, GetCountryGroups, RemoveNodesByTags |
+| `sqlite_unsupported.go` | ~50 | CRUD unsupported nodes, PK по (server, server_port) |
+| `sqlite_measurements.go` | ~120 | Batch insert + query для health/site measurements, GetHealthStats с SQL-агрегацией |
+| `sqlite_import.go` | ~120 | Импорт data.json → SQLite в одной транзакции, автопропуск если данные уже есть |
+
+**Схема БД (12 таблиц):**
+- `schema_version` — версионирование миграций
+- `subscriptions` + `subscription_nodes` (FK CASCADE) — подписки и их ноды
+- `manual_nodes` — ручные ноды с `source_subscription_id`
+- `filters` — фильтры с JSON-полями для массивов
+- `rules` + `rule_groups` — правила маршрутизации
+- `settings` (CHECK id=1) + `host_entries` — настройки
+- `unsupported_nodes` (PK server:port) — проблемные ноды
+- `health_measurements` + `site_measurements` — история проверок
+
+**Индексы:** `idx_sub_nodes_sub_id`, `idx_manual_server`, `idx_manual_group`, `idx_manual_source`, `idx_health_server_ts`, `idx_site_server_ts`
+
+#### 6. Переключение потребителей на интерфейс Store
+
+| Файл | Изменение |
+|------|-----------|
+| `internal/service/subscription.go` | `*storage.JSONStore` → `storage.Store` |
+| `internal/service/scheduler.go` | `*storage.JSONStore` → `storage.Store` |
+| `internal/api/router.go` | `Server.store: *storage.JSONStore` → `storage.Store`, `NewServer()` принимает `storage.Store` |
+| `cmd/sbm/main.go` | `storage.NewJSONStore()` → `storage.NewSQLiteStore()` + `defer store.Close()` |
+
+#### 7. Дедупликация при копировании в manual nodes
+
+- **`addManualNode`** — проверяет `FindManualNodeByServerPort()` перед добавлением, при дубле возвращает `409 Conflict`
+- **`addManualNodesBulk`** — пропускает дубли, возвращает `{"added": N, "skipped": M, "message": "..."}`
+- Bulk copy поддерживает `source_subscription_id` в request body
+
+#### 8. Unsupported nodes — миграция с in-memory на Store
+
+- `buildAndValidateConfig()` — при обнаружении проблемных нод строит map `tag→Node` для резолва server:port, сохраняет в store через `AddUnsupportedNode()`
+- `recheckUnsupportedNodes` — очищает и in-memory map, и store
+- `clearUnsupportedNodes` — очищает и in-memory, и store
+- `deleteUnsupportedNodes` — удаляет из store через `DeleteUnsupportedNodesByTags()`
+- In-memory map сохранён как кэш для быстрого доступа при валидации конфига
+
+#### 9. API измерений (6 новых эндпоинтов)
+
+```
+GET    /api/measurements/health       → getHealthMeasurements(?server=&port=&limit=)
+GET    /api/measurements/health/stats → getHealthStats(?server=&port=)
+POST   /api/measurements/health       → saveHealthMeasurements
+GET    /api/measurements/site         → getSiteMeasurements(?server=&port=&limit=)
+POST   /api/measurements/site         → saveSiteMeasurements
+POST   /api/measurements/import       → importMeasurements (из localStorage)
+```
+
+- **Авто-сохранение:** `performHealthCheck()` и `performSiteCheck()` автоматически сохраняют результаты в SQLite после каждого запуска
+- **Импорт localStorage:** принимает формат `{healthHistory: {tag: [...entries]}, siteCheckHistory: {tag: [...entries]}}`, резолвит tag→server:port через `GetAllNodesIncludeDisabled()`
+
+#### 10. Переход API на server:port ключи
+
+- `performHealthCheck()` — возвращает `map["server:port"] → NodeHealthResult` вместо `map["tag"] → ...`
+- `performSiteCheck()` — аналогично
+- Фронтенд обновлён для матчинга по `server:port`
+
+#### 11. Изменения фронтенда
+
+| Файл | Изменение |
+|------|-----------|
+| `web/src/api/index.ts` | Добавлен `measurementApi` (getHealth, getHealthStats, getSite, importFromLocalStorage) |
+| `web/src/store/index.ts` | Добавлены: `nodeServerPortKey()`, импорт `measurementApi`, одноразовая миграция localStorage → backend (`migrateLocalStorageMeasurements()`), `ManualNode.source_subscription_id` |
+| `web/src/pages/Subscriptions.tsx` | `spKey()` хелпер, все `NodeHealthChips` и `getNodeLatency()` используют `server:port` ключи, `handleBulkCopyToManual` передаёт `source_subscription_id` |
+
+#### 12. Автомиграция data.json → SQLite
+
+- При первом запуске с `NewSQLiteStore()`: если `data.json` существует — импортируется в SQLite в одной транзакции
+- При успехе — переименовывается в `data.json.bak`
+- Если данные уже в БД (проверка по COUNT subscriptions > 0) — импорт пропускается
+
+### Верификация
+
+- ✅ `go build ./...` — компиляция без ошибок
+- ✅ `cd web && npm run build` — фронтенд собирается без ошибок
+- ✅ Compile-time проверки интерфейсов: `var _ Store = (*JSONStore)(nil)`, `var _ Store = (*SQLiteStore)(nil)`
+
+### Файлы затронуты
+
+**Новые файлы (12):**
+- `internal/storage/store.go`
+- `internal/storage/sqlite_store.go`
+- `internal/storage/sqlite_migrations.go`
+- `internal/storage/sqlite_subscriptions.go`
+- `internal/storage/sqlite_filters.go`
+- `internal/storage/sqlite_rules.go`
+- `internal/storage/sqlite_settings.go`
+- `internal/storage/sqlite_manual_nodes.go`
+- `internal/storage/sqlite_helpers.go`
+- `internal/storage/sqlite_unsupported.go`
+- `internal/storage/sqlite_measurements.go`
+- `internal/storage/sqlite_import.go`
+
+**Изменённые файлы (9):**
+- `go.mod`, `go.sum`
+- `internal/storage/models.go`
+- `internal/storage/json_store.go`
+- `internal/api/router.go`
+- `internal/service/subscription.go`
+- `internal/service/scheduler.go`
+- `cmd/sbm/main.go`
+- `web/src/api/index.ts`
+- `web/src/store/index.ts`
+- `web/src/pages/Subscriptions.tsx`
+
+---
+
 ## Этап 2: Рефакторинг UI
 
 > Делаем ДО новых фич, чтобы не пилить в монолит на 2100 строк

@@ -135,8 +135,8 @@ interface SortConfig {
   direction: SortDirection;
 }
 
-function getNodeLatency(tag: string, healthResults: Record<string, NodeHealthResult>, healthMode: HealthCheckMode | null): number | null {
-  const result = healthResults[tag];
+function getNodeLatency(key: string, healthResults: Record<string, NodeHealthResult>, healthMode: HealthCheckMode | null): number | null {
+  const result = healthResults[key];
   if (!result) return null;
   if ((healthMode === 'clash_api' || healthMode === 'clash_api_temp') && Object.keys(result.groups).length > 0) {
     const delays = Object.values(result.groups).filter(d => d > 0);
@@ -144,6 +144,11 @@ function getNodeLatency(tag: string, healthResults: Record<string, NodeHealthRes
     return Math.min(...delays);
   }
   return -1;
+}
+
+// Helper to get a node's server:port key
+function spKey(node: { server: string; server_port: number }): string {
+  return `${node.server}:${node.server_port}`;
 }
 
 function shortSiteLabel(site: string): string {
@@ -331,7 +336,7 @@ export default function Subscriptions() {
 
     if (healthFilter !== 'all') {
       nodes = nodes.filter(n => {
-        const result = healthResults[n.node.tag];
+        const result = healthResults[spKey(n.node)];
         if (healthFilter === 'unchecked') return !result;
         if (healthFilter === 'alive') return result?.alive === true;
         if (healthFilter === 'timeout') return result && !result.alive;
@@ -350,8 +355,8 @@ export default function Subscriptions() {
           case 'source':
             return dir * a.sourceName.localeCompare(b.sourceName);
           case 'latency': {
-            const la = getNodeLatency(a.node.tag, healthResults, healthMode);
-            const lb = getNodeLatency(b.node.tag, healthResults, healthMode);
+            const la = getNodeLatency(spKey(a.node), healthResults, healthMode);
+            const lb = getNodeLatency(spKey(b.node), healthResults, healthMode);
             if (la === null && lb === null) return 0;
             if (la === null) return 1;
             if (lb === null) return -1;
@@ -447,7 +452,11 @@ export default function Subscriptions() {
   const handleBulkCopyToManual = async () => {
     for (const un of selectedSubNodes) {
       try {
-        await addManualNode({ node: un.node, enabled: true });
+        await addManualNode({
+          node: un.node,
+          enabled: true,
+          source_subscription_id: un.source === 'subscription' ? un.sourceId : undefined,
+        });
       } catch (error) {
         console.error('Failed to copy node:', error);
       }
@@ -1269,7 +1278,7 @@ export default function Subscriptions() {
                         </TableCell>
                         <TableCell>
                           <NodeHealthChips
-                            tag={un.node.tag}
+                            tag={spKey(un.node)}
                             healthResults={healthResults}
                             healthMode={healthMode}
                             siteCheckResults={siteCheckResults}
@@ -1431,7 +1440,7 @@ export default function Subscriptions() {
                     </div>
                     <div className="flex items-center gap-2 shrink-0 self-end sm:self-auto">
                       <NodeHealthChips
-                        tag={mn.node.tag}
+                        tag={spKey(mn.node)}
                         healthResults={healthResults}
                         healthMode={healthMode}
                         siteCheckResults={siteCheckResults}
@@ -2657,7 +2666,7 @@ export default function Subscriptions() {
                     <span className="truncate flex-1 min-w-0">
                       <span className="block truncate">{node.tag}</span>
                       <NodeHealthChips
-                        tag={node.tag}
+                        tag={spKey(node)}
                         healthResults={healthResults}
                         healthMode={healthMode}
                         siteCheckResults={siteCheckResults}
@@ -2929,7 +2938,7 @@ function SubscriptionCard({
                       <span className="truncate flex-1 min-w-0">
                         <span className="block truncate">{node.tag}</span>
                         <NodeHealthChips
-                          tag={node.tag}
+                          tag={spKey(node)}
                           healthResults={healthResults}
                           healthMode={healthMode}
                           siteCheckResults={siteCheckResults}
