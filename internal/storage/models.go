@@ -13,6 +13,34 @@ type Subscription struct {
 	Traffic   *Traffic   `json:"traffic,omitempty"`
 	Nodes     []Node     `json:"nodes"`
 	Enabled   bool       `json:"enabled"`
+
+	// Pipeline settings
+	AutoPipeline         bool            `json:"auto_pipeline"`
+	PipelineGroupTag     string          `json:"pipeline_group_tag"`
+	PipelineMinStability float64         `json:"pipeline_min_stability"` // 0-100
+	PipelineRemoveDead   bool            `json:"pipeline_remove_dead"`
+	PipelineLastRun      *time.Time      `json:"pipeline_last_run,omitempty"`
+	PipelineLastResult   *PipelineResult `json:"pipeline_last_result,omitempty"`
+}
+
+// PipelineResult represents the result of a pipeline execution
+type PipelineResult struct {
+	TotalNodes   int    `json:"total_nodes"`
+	CheckedNodes int    `json:"checked_nodes"`
+	AliveNodes   int    `json:"alive_nodes"`
+	CopiedNodes  int    `json:"copied_nodes"`
+	SkippedNodes int    `json:"skipped_nodes"`
+	RemovedStale int    `json:"removed_stale"`
+	Error        string `json:"error,omitempty"`
+	DurationMs   int64  `json:"duration_ms"`
+}
+
+// PipelineLog represents a pipeline execution log entry
+type PipelineLog struct {
+	ID             int64     `json:"id"`
+	SubscriptionID string    `json:"subscription_id"`
+	Timestamp      time.Time `json:"timestamp"`
+	PipelineResult
 }
 
 // Traffic represents traffic information

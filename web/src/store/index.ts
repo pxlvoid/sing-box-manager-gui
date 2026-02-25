@@ -128,6 +128,38 @@ function appendSiteHistory(
 }
 
 // Type definitions
+export interface PipelineResult {
+  total_nodes: number;
+  checked_nodes: number;
+  alive_nodes: number;
+  copied_nodes: number;
+  skipped_nodes: number;
+  removed_stale: number;
+  error?: string;
+  duration_ms: number;
+}
+
+export interface PipelineLog {
+  id: number;
+  subscription_id: string;
+  timestamp: string;
+  total_nodes: number;
+  checked_nodes: number;
+  alive_nodes: number;
+  copied_nodes: number;
+  skipped_nodes: number;
+  removed_stale: number;
+  error?: string;
+  duration_ms: number;
+}
+
+export interface PipelineSettings {
+  auto_pipeline?: boolean;
+  pipeline_group_tag?: string;
+  pipeline_min_stability?: number;
+  pipeline_remove_dead?: boolean;
+}
+
 export interface Subscription {
   id: string;
   name: string;
@@ -142,6 +174,14 @@ export interface Subscription {
   };
   nodes: Node[];
   enabled: boolean;
+
+  // Pipeline
+  auto_pipeline: boolean;
+  pipeline_group_tag: string;
+  pipeline_min_stability: number;
+  pipeline_remove_dead: boolean;
+  pipeline_last_run?: string;
+  pipeline_last_result?: PipelineResult;
 }
 
 export interface Node {
@@ -326,6 +366,10 @@ interface AppState {
   // Unsupported nodes
   unsupportedNodes: UnsupportedNodeInfo[];
 
+  // Pipeline
+  staleNodes: ManualNode[];
+  pipelineRunningSubId: string | null;
+
   // Loading state
   loading: boolean;
 
@@ -395,6 +439,12 @@ interface AppState {
   // Proxy group operations
   fetchProxyGroups: () => Promise<void>;
   switchProxy: (group: string, selected: string) => Promise<void>;
+
+  // Pipeline operations
+  updateSubscriptionPipeline: (id: string, settings: PipelineSettings) => Promise<void>;
+  runSubscriptionPipeline: (id: string) => Promise<PipelineResult | null>;
+  fetchStaleNodes: () => Promise<void>;
+  deleteStaleNodes: (nodeIds: string[]) => Promise<void>;
 }
 
 const measurementCache = loadMeasurementCache();
@@ -469,6 +519,8 @@ export const useStore = create<AppState>((set, get) => ({
   proxyGroups: [],
   stabilityStats: {},
   unsupportedNodes: [],
+  staleNodes: [],
+  pipelineRunningSubId: null,
   loading: false,
 
   fetchSubscriptions: async () => {
@@ -1140,6 +1192,92 @@ export const useStore = create<AppState>((set, get) => ({
     } catch (error: any) {
       console.error('Failed to switch proxy:', error);
       toast.error(error.response?.data?.error || 'Failed to switch proxy');
+    }
+  },
+
+  // Pipeline operations
+  updateSubscriptionPipeline: async (id: string, settings: import('./index').PipelineSettings) => {
+    try {
+      const res = await subscriptionApi.updatePipeline(id, settings);
+      const updated = res.data.data;
+      set((state) => ({
+        subscriptions: state.subscriptions.map((s) => (s.id === id ? { ...s, ...updated } : s)),
+      }));
+    } catch (error: any) {
+      console.error('Failed to update pipeline settings:', error);
+      toast.error(error.response?.data?.error || 'Failed to update pipeline');
+    }
+  },
+
+  runSubscriptionPipeline: async (id: string) => {
+    set({ pipelineRunningSubId: id });
+    try {
+      const res = await subscriptionApi.runPipeline(id);
+      const result = res.data.data;
+      // Refresh all related data after pipeline run
+      await get().fetchSubscriptions();
+      await get().fetchManualNodes();
+      await get().fetchManualNodeTags();
+      await get().fetchStaleNodes();
+      await get().fetchCountryGroups();
+      if (result.error) {
+        toast.error(`Pipeline error: ${result.error}`);
+      } else {
+        const parts: string[] = [];
+        if (result.copied_nodes > 0) parts.push(`+${result.copied_nodes} copied`);
+        if (result.skipped_nodes > 0) parts.push(`${result.skipped_nodes} skipped`);
+        if (result.removed_stale > 0) parts.push(`-${result.removed_stale} removed`);
+        toast.success(`Pipeline: ${result.alive_nodes}/${result.total_nodes} alive. ${parts.join(', ')}`);
+      }
+      return result;
+    } catch (error: any) {
+      console.error('Failed to run pipeline:', error);
+      toast.error(error.response?.data?.error || 'Failed to run pipeline');
+      return null;
+    } finally {
+      set({ pipelineRunningSubId: null });
+    }
+  },
+
+  fetchStaleNodes: async () => {
+    try {
+      const res = await manualNodeApi.getAllStale();
+      set({ staleNodes: res.data.data || [] });
+    } catch (error) {
+      console.error('Failed to fetch stale nodes:', error);
+    }
+  },
+
+  deleteStaleNodes: async (nodeIds: string[]) => {
+    try {
+      // Group node IDs by source_subscription_id for bulk deletion
+      const { staleNodes } = get();
+      const staleMap = new Map(staleNodes.map(n => [n.id, n]));
+      const bySubscription = new Map<string, string[]>();
+
+      for (const nodeId of nodeIds) {
+        const node = staleMap.get(nodeId);
+        const subId = node?.source_subscription_id;
+        if (subId) {
+          const ids = bySubscription.get(subId) || [];
+          ids.push(nodeId);
+          bySubscription.set(subId, ids);
+        }
+      }
+
+      let totalDeleted = 0;
+      for (const [subId, ids] of bySubscription) {
+        const res = await subscriptionApi.deleteStaleNodes(subId, ids);
+        totalDeleted += res.data.deleted || 0;
+      }
+
+      await get().fetchManualNodes();
+      await get().fetchStaleNodes();
+      await get().fetchCountryGroups();
+      toast.success(`Deleted ${totalDeleted} stale node(s)`);
+    } catch (error: any) {
+      console.error('Failed to delete stale nodes:', error);
+      toast.error(error.response?.data?.error || 'Failed to delete stale nodes');
     }
   },
 }));

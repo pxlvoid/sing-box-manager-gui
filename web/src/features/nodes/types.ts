@@ -101,7 +101,7 @@ export interface NodeStabilityStats {
   latency_trend: 'up' | 'down' | 'stable';
 }
 
-export type HealthFilter = 'all' | 'alive' | 'timeout' | 'unchecked';
+export type HealthFilter = 'all' | 'alive' | 'timeout' | 'unchecked' | 'stale';
 export type SortColumn = 'name' | 'type' | 'source' | 'latency' | 'stability' | 'avgLatency';
 export type SortDirection = 'asc' | 'desc';
 export interface SortConfig {

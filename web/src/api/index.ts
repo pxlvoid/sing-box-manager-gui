@@ -13,6 +13,11 @@ export const subscriptionApi = {
   delete: (id: string) => api.delete(`/subscriptions/${id}`),
   refresh: (id: string) => api.post(`/subscriptions/${id}/refresh`),
   refreshAll: () => api.post('/subscriptions/refresh-all'),
+  updatePipeline: (id: string, settings: any) => api.put(`/subscriptions/${id}/pipeline`, settings),
+  runPipeline: (id: string) => api.post(`/subscriptions/${id}/pipeline/run`, {}, { timeout: 120000 }),
+  getPipelineLogs: (id: string, limit?: number) => api.get(`/subscriptions/${id}/pipeline/logs`, { params: { limit: limit || 20 } }),
+  getStaleNodes: (id: string, failThreshold?: number) => api.get(`/subscriptions/${id}/stale-nodes`, { params: { fail_threshold: failThreshold || 5 } }),
+  deleteStaleNodes: (id: string, nodeIds: string[]) => api.post(`/subscriptions/${id}/stale-nodes/delete`, { node_ids: nodeIds }),
 };
 
 // Filter API
@@ -116,6 +121,7 @@ export const nodeApi = {
 // Manual node API
 export const manualNodeApi = {
   getAll: () => api.get('/manual-nodes'),
+  getAllStale: (failThreshold?: number) => api.get('/manual-nodes/stale', { params: { fail_threshold: failThreshold || 5 } }),
   add: (data: any) => api.post('/manual-nodes', data),
   addBulk: (nodes: any[], groupTag?: string) => api.post('/manual-nodes/bulk', { nodes, group_tag: groupTag }),
   getTags: () => api.get('/manual-nodes/tags'),

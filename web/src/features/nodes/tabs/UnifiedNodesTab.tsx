@@ -82,6 +82,8 @@ interface UnifiedNodesTabProps {
   hasAliveNodes: boolean;
   healthChecking: boolean;
   onCopyAliveToManual: () => void;
+  // Stale
+  staleNodeKeys: Set<string>;
 }
 
 export default function UnifiedNodesTab({
@@ -135,6 +137,7 @@ export default function UnifiedNodesTab({
   hasAliveNodes,
   healthChecking,
   onCopyAliveToManual,
+  staleNodeKeys,
 }: UnifiedNodesTabProps) {
   return (
     <div className="space-y-3 mt-4">
@@ -165,16 +168,16 @@ export default function UnifiedNodesTab({
           {(item) => <SelectItem key={item.key}>{item.label}</SelectItem>}
         </Select>
         <div className="flex gap-1">
-          {(['all', 'alive', 'timeout', 'unchecked'] as HealthFilter[]).map(f => (
+          {(['all', 'alive', 'timeout', 'unchecked', 'stale'] as HealthFilter[]).map(f => (
             <Chip
               key={f}
               size="sm"
               variant={healthFilter === f ? 'solid' : 'flat'}
-              color={f === 'alive' ? 'success' : f === 'timeout' ? 'danger' : f === 'unchecked' ? 'default' : 'primary'}
+              color={f === 'alive' ? 'success' : f === 'timeout' ? 'danger' : f === 'stale' ? 'warning' : f === 'unchecked' ? 'default' : 'primary'}
               className="cursor-pointer"
               onClick={() => setHealthFilter(f)}
             >
-              {f === 'all' ? 'All' : f === 'alive' ? 'Alive' : f === 'timeout' ? 'Timeout' : 'Unchecked'}
+              {f === 'all' ? 'All' : f === 'alive' ? 'Alive' : f === 'timeout' ? 'Timeout' : f === 'stale' ? 'Stale' : 'Unchecked'}
             </Chip>
           ))}
         </div>
@@ -328,6 +331,9 @@ export default function UnifiedNodesTab({
                       <span className="font-medium truncate max-w-[300px]">{un.node.tag}</span>
                       {un.isUnsupported && (
                         <Chip size="sm" variant="flat" color="warning">Unsupported</Chip>
+                      )}
+                      {staleNodeKeys.has(spKey(un.node)) && (
+                        <Chip size="sm" variant="flat" color="warning">Stale</Chip>
                       )}
                       {un.groupTag && (
                         <Chip size="sm" variant="flat" color="secondary">{un.groupTag}</Chip>

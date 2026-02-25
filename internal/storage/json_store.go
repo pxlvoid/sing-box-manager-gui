@@ -591,6 +591,13 @@ func (s *JSONStore) AddUnsupportedNode(_ UnsupportedNode) error    { return nil 
 func (s *JSONStore) ClearUnsupportedNodes() error                  { return nil }
 func (s *JSONStore) DeleteUnsupportedNodesByTags(_ []string) error { return nil }
 
+// ==================== Pipeline (stubs) ====================
+
+func (s *JSONStore) GetManualNodesBySourceSubscription(_ string) ([]ManualNode, error) { return nil, nil }
+func (s *JSONStore) GetPipelineLogs(_ string, _ int) ([]PipelineLog, error)            { return nil, nil }
+func (s *JSONStore) AddPipelineLog(_ PipelineLog) error                                { return nil }
+func (s *JSONStore) GetConsecutiveFailures(_ string, _ int, _ int) (int, error)        { return 0, nil }
+
 // ==================== Measurements (stubs) ====================
 
 func (s *JSONStore) AddHealthMeasurements(_ []HealthMeasurement) error { return nil }

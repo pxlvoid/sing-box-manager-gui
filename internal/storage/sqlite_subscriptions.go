@@ -7,8 +7,11 @@ import (
 	"time"
 )
 
+const subscriptionColumns = `id, name, url, node_count, updated_at, expire_at, enabled, traffic_json,
+	auto_pipeline, pipeline_group_tag, pipeline_min_stability, pipeline_remove_dead, pipeline_last_run, pipeline_last_result_json`
+
 func (s *SQLiteStore) GetSubscriptions() []Subscription {
-	rows, err := s.db.Query("SELECT id, name, url, node_count, updated_at, expire_at, enabled, traffic_json FROM subscriptions")
+	rows, err := s.db.Query("SELECT " + subscriptionColumns + " FROM subscriptions")
 	if err != nil {
 		return nil
 	}
@@ -30,7 +33,7 @@ func (s *SQLiteStore) GetSubscriptions() []Subscription {
 }
 
 func (s *SQLiteStore) GetSubscription(id string) *Subscription {
-	row := s.db.QueryRow("SELECT id, name, url, node_count, updated_at, expire_at, enabled, traffic_json FROM subscriptions WHERE id = ?", id)
+	row := s.db.QueryRow("SELECT "+subscriptionColumns+" FROM subscriptions WHERE id = ?", id)
 	sub, err := scanSubscriptionRow(row)
 	if err != nil {
 		return nil
@@ -52,9 +55,14 @@ func (s *SQLiteStore) AddSubscription(sub Subscription) error {
 		expireAt = sub.ExpireAt
 	}
 
-	_, err = tx.Exec(`INSERT INTO subscriptions (id, name, url, node_count, updated_at, expire_at, enabled, traffic_json)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-		sub.ID, sub.Name, sub.URL, sub.NodeCount, sub.UpdatedAt, expireAt, boolToInt(sub.Enabled), trafficJSON)
+	pipelineResultJSON := marshalJSON(sub.PipelineLastResult)
+
+	_, err = tx.Exec(`INSERT INTO subscriptions (id, name, url, node_count, updated_at, expire_at, enabled, traffic_json,
+		auto_pipeline, pipeline_group_tag, pipeline_min_stability, pipeline_remove_dead, pipeline_last_run, pipeline_last_result_json)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		sub.ID, sub.Name, sub.URL, sub.NodeCount, sub.UpdatedAt, expireAt, boolToInt(sub.Enabled), trafficJSON,
+		boolToInt(sub.AutoPipeline), sub.PipelineGroupTag, sub.PipelineMinStability, boolToInt(sub.PipelineRemoveDead),
+		sub.PipelineLastRun, pipelineResultJSON)
 	if err != nil {
 		return err
 	}
@@ -78,8 +86,14 @@ func (s *SQLiteStore) UpdateSubscription(sub Subscription) error {
 		expireAt = sub.ExpireAt
 	}
 
-	res, err := tx.Exec(`UPDATE subscriptions SET name=?, url=?, node_count=?, updated_at=?, expire_at=?, enabled=?, traffic_json=? WHERE id=?`,
-		sub.Name, sub.URL, sub.NodeCount, sub.UpdatedAt, expireAt, boolToInt(sub.Enabled), trafficJSON, sub.ID)
+	pipelineResultJSON := marshalJSON(sub.PipelineLastResult)
+
+	res, err := tx.Exec(`UPDATE subscriptions SET name=?, url=?, node_count=?, updated_at=?, expire_at=?, enabled=?, traffic_json=?,
+		auto_pipeline=?, pipeline_group_tag=?, pipeline_min_stability=?, pipeline_remove_dead=?, pipeline_last_run=?, pipeline_last_result_json=?
+		WHERE id=?`,
+		sub.Name, sub.URL, sub.NodeCount, sub.UpdatedAt, expireAt, boolToInt(sub.Enabled), trafficJSON,
+		boolToInt(sub.AutoPipeline), sub.PipelineGroupTag, sub.PipelineMinStability, boolToInt(sub.PipelineRemoveDead),
+		sub.PipelineLastRun, pipelineResultJSON, sub.ID)
 	if err != nil {
 		return err
 	}
@@ -157,18 +171,11 @@ func insertNodesTx(tx *sql.Tx, subID string, nodes []Node) error {
 	return nil
 }
 
-// scanSubscription scans a subscription from rows.
-func scanSubscription(rows *sql.Rows) (Subscription, error) {
-	var sub Subscription
-	var updatedAt sql.NullTime
-	var expireAt sql.NullTime
-	var enabled int
-	var trafficJSON sql.NullString
-
-	err := rows.Scan(&sub.ID, &sub.Name, &sub.URL, &sub.NodeCount, &updatedAt, &expireAt, &enabled, &trafficJSON)
-	if err != nil {
-		return sub, err
-	}
+// scanSubscriptionFields applies common fields from scan results to a Subscription.
+func applySubscriptionFields(sub *Subscription, updatedAt, expireAt, pipelineLastRun sql.NullTime,
+	enabled, autoPipeline, pipelineRemoveDead int,
+	trafficJSON, pipelineResultJSON sql.NullString,
+	pipelineGroupTag string, pipelineMinStability float64) {
 	if updatedAt.Valid {
 		sub.UpdatedAt = updatedAt.Time
 	}
@@ -182,34 +189,56 @@ func scanSubscription(rows *sql.Rows) (Subscription, error) {
 			sub.Traffic = &t
 		}
 	}
+	sub.AutoPipeline = autoPipeline != 0
+	sub.PipelineGroupTag = pipelineGroupTag
+	sub.PipelineMinStability = pipelineMinStability
+	sub.PipelineRemoveDead = pipelineRemoveDead != 0
+	if pipelineLastRun.Valid {
+		sub.PipelineLastRun = &pipelineLastRun.Time
+	}
+	if pipelineResultJSON.Valid && pipelineResultJSON.String != "" {
+		var pr PipelineResult
+		if json.Unmarshal([]byte(pipelineResultJSON.String), &pr) == nil {
+			sub.PipelineLastResult = &pr
+		}
+	}
+}
+
+// scanSubscription scans a subscription from rows.
+func scanSubscription(rows *sql.Rows) (Subscription, error) {
+	var sub Subscription
+	var updatedAt, expireAt, pipelineLastRun sql.NullTime
+	var enabled, autoPipeline, pipelineRemoveDead int
+	var trafficJSON, pipelineResultJSON sql.NullString
+	var pipelineGroupTag string
+	var pipelineMinStability float64
+
+	err := rows.Scan(&sub.ID, &sub.Name, &sub.URL, &sub.NodeCount, &updatedAt, &expireAt, &enabled, &trafficJSON,
+		&autoPipeline, &pipelineGroupTag, &pipelineMinStability, &pipelineRemoveDead, &pipelineLastRun, &pipelineResultJSON)
+	if err != nil {
+		return sub, err
+	}
+	applySubscriptionFields(&sub, updatedAt, expireAt, pipelineLastRun, enabled, autoPipeline, pipelineRemoveDead,
+		trafficJSON, pipelineResultJSON, pipelineGroupTag, pipelineMinStability)
 	return sub, nil
 }
 
 // scanSubscriptionRow scans a subscription from a single row.
 func scanSubscriptionRow(row *sql.Row) (Subscription, error) {
 	var sub Subscription
-	var updatedAt sql.NullTime
-	var expireAt sql.NullTime
-	var enabled int
-	var trafficJSON sql.NullString
+	var updatedAt, expireAt, pipelineLastRun sql.NullTime
+	var enabled, autoPipeline, pipelineRemoveDead int
+	var trafficJSON, pipelineResultJSON sql.NullString
+	var pipelineGroupTag string
+	var pipelineMinStability float64
 
-	err := row.Scan(&sub.ID, &sub.Name, &sub.URL, &sub.NodeCount, &updatedAt, &expireAt, &enabled, &trafficJSON)
+	err := row.Scan(&sub.ID, &sub.Name, &sub.URL, &sub.NodeCount, &updatedAt, &expireAt, &enabled, &trafficJSON,
+		&autoPipeline, &pipelineGroupTag, &pipelineMinStability, &pipelineRemoveDead, &pipelineLastRun, &pipelineResultJSON)
 	if err != nil {
 		return sub, err
 	}
-	if updatedAt.Valid {
-		sub.UpdatedAt = updatedAt.Time
-	}
-	if expireAt.Valid {
-		sub.ExpireAt = &expireAt.Time
-	}
-	sub.Enabled = enabled != 0
-	if trafficJSON.Valid && trafficJSON.String != "" {
-		var t Traffic
-		if json.Unmarshal([]byte(trafficJSON.String), &t) == nil {
-			sub.Traffic = &t
-		}
-	}
+	applySubscriptionFields(&sub, updatedAt, expireAt, pipelineLastRun, enabled, autoPipeline, pipelineRemoveDead,
+		trafficJSON, pipelineResultJSON, pipelineGroupTag, pipelineMinStability)
 	return sub, nil
 }
 

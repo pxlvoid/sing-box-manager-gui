@@ -14,6 +14,8 @@ export function useUnifiedTab() {
     checkNodesSites,
     stabilityStats,
     fetchStabilityStats,
+    staleNodes,
+    fetchStaleNodes,
   } = useStore();
 
   const [healthFilter, setHealthFilter] = useState<HealthFilter>('all');
@@ -24,7 +26,7 @@ export function useUnifiedTab() {
   const [selectedNodes, setSelectedNodes] = useState<Set<string>>(new Set());
   const [minStability, setMinStability] = useState(0);
 
-  useEffect(() => { fetchStabilityStats(); }, []);
+  useEffect(() => { fetchStabilityStats(); fetchStaleNodes(); }, []);
 
   const handleColumnSort = (column: SortColumn) => {
     setSortConfig(prev => {
@@ -68,6 +70,14 @@ export function useUnifiedTab() {
     return result;
   }, [manualNodes, subscriptions, unsupportedNodes]);
 
+  const staleNodeKeys = useMemo(() => {
+    const keys = new Set<string>();
+    for (const mn of staleNodes) {
+      keys.add(spKey(mn.node));
+    }
+    return keys;
+  }, [staleNodes]);
+
   const aliveSubNodes = useMemo(() =>
     unifiedNodes.filter(n =>
       n.source === 'subscription' && healthResults[spKey(n.node)]?.alive === true
@@ -99,6 +109,7 @@ export function useUnifiedTab() {
         if (healthFilter === 'unchecked') return !result;
         if (healthFilter === 'alive') return result?.alive === true;
         if (healthFilter === 'timeout') return result && !result.alive;
+        if (healthFilter === 'stale') return staleNodeKeys.has(spKey(n.node));
         return true;
       });
     }
@@ -154,7 +165,7 @@ export function useUnifiedTab() {
     }
 
     return nodes;
-  }, [unifiedNodes, sourceFilter, searchQuery, healthFilter, sortConfig, healthResults, healthMode, stabilityStats, minStability]);
+  }, [unifiedNodes, sourceFilter, searchQuery, healthFilter, sortConfig, healthResults, healthMode, stabilityStats, minStability, staleNodeKeys]);
 
   const unifiedTotalPages = Math.max(1, Math.ceil(filteredAndSortedNodes.length / UNIFIED_PAGE_SIZE));
   const safePage = Math.min(unifiedPage, unifiedTotalPages);
@@ -290,5 +301,6 @@ export function useUnifiedTab() {
     stabilityStats,
     minStability,
     setMinStability,
+    staleNodeKeys,
   };
 }

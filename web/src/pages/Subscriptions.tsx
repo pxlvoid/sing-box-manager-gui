@@ -84,6 +84,11 @@ export default function Subscriptions() {
     renameGroupTag,
     deleteGroupTag,
     addManualNodesBulk,
+    updateSubscriptionPipeline,
+    runSubscriptionPipeline,
+    pipelineRunningSubId,
+    fetchStaleNodes,
+    deleteStaleNodes,
   } = useStore();
 
   // Form hooks
@@ -123,6 +128,7 @@ export default function Subscriptions() {
     fetchManualNodeTags();
     fetchUnsupportedNodes();
     fetchProbeStatus();
+    fetchStaleNodes();
   }, []);
 
   // Bridge handlers
@@ -130,6 +136,15 @@ export default function Subscriptions() {
     if (confirm('Are you sure you want to delete this node?')) {
       await deleteManualNode(id);
     }
+  };
+
+  const handleDeleteStale = async () => {
+    const staleIds = manualNodes
+      .filter(mn => unified.staleNodeKeys.has(spKey(mn.node)))
+      .map(mn => mn.id);
+    if (staleIds.length === 0) return;
+    if (!confirm(`Delete ${staleIds.length} stale node(s)?`)) return;
+    await deleteStaleNodes(staleIds);
   };
 
   const handleToggleNode = async (mn: ManualNode) => {
@@ -450,6 +465,8 @@ export default function Subscriptions() {
             onToggleNode={handleToggleNode}
             onRenameTag={renameGroupTag}
             onDeleteTag={deleteGroupTag}
+            staleNodeKeys={unified.staleNodeKeys}
+            onDeleteStale={handleDeleteStale}
           />
         </Tab>
 
@@ -472,6 +489,10 @@ export default function Subscriptions() {
             onToggle={handleToggleSubscription}
             onHealthCheckAndCopy={handleHealthCheckAndCopy}
             healthCheckAndCopySubId={healthCheckAndCopySubId}
+            manualNodeTags={manualNodeTags}
+            onUpdatePipeline={updateSubscriptionPipeline}
+            onRunPipeline={runSubscriptionPipeline}
+            pipelineRunningSubId={pipelineRunningSubId}
           />
         </Tab>
 

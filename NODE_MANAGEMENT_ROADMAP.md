@@ -673,6 +673,177 @@ GET /api/measurements/health/stats/bulk?days=7  → getBulkHealthStats()
 
 ---
 
+## Отчёт о реализации Этапа 5
+
+**Дата:** 2026-02-25
+**Статус:** ✅ Реализовано полностью, `go build ./...` и `npm run build` проходят без ошибок.
+
+### Что было сделано
+
+#### 1. Миграция БД — migrateV2 (`internal/storage/sqlite_migrations.go`)
+
+6 новых колонок в таблице `subscriptions`:
+- `auto_pipeline` (INTEGER) — включение auto-pipeline
+- `pipeline_group_tag` (TEXT) — целевой group tag для manual nodes
+- `pipeline_min_stability` (REAL) — минимальный порог стабильности (0–100)
+- `pipeline_remove_dead` (INTEGER) — автоудаление stale нод
+- `pipeline_last_run` (TIMESTAMP) — время последнего запуска
+- `pipeline_last_result_json` (TEXT) — JSON результата последнего запуска
+
+Новая таблица `pipeline_logs`:
+- `id`, `subscription_id` (FK CASCADE), `timestamp`
+- `total_nodes`, `checked_nodes`, `alive_nodes`, `copied_nodes`, `skipped_nodes`, `removed_stale`
+- `error`, `duration_ms`
+- Индекс: `idx_pipeline_logs_sub_ts ON pipeline_logs(subscription_id, timestamp)`
+
+#### 2. Модели (`internal/storage/models.go`)
+
+- `Subscription` расширен 6 pipeline-полями
+- Новый тип `PipelineResult` — результат выполнения pipeline (total/checked/alive/copied/skipped/removed/error/duration)
+- Новый тип `PipelineLog` — запись лога pipeline (ID + SubscriptionID + Timestamp + embedded PipelineResult)
+
+#### 3. Store interface + реализации
+
+**Интерфейс** (`store.go`) — +4 метода:
+- `GetManualNodesBySourceSubscription(subscriptionID string) ([]ManualNode, error)`
+- `GetPipelineLogs(subscriptionID string, limit int) ([]PipelineLog, error)`
+- `AddPipelineLog(log PipelineLog) error`
+- `GetConsecutiveFailures(server string, port int, maxCount int) (int, error)`
+
+**SQLiteStore** (`sqlite_pipeline.go` — новый файл):
+- `GetManualNodesBySourceSubscription`: SELECT по индексу `idx_manual_source`
+- `GetPipelineLogs`: SELECT ORDER BY timestamp DESC LIMIT
+- `AddPipelineLog`: INSERT
+- `GetConsecutiveFailures`: SELECT последних N measurements, подсчёт подряд идущих alive=0
+
+**SQLite subscriptions** (`sqlite_subscriptions.go`):
+- SELECT/INSERT/UPDATE запросы расширены 6 pipeline колонками
+- `scanSubscription`/`scanSubscriptionRow` рефакторены через общую функцию `applySubscriptionFields`
+- `PipelineLastResult` сериализуется/десериализуется как JSON
+
+**JSONStore** (`json_store.go`): 4 stub-метода (return nil, nil).
+
+#### 4. Pipeline логика (`internal/api/pipeline.go` — новый файл)
+
+**`RunAllPipelines()`** — итерирует подписки с `auto_pipeline=true && enabled=true`, вызывает `RunPipeline` для каждой. Ошибки логирует, не прерывает.
+
+**`RunPipeline(sub Subscription) *PipelineResult`**:
+1. Health check нод подписки через `performHealthCheck(sub.Nodes)`
+2. Фильтрация alive нод
+3. Если `PipelineMinStability > 0` — запрос `GetBulkHealthStats(7)`, отсев нод с uptime < порога
+4. Копирование в manual: для каждой alive ноды → `FindManualNodeByServerPort` (дедуп) → `AddManualNode` с GroupTag и SourceSubscriptionID
+5. Если `PipelineRemoveDead` — `GetStaleNodes()` + удаление stale
+6. Сохранение `PipelineLog`, обновление `pipeline_last_run` + `pipeline_last_result`
+7. Если `copied > 0 || removed > 0` → `autoApplyConfig()`
+
+**`GetStaleNodes(sub, failThreshold)`** — определяет stale ноды:
+- Нода отсутствует в текущих `sub.Nodes` по server:port → stale
+- `GetConsecutiveFailures >= failThreshold` → stale
+
+**6 HTTP хендлеров:**
+```
+PUT    /api/subscriptions/:id/pipeline           → updateSubscriptionPipeline
+POST   /api/subscriptions/:id/pipeline/run       → runSubscriptionPipeline
+GET    /api/subscriptions/:id/pipeline/logs      → getSubscriptionPipelineLogs
+GET    /api/subscriptions/:id/stale-nodes        → getStaleNodesHandler
+POST   /api/subscriptions/:id/stale-nodes/delete → deleteStaleNodesHandler
+GET    /api/manual-nodes/stale                   → getAllStaleNodes
+```
+
+#### 5. Scheduler интеграция (`internal/service/scheduler.go`)
+
+- Добавлено поле `onPipeline func()` + метод `SetPipelineCallback`
+- В `updateSubscriptions()`: pipeline запускается ПОСЛЕ обновления подписок, но ПЕРЕД `onUpdate` (auto-apply)
+- `router.go`: `s.scheduler.SetPipelineCallback(s.RunAllPipelines)` в `NewServer`
+
+#### 6. Frontend: типы + API
+
+**Store** (`web/src/store/index.ts`):
+- Новые типы: `PipelineResult`, `PipelineLog`, `PipelineSettings`
+- `Subscription` расширен 6 pipeline полями
+- State: `staleNodes: ManualNode[]`, `pipelineRunningSubId: string | null`
+- Actions: `updateSubscriptionPipeline`, `runSubscriptionPipeline`, `fetchStaleNodes`, `deleteStaleNodes`
+
+**API** (`web/src/api/index.ts`):
+- `subscriptionApi`: +5 методов (updatePipeline, runPipeline, getPipelineLogs, getStaleNodes, deleteStaleNodes)
+- `manualNodeApi`: +1 метод (getAllStale)
+
+**Types** (`web/src/features/nodes/types.ts`):
+- `HealthFilter` расширен значением `'stale'`
+
+#### 7. Frontend: Pipeline UI
+
+**PipelineSettings.tsx** (новый файл) — collapsible секция в SubscriptionCard:
+- Switch "Auto-pipeline"
+- Input для target group tag (с datalist autocomplete из `manualNodeTags`)
+- Select min stability: "Any", "> 50%", "> 80%", "> 95%"
+- Switch "Remove dead nodes"
+- Button "Run Now" (spinner пока работает)
+
+**PipelineStatus.tsx** (новый файл) — мини-строка под pipeline settings:
+- "Last run: Xh ago" + chips: "+N copied", "N skipped", "-N removed"
+- Красный chip при ошибке
+- "Never run" серым если не запускался
+
+**SubscriptionCard.tsx**:
+- Badge "AUTO" если `auto_pipeline=true`
+- Секция `PipelineSettings` + `PipelineStatus` в теле карточки
+
+#### 8. Frontend: Stale фильтр
+
+**useUnifiedTab.ts**:
+- Computed `staleNodeKeys: Set<string>` по server:port из `staleNodes`
+- Фильтр `'stale'` в health filter: показывает только ноды из staleNodeKeys
+- `fetchStaleNodes()` при маунте
+
+**UnifiedNodesTab.tsx**:
+- "Stale" chip в фильтре здоровья (жёлтый цвет)
+- Badge "Stale" на нодах в таблице
+
+**ManualNodesTab.tsx**:
+- Badge "Stale" на manual нодах
+- Кнопка "Delete Stale (N)" в тулбаре — bulk delete stale нод
+
+**Subscriptions.tsx**:
+- Wiring: `handleDeleteStale`, `fetchStaleNodes`, pipeline props passthrough
+- Pipeline props прокинуты через SubscriptionsTab → SubscriptionCard
+
+### Верификация
+
+- ✅ `go build ./...` — компиляция без ошибок
+- ✅ `cd web && npm run build` — фронтенд собирается без ошибок
+- ✅ TypeScript strict mode — все типы проверены
+- ✅ Миграция БД: schema_version = 2 при запуске
+- ✅ Scheduler: pipeline callback вызывается после обновления подписок
+
+### Файлы затронуты
+
+**Новые файлы (4):**
+- `internal/storage/sqlite_pipeline.go`
+- `internal/api/pipeline.go`
+- `web/src/features/nodes/components/PipelineSettings.tsx`
+- `web/src/features/nodes/components/PipelineStatus.tsx`
+
+**Изменённые файлы (15):**
+- `internal/storage/sqlite_migrations.go` — migrateV2 (6 колонок + таблица + индекс)
+- `internal/storage/models.go` — +`PipelineResult`, +`PipelineLog`, pipeline поля в `Subscription`
+- `internal/storage/store.go` — +4 метода в интерфейс
+- `internal/storage/sqlite_subscriptions.go` — новые колонки в SELECT/INSERT/UPDATE, рефакторинг scan-функций
+- `internal/storage/json_store.go` — +4 stub-метода
+- `internal/service/scheduler.go` — +`onPipeline` callback, +`SetPipelineCallback`
+- `internal/api/router.go` — +6 роутов, +`SetPipelineCallback` в NewServer
+- `web/src/api/index.ts` — +6 pipeline API методов
+- `web/src/store/index.ts` — +3 типа, +4 state поля, +4 actions
+- `web/src/features/nodes/types.ts` — +`'stale'` в `HealthFilter`
+- `web/src/features/nodes/components/SubscriptionCard.tsx` — +PipelineSettings, +AUTO badge, +4 props
+- `web/src/features/nodes/hooks/useUnifiedTab.ts` — +staleNodeKeys, +stale filter, +fetchStaleNodes
+- `web/src/features/nodes/tabs/UnifiedNodesTab.tsx` — +Stale chip в фильтрах, +Stale badge на нодах
+- `web/src/features/nodes/tabs/ManualNodesTab.tsx` — +Stale badge, +Delete Stale кнопка
+- `web/src/features/nodes/tabs/SubscriptionsTab.tsx` — +4 pipeline props passthrough
+- `web/src/pages/Subscriptions.tsx` — +handleDeleteStale, +fetchStaleNodes, pipeline props wiring
+
+---
+
 ## Порядок выполнения
 
 ```
