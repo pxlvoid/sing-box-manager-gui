@@ -262,6 +262,7 @@ func (s *Server) setupRoutes() {
 		// Measurements API
 		api.GET("/measurements/health", s.getHealthMeasurements)
 		api.GET("/measurements/health/stats", s.getHealthStats)
+		api.GET("/measurements/health/stats/bulk", s.getBulkHealthStats)
 		api.POST("/measurements/health", s.saveHealthMeasurements)
 		api.GET("/measurements/site", s.getSiteMeasurements)
 		api.POST("/measurements/site", s.saveSiteMeasurements)
@@ -2833,6 +2834,25 @@ func (s *Server) getHealthStats(c *gin.Context) {
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
+	}
+	c.JSON(http.StatusOK, gin.H{"data": stats})
+}
+
+func (s *Server) getBulkHealthStats(c *gin.Context) {
+	days, _ := strconv.Atoi(c.Query("days"))
+	if days <= 0 {
+		days = 7
+	}
+	if days > 90 {
+		days = 90
+	}
+	stats, err := s.store.GetBulkHealthStats(days)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	if stats == nil {
+		stats = []storage.NodeStabilityStats{}
 	}
 	c.JSON(http.StatusOK, gin.H{"data": stats})
 }

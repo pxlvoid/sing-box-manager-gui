@@ -598,6 +598,7 @@ func (s *JSONStore) GetHealthMeasurements(_ string, _ int, _ int) ([]HealthMeasu
 	return nil, nil
 }
 func (s *JSONStore) GetHealthStats(_ string, _ int) (*HealthStats, error) { return nil, nil }
+func (s *JSONStore) GetBulkHealthStats(_ int) ([]NodeStabilityStats, error) { return nil, nil }
 func (s *JSONStore) AddSiteMeasurements(_ []SiteMeasurement) error       { return nil }
 func (s *JSONStore) GetSiteMeasurements(_ string, _ int, _ int) ([]SiteMeasurement, error) {
 	return nil, nil

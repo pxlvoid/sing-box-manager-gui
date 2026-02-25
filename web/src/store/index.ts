@@ -320,6 +320,9 @@ interface AppState {
   // Proxy groups (from Clash API)
   proxyGroups: ProxyGroup[];
 
+  // Stability stats
+  stabilityStats: Record<string, import('../features/nodes/types').NodeStabilityStats>;
+
   // Unsupported nodes
   unsupportedNodes: UnsupportedNodeInfo[];
 
@@ -377,9 +380,12 @@ interface AppState {
 
   // Health check operations
   checkAllNodesHealth: (tags?: string[]) => Promise<void>;
-  checkSingleNodeHealth: (tag: string) => Promise<void>;
+  checkSingleNodeHealth: (tag: string, options?: { skipStatsRefresh?: boolean }) => Promise<void>;
   checkNodesSites: (tags?: string[], sites?: string[]) => Promise<void>;
   checkSingleNodeSites: (tag: string, sites?: string[]) => Promise<void>;
+
+  // Stability stats
+  fetchStabilityStats: (days?: number) => Promise<void>;
 
   // Unsupported nodes operations
   fetchUnsupportedNodes: () => Promise<void>;
@@ -461,6 +467,7 @@ export const useStore = create<AppState>((set, get) => ({
   siteCheckingNodes: [],
   siteCheckHistory: measurementCache.siteCheckHistory,
   proxyGroups: [],
+  stabilityStats: {},
   unsupportedNodes: [],
   loading: false,
 
@@ -959,6 +966,7 @@ export const useStore = create<AppState>((set, get) => ({
         siteCheckHistory: state.siteCheckHistory,
       });
       toast.success('Health check completed');
+      get().fetchStabilityStats();
     } catch (error: any) {
       console.error('Failed to check nodes health:', error);
       toast.error(error.response?.data?.error || 'Health check failed');
@@ -968,7 +976,7 @@ export const useStore = create<AppState>((set, get) => ({
     }
   },
 
-  checkSingleNodeHealth: async (tag: string) => {
+  checkSingleNodeHealth: async (tag: string, options?: { skipStatsRefresh?: boolean }) => {
     set({ healthCheckingNodes: [...get().healthCheckingNodes, tag] });
     try {
       const res = await nodeApi.healthCheckSingle(tag);
@@ -990,6 +998,9 @@ export const useStore = create<AppState>((set, get) => ({
         healthHistory,
         siteCheckHistory: state.siteCheckHistory,
       });
+      if (!options?.skipStatsRefresh) {
+        get().fetchStabilityStats();
+      }
     } catch (error: any) {
       console.error('Failed to check node health:', error);
       toast.error(error.response?.data?.error || 'Health check failed');
@@ -1058,6 +1069,20 @@ export const useStore = create<AppState>((set, get) => ({
       toast.error(error.response?.data?.error || 'Site check failed');
     } finally {
       set({ siteCheckingNodes: get().siteCheckingNodes.filter(t => t !== tag) });
+    }
+  },
+
+  fetchStabilityStats: async (days?: number) => {
+    try {
+      const res = await measurementApi.getBulkHealthStats(days);
+      const stats = (res.data.data || []) as import('../features/nodes/types').NodeStabilityStats[];
+      const map: Record<string, import('../features/nodes/types').NodeStabilityStats> = {};
+      for (const s of stats) {
+        map[`${s.server}:${s.server_port}`] = s;
+      }
+      set({ stabilityStats: map });
+    } catch (error) {
+      console.error('Failed to fetch stability stats:', error);
     }
   },
 

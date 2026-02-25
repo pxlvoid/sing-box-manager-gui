@@ -91,8 +91,18 @@ export interface UnifiedNode {
   isUnsupported: boolean;
 }
 
+export interface NodeStabilityStats {
+  server: string;
+  server_port: number;
+  total_checks: number;
+  alive_checks: number;
+  uptime_percent: number;
+  avg_latency_ms: number;
+  latency_trend: 'up' | 'down' | 'stable';
+}
+
 export type HealthFilter = 'all' | 'alive' | 'timeout' | 'unchecked';
-export type SortColumn = 'name' | 'type' | 'source' | 'latency';
+export type SortColumn = 'name' | 'type' | 'source' | 'latency' | 'stability' | 'avgLatency';
 export type SortDirection = 'asc' | 'desc';
 export interface SortConfig {
   column: SortColumn | null;

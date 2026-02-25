@@ -12,6 +12,8 @@ export function useUnifiedTab() {
     healthMode,
     checkSingleNodeHealth,
     checkNodesSites,
+    stabilityStats,
+    fetchStabilityStats,
   } = useStore();
 
   const [healthFilter, setHealthFilter] = useState<HealthFilter>('all');
@@ -20,6 +22,9 @@ export function useUnifiedTab() {
   const [sourceFilter, setSourceFilter] = useState<string>('all');
   const [unifiedPage, setUnifiedPage] = useState(1);
   const [selectedNodes, setSelectedNodes] = useState<Set<string>>(new Set());
+  const [minStability, setMinStability] = useState(0);
+
+  useEffect(() => { fetchStabilityStats(); }, []);
 
   const handleColumnSort = (column: SortColumn) => {
     setSortConfig(prev => {
@@ -98,6 +103,13 @@ export function useUnifiedTab() {
       });
     }
 
+    if (minStability > 0) {
+      nodes = nodes.filter(n => {
+        const stats = stabilityStats[spKey(n.node)];
+        return stats && stats.uptime_percent >= minStability;
+      });
+    }
+
     if (sortConfig.column) {
       const dir = sortConfig.direction === 'asc' ? 1 : -1;
       nodes.sort((a, b) => {
@@ -119,6 +131,22 @@ export function useUnifiedTab() {
             if (lb === -1) return -1;
             return dir * (la - lb);
           }
+          case 'stability': {
+            const sa = stabilityStats[spKey(a.node)];
+            const sb = stabilityStats[spKey(b.node)];
+            if (!sa && !sb) return 0;
+            if (!sa) return 1;
+            if (!sb) return -1;
+            return dir * (sa.uptime_percent - sb.uptime_percent);
+          }
+          case 'avgLatency': {
+            const sa = stabilityStats[spKey(a.node)];
+            const sb = stabilityStats[spKey(b.node)];
+            if (!sa && !sb) return 0;
+            if (!sa) return 1;
+            if (!sb) return -1;
+            return dir * (sa.avg_latency_ms - sb.avg_latency_ms);
+          }
           default:
             return 0;
         }
@@ -126,7 +154,7 @@ export function useUnifiedTab() {
     }
 
     return nodes;
-  }, [unifiedNodes, sourceFilter, searchQuery, healthFilter, sortConfig, healthResults, healthMode]);
+  }, [unifiedNodes, sourceFilter, searchQuery, healthFilter, sortConfig, healthResults, healthMode, stabilityStats, minStability]);
 
   const unifiedTotalPages = Math.max(1, Math.ceil(filteredAndSortedNodes.length / UNIFIED_PAGE_SIZE));
   const safePage = Math.min(unifiedPage, unifiedTotalPages);
@@ -173,9 +201,10 @@ export function useUnifiedTab() {
   };
 
   const handleBulkHealthCheck = async () => {
-    for (const un of selectedUnified) {
-      checkSingleNodeHealth(un.node.tag);
-    }
+    await Promise.all(
+      selectedUnified.map(un => checkSingleNodeHealth(un.node.tag, { skipStatsRefresh: true }))
+    );
+    useStore.getState().fetchStabilityStats();
   };
 
   const handleBulkSiteCheck = async () => {
@@ -224,7 +253,7 @@ export function useUnifiedTab() {
   useEffect(() => {
     setUnifiedPage(1);
     setSelectedNodes(new Set());
-  }, [sourceFilter, searchQuery, healthFilter, sortConfig]);
+  }, [sourceFilter, searchQuery, healthFilter, sortConfig, minStability]);
 
   return {
     healthFilter,
@@ -258,5 +287,8 @@ export function useUnifiedTab() {
     clearSelection,
     aliveSubNodes,
     hasAliveNodes,
+    stabilityStats,
+    minStability,
+    setMinStability,
   };
 }
