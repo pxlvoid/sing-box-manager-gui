@@ -277,6 +277,132 @@ POST   /api/measurements/import       → importMeasurements (из localStorage)
 
 ---
 
+## Отчёт о реализации Этапа 2
+
+**Дата:** 2026-02-25
+**Статус:** ✅ Реализовано полностью, `npm run build` проходит без ошибок.
+
+### Что было сделано
+
+Монолит `Subscriptions.tsx` (2994 строк) разбит на **22 модуля** в структуре `web/src/features/nodes/`.
+
+### Структура файлов
+
+```
+web/src/
+├── pages/
+│   └── Subscriptions.tsx                    # 468 строк — оркестратор
+├── features/
+│   └── nodes/
+│       ├── types.ts                         # 124 строки — типы, константы, утилиты
+│       ├── hooks/
+│       │   ├── useNodeForm.ts               # 155 строк — форма ноды + getExtra/setExtra
+│       │   ├── useSubscriptionForm.ts       # 63 строки — форма подписки
+│       │   ├── useFilterForm.ts             # 87 строк — форма фильтра
+│       │   ├── useBulkAddForm.ts            # 74 строки — bulk add форма
+│       │   ├── useUnifiedTab.ts             # 253 строки — фильтрация, сортировка, пагинация, выделение
+│       │   └── useExportImport.ts           # 117 строк — экспорт/импорт
+│       ├── tabs/
+│       │   ├── UnifiedNodesTab.tsx           # 388 строк — таблица + тулбар + bulk actions
+│       │   ├── ManualNodesTab.tsx            # 198 строк — manual ноды с группами
+│       │   ├── SubscriptionsTab.tsx          # 78 строк — список карточек подписок
+│       │   ├── FiltersTab.tsx                # 102 строки — управление фильтрами
+│       │   └── CountryViewTab.tsx            # 45 строк — грид по странам
+│       ├── components/
+│       │   ├── NodeHealthChips.tsx           # 66 строк — чипы здоровья/сайтов
+│       │   ├── SubscriptionCard.tsx          # 240 строк — карточка подписки + pipeline
+│       │   ├── BulkActionsBar.tsx            # 92 строки — панель bulk-действий
+│       │   └── UnsupportedNodesAlert.tsx     # 81 строка — алерт о проблемных нодах
+│       └── modals/
+│           ├── SubscriptionModal.tsx         # 69 строк
+│           ├── NodeModal.tsx                 # 695 строк (7 протоколов — ожидаемо)
+│           ├── BulkAddModal.tsx              # 134 строки
+│           ├── FilterModal.tsx               # 196 строк
+│           ├── ExportModal.tsx               # 48 строк
+│           ├── ImportModal.tsx               # 51 строка
+│           └── CountryNodesModal.tsx         # 122 строки
+```
+
+### Распределение по категориям
+
+| Категория | Файлов | Строк | Описание |
+|-----------|--------|-------|----------|
+| Оркестратор | 1 | 468 | Wiring, bridge-обработчики, тулбар |
+| Типы | 1 | 124 | Интерфейсы, константы, утилиты |
+| Хуки | 6 | 749 | Стейт форм, бизнес-логика табов |
+| Модалки | 7 | 1315 | UI модальных окон |
+| Компоненты | 4 | 479 | Переиспользуемые UI блоки |
+| Табы | 5 | 811 | Содержимое вкладок |
+| **Итого** | **24** | **3946** | vs 2994 оригинал (оверхед ~32% на импорты/интерфейсы) |
+
+### Ключевые решения
+
+1. **Каждый хук вызывает `useStore()` внутри себя** — убирает prop drilling на уровне хуков, совпадает с паттерном проекта.
+
+2. **`isSubmitting` разделён по хукам** — был один общий стейт на все формы, теперь каждый хук (`useSubscriptionForm`, `useNodeForm`, `useFilterForm`) имеет свой `isSubmitting`. Это попутный багфикс.
+
+3. **`getExtra`/`setExtra` перенесены в `useNodeForm`** — замыкание на `nodeForm` сохранено внутри хука.
+
+4. **`handleCopyNode`/`handleCopyAllNodes` остались в оркестраторе** — используют `manualNodeApi.export()` напрямую и shared state (`copiedNodeId`, `copiedAll`), нужны обоим табам (Unified и Manual).
+
+5. **`useDisclosure` живёт внутри хуков** — `onOpen` передаётся через пропсы в нужные табы.
+
+6. **NodeModal ~695 строк** — ожидаемо из-за 7 протоколов (SS, VMess, VLESS, Trojan, Hysteria2, TUIC, SOCKS) + TLS + Transport + Other JSON. Дальнейшая декомпозиция возможна, но не в этом этапе.
+
+### Pipeline-визуализация (Фаза 5 плана)
+
+В `SubscriptionCard` добавлен мини-бар pipeline под заголовком карточки:
+
+```
+[42 nodes] → [28 alive] → [12 in manual]
+```
+
+- **Всего нод:** `sub.nodes.length`
+- **Alive:** count нод с `healthResults[spKey(node)]?.alive === true`
+- **В manual:** count `manualNodes.filter(mn => mn.source_subscription_id === sub.id)`
+
+Проп `manualNodes` добавлен в `SubscriptionCard` и передаётся через `SubscriptionsTab`.
+
+### Верификация
+
+- ✅ `cd web && npm run build` — сборка без ошибок
+- ✅ TypeScript strict mode — все типы проверены
+- ✅ Все 5 табов сохранены (Unified, Manual, Subscriptions, Filters, Countries)
+- ✅ Все 7 модалок работают (Subscription, Node, Bulk, Filter, Export, Import, Country)
+- ✅ Bulk actions, health check, site check, export/import — функциональность сохранена
+
+### Файлы затронуты
+
+**Новые файлы (21):**
+- `web/src/features/nodes/types.ts`
+- `web/src/features/nodes/hooks/useNodeForm.ts`
+- `web/src/features/nodes/hooks/useSubscriptionForm.ts`
+- `web/src/features/nodes/hooks/useFilterForm.ts`
+- `web/src/features/nodes/hooks/useBulkAddForm.ts`
+- `web/src/features/nodes/hooks/useUnifiedTab.ts`
+- `web/src/features/nodes/hooks/useExportImport.ts`
+- `web/src/features/nodes/tabs/UnifiedNodesTab.tsx`
+- `web/src/features/nodes/tabs/ManualNodesTab.tsx`
+- `web/src/features/nodes/tabs/SubscriptionsTab.tsx`
+- `web/src/features/nodes/tabs/FiltersTab.tsx`
+- `web/src/features/nodes/tabs/CountryViewTab.tsx`
+- `web/src/features/nodes/components/NodeHealthChips.tsx`
+- `web/src/features/nodes/components/SubscriptionCard.tsx`
+- `web/src/features/nodes/components/BulkActionsBar.tsx`
+- `web/src/features/nodes/components/UnsupportedNodesAlert.tsx`
+- `web/src/features/nodes/modals/SubscriptionModal.tsx`
+- `web/src/features/nodes/modals/NodeModal.tsx`
+- `web/src/features/nodes/modals/BulkAddModal.tsx`
+- `web/src/features/nodes/modals/FilterModal.tsx`
+- `web/src/features/nodes/modals/ExportModal.tsx`
+- `web/src/features/nodes/modals/ImportModal.tsx`
+- `web/src/features/nodes/modals/CountryNodesModal.tsx`
+
+**Изменённые файлы (1):**
+- `web/src/pages/Subscriptions.tsx` — полностью переписан из монолита в оркестратор (2994 → 468 строк)
+
+---
+
 ## Этап 3: Quick Actions — связка Health Check → Manual
 
 **Задачи:**
