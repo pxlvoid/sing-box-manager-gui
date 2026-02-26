@@ -259,6 +259,7 @@ func (s *Server) setupRoutes() {
 		api.GET("/verification/status", s.getVerificationStatus)
 		api.POST("/verification/start", s.startVerificationScheduler)
 		api.POST("/verification/stop", s.stopVerificationScheduler)
+		api.GET("/pipeline/activity", s.getPipelineActivityLogs)
 
 		// Kernel management
 		api.GET("/kernel/info", s.getKernelInfo)
@@ -2498,16 +2499,16 @@ func (s *Server) runVerification(c *gin.Context) {
 func (s *Server) getVerificationStatus(c *gin.Context) {
 	settings := s.store.GetSettings()
 	result := gin.H{
-		"enabled":            settings.VerificationInterval > 0,
-		"interval_min":       settings.VerificationInterval,
-		"last_run_at":        s.scheduler.GetLastVerifyTime(),
-		"next_run_at":        s.scheduler.GetNextVerifyTime(),
-		"node_counts":        s.store.GetNodeCounts(),
-		"scheduler_running":  s.scheduler.IsRunning(),
-		"sub_update_enabled":     settings.SubscriptionInterval > 0,
+		"enabled":                 settings.VerificationInterval > 0,
+		"interval_min":            settings.VerificationInterval,
+		"last_run_at":             s.scheduler.GetLastVerifyTime(),
+		"next_run_at":             s.scheduler.GetNextVerifyTime(),
+		"node_counts":             s.store.GetNodeCounts(),
+		"scheduler_running":       s.scheduler.IsRunning(),
+		"sub_update_enabled":      settings.SubscriptionInterval > 0,
 		"sub_update_interval_min": settings.SubscriptionInterval,
-		"sub_next_update_at":     s.scheduler.GetNextUpdateTime(),
-		"auto_apply":             settings.AutoApply,
+		"sub_next_update_at":      s.scheduler.GetNextUpdateTime(),
+		"auto_apply":              settings.AutoApply,
 	}
 	c.JSON(http.StatusOK, gin.H{"data": result})
 }
@@ -3205,8 +3206,8 @@ func (s *Server) importMeasurements(c *gin.Context) {
 				Timestamp string `json:"timestamp"`
 				Mode      string `json:"mode"`
 				Result    struct {
-					Alive      bool           `json:"alive"`
-					Groups     map[string]int `json:"groups"`
+					Alive  bool           `json:"alive"`
+					Groups map[string]int `json:"groups"`
 				} `json:"result"`
 			}
 			if json.Unmarshal(raw, &entry) != nil {

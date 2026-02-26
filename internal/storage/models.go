@@ -13,22 +13,22 @@ const (
 
 // UnifiedNode represents a node in the unified lifecycle
 type UnifiedNode struct {
-	ID                  int64      `json:"id"`
-	Tag                 string     `json:"tag"`
-	Type                string     `json:"type"`
-	Server              string     `json:"server"`
-	ServerPort          int        `json:"server_port"`
-	Country             string     `json:"country,omitempty"`
-	CountryEmoji        string     `json:"country_emoji,omitempty"`
+	ID                  int64                  `json:"id"`
+	Tag                 string                 `json:"tag"`
+	Type                string                 `json:"type"`
+	Server              string                 `json:"server"`
+	ServerPort          int                    `json:"server_port"`
+	Country             string                 `json:"country,omitempty"`
+	CountryEmoji        string                 `json:"country_emoji,omitempty"`
 	Extra               map[string]interface{} `json:"extra,omitempty"`
-	Status              NodeStatus `json:"status"`
-	Source              string     `json:"source"`
-	GroupTag            string     `json:"group_tag,omitempty"`
-	ConsecutiveFailures int        `json:"consecutive_failures"`
-	LastCheckedAt       *time.Time `json:"last_checked_at,omitempty"`
-	CreatedAt           time.Time  `json:"created_at"`
-	PromotedAt          *time.Time `json:"promoted_at,omitempty"`
-	ArchivedAt          *time.Time `json:"archived_at,omitempty"`
+	Status              NodeStatus             `json:"status"`
+	Source              string                 `json:"source"`
+	GroupTag            string                 `json:"group_tag,omitempty"`
+	ConsecutiveFailures int                    `json:"consecutive_failures"`
+	LastCheckedAt       *time.Time             `json:"last_checked_at,omitempty"`
+	CreatedAt           time.Time              `json:"created_at"`
+	PromotedAt          *time.Time             `json:"promoted_at,omitempty"`
+	ArchivedAt          *time.Time             `json:"archived_at,omitempty"`
 }
 
 // ToNode converts UnifiedNode to the basic Node type used by config builder
@@ -87,7 +87,7 @@ type Traffic struct {
 // Node represents a proxy node
 type Node struct {
 	Tag          string                 `json:"tag"`
-	Type         string                 `json:"type"`                    // shadowsocks/vmess/vless/trojan/hysteria2/tuic
+	Type         string                 `json:"type"` // shadowsocks/vmess/vless/trojan/hysteria2/tuic
 	Server       string                 `json:"server"`
 	ServerPort   int                    `json:"server_port"`
 	Extra        map[string]interface{} `json:"extra,omitempty"`         // protocol-specific fields
@@ -200,7 +200,7 @@ type Rule struct {
 	Values   []string `json:"values"`    // rule value list
 	Outbound string   `json:"outbound"`  // target outbound
 	Enabled  bool     `json:"enabled"`
-	Priority int      `json:"priority"`  // priority (lower value = higher priority)
+	Priority int      `json:"priority"` // priority (lower value = higher priority)
 }
 
 // RuleGroup represents a preset rule group
@@ -254,15 +254,15 @@ type Settings struct {
 	ShadowsocksPassword string `json:"shadowsocks_password"`
 
 	// DNS configuration
-	ProxyDNS  string      `json:"proxy_dns"`        // proxy DNS
-	DirectDNS string      `json:"direct_dns"`       // direct DNS
-	Hosts     []HostEntry `json:"hosts,omitempty"`  // DNS hosts mapping
+	ProxyDNS  string      `json:"proxy_dns"`       // proxy DNS
+	DirectDNS string      `json:"direct_dns"`      // direct DNS
+	Hosts     []HostEntry `json:"hosts,omitempty"` // DNS hosts mapping
 
 	// control panel
-	WebPort        int    `json:"web_port"`          // management UI port
-	ClashAPIPort   int    `json:"clash_api_port"`    // Clash API port
-	ClashUIPath    string `json:"clash_ui_path"`     // Clash external UI path
-	ClashAPISecret string `json:"clash_api_secret"`  // Clash API secret
+	WebPort        int    `json:"web_port"`         // management UI port
+	ClashAPIPort   int    `json:"clash_api_port"`   // Clash API port
+	ClashUIPath    string `json:"clash_ui_path"`    // Clash external UI path
+	ClashAPISecret string `json:"clash_api_secret"` // Clash API secret
 
 	// final rule
 	FinalOutbound string `json:"final_outbound"` // default outbound
@@ -295,8 +295,8 @@ func DefaultSettings() *Settings {
 		AllowLAN:             false, // LAN access disabled by default
 		SocksPort:            0,     // disabled by default
 		HttpPort:             0,     // disabled by default
-		ShadowsocksPort:     8388,
-		ShadowsocksMethod:   "chacha20-ietf-poly1305",
+		ShadowsocksPort:      8388,
+		ShadowsocksMethod:    "chacha20-ietf-poly1305",
 		ProxyDNS:             "https://1.1.1.1/dns-query",
 		DirectDNS:            "https://dns.alidns.com/dns-query",
 		WebPort:              9090,
@@ -308,8 +308,8 @@ func DefaultSettings() *Settings {
 		AutoApply:            true, // auto-apply enabled by default
 		SubscriptionInterval: 60,   // default 60 minutes update interval
 		GithubProxy:          "",   // no proxy by default
-		VerificationInterval: 30,  // default 30 minutes
-		ArchiveThreshold:     10,  // default 10 consecutive failures
+		VerificationInterval: 30,   // default 30 minutes
+		ArchiveThreshold:     10,   // default 10 consecutive failures
 	}
 }
 
@@ -343,96 +343,96 @@ func DefaultRuleGroups() []RuleGroup {
 
 // CountryNames maps country codes to English names
 var CountryNames = map[string]string{
-	"HK": "Hong Kong",
-	"TW": "Taiwan",
-	"JP": "Japan",
-	"KR": "South Korea",
-	"SG": "Singapore",
-	"US": "United States",
-	"GB": "United Kingdom",
-	"DE": "Germany",
-	"FR": "France",
-	"NL": "Netherlands",
-	"AU": "Australia",
-	"CA": "Canada",
-	"RU": "Russia",
-	"IN": "India",
-	"BR": "Brazil",
-	"AR": "Argentina",
-	"TR": "Turkey",
-	"TH": "Thailand",
-	"VN": "Vietnam",
-	"MY": "Malaysia",
-	"PH": "Philippines",
-	"ID": "Indonesia",
-	"AE": "UAE",
-	"ZA": "South Africa",
-	"CH": "Switzerland",
-	"IT": "Italy",
-	"ES": "Spain",
-	"SE": "Sweden",
-	"NO": "Norway",
-	"FI": "Finland",
-	"DK": "Denmark",
-	"PL": "Poland",
-	"CZ": "Czech Republic",
-	"AT": "Austria",
-	"IE": "Ireland",
-	"PT": "Portugal",
-	"GR": "Greece",
-	"IL": "Israel",
-	"MX": "Mexico",
-	"CL": "Chile",
-	"CO": "Colombia",
-	"PE": "Peru",
+	"HK":    "Hong Kong",
+	"TW":    "Taiwan",
+	"JP":    "Japan",
+	"KR":    "South Korea",
+	"SG":    "Singapore",
+	"US":    "United States",
+	"GB":    "United Kingdom",
+	"DE":    "Germany",
+	"FR":    "France",
+	"NL":    "Netherlands",
+	"AU":    "Australia",
+	"CA":    "Canada",
+	"RU":    "Russia",
+	"IN":    "India",
+	"BR":    "Brazil",
+	"AR":    "Argentina",
+	"TR":    "Turkey",
+	"TH":    "Thailand",
+	"VN":    "Vietnam",
+	"MY":    "Malaysia",
+	"PH":    "Philippines",
+	"ID":    "Indonesia",
+	"AE":    "UAE",
+	"ZA":    "South Africa",
+	"CH":    "Switzerland",
+	"IT":    "Italy",
+	"ES":    "Spain",
+	"SE":    "Sweden",
+	"NO":    "Norway",
+	"FI":    "Finland",
+	"DK":    "Denmark",
+	"PL":    "Poland",
+	"CZ":    "Czech Republic",
+	"AT":    "Austria",
+	"IE":    "Ireland",
+	"PT":    "Portugal",
+	"GR":    "Greece",
+	"IL":    "Israel",
+	"MX":    "Mexico",
+	"CL":    "Chile",
+	"CO":    "Colombia",
+	"PE":    "Peru",
 	"NZ":    "New Zealand",
 	"OTHER": "Other",
 }
 
 // CountryEmojis maps country codes to flag emojis
 var CountryEmojis = map[string]string{
-	"HK": "🇭🇰",
-	"TW": "🇹🇼",
-	"JP": "🇯🇵",
-	"KR": "🇰🇷",
-	"SG": "🇸🇬",
-	"US": "🇺🇸",
-	"GB": "🇬🇧",
-	"DE": "🇩🇪",
-	"FR": "🇫🇷",
-	"NL": "🇳🇱",
-	"AU": "🇦🇺",
-	"CA": "🇨🇦",
-	"RU": "🇷🇺",
-	"IN": "🇮🇳",
-	"BR": "🇧🇷",
-	"AR": "🇦🇷",
-	"TR": "🇹🇷",
-	"TH": "🇹🇭",
-	"VN": "🇻🇳",
-	"MY": "🇲🇾",
-	"PH": "🇵🇭",
-	"ID": "🇮🇩",
-	"AE": "🇦🇪",
-	"ZA": "🇿🇦",
-	"CH": "🇨🇭",
-	"IT": "🇮🇹",
-	"ES": "🇪🇸",
-	"SE": "🇸🇪",
-	"NO": "🇳🇴",
-	"FI": "🇫🇮",
-	"DK": "🇩🇰",
-	"PL": "🇵🇱",
-	"CZ": "🇨🇿",
-	"AT": "🇦🇹",
-	"IE": "🇮🇪",
-	"PT": "🇵🇹",
-	"GR": "🇬🇷",
-	"IL": "🇮🇱",
-	"MX": "🇲🇽",
-	"CL": "🇨🇱",
-	"CO": "🇨🇴",
-	"PE": "🇵🇪",
+	"HK":    "🇭🇰",
+	"TW":    "🇹🇼",
+	"JP":    "🇯🇵",
+	"KR":    "🇰🇷",
+	"SG":    "🇸🇬",
+	"US":    "🇺🇸",
+	"GB":    "🇬🇧",
+	"DE":    "🇩🇪",
+	"FR":    "🇫🇷",
+	"NL":    "🇳🇱",
+	"AU":    "🇦🇺",
+	"CA":    "🇨🇦",
+	"RU":    "🇷🇺",
+	"IN":    "🇮🇳",
+	"BR":    "🇧🇷",
+	"AR":    "🇦🇷",
+	"TR":    "🇹🇷",
+	"TH":    "🇹🇭",
+	"VN":    "🇻🇳",
+	"MY":    "🇲🇾",
+	"PH":    "🇵🇭",
+	"ID":    "🇮🇩",
+	"AE":    "🇦🇪",
+	"ZA":    "🇿🇦",
+	"CH":    "🇨🇭",
+	"IT":    "🇮🇹",
+	"ES":    "🇪🇸",
+	"SE":    "🇸🇪",
+	"NO":    "🇳🇴",
+	"FI":    "🇫🇮",
+	"DK":    "🇩🇰",
+	"PL":    "🇵🇱",
+	"CZ":    "🇨🇿",
+	"AT":    "🇦🇹",
+	"IE":    "🇮🇪",
+	"PT":    "🇵🇹",
+	"GR":    "🇬🇷",
+	"IL":    "🇮🇱",
+	"MX":    "🇲🇽",
+	"CL":    "🇨🇱",
+	"CO":    "🇨🇴",
+	"PE":    "🇵🇪",
 	"NZ":    "🇳🇿",
 	"OTHER": "🌐",
 }
