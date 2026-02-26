@@ -121,6 +121,7 @@ export default function Rules() {
     proxyMode,
     proxyModeRunning,
     proxyModeSwitching,
+    proxyModeSwitchingTo,
     fetchProxyMode,
     setProxyMode,
   } = useStore();
@@ -883,7 +884,7 @@ export default function Rules() {
                   variant={proxyMode === mode ? 'solid' : 'bordered'}
                   color={proxyMode === mode ? 'primary' : 'default'}
                   isDisabled={proxyModeSwitching}
-                  isLoading={proxyModeSwitching && proxyMode !== mode}
+                  isLoading={proxyModeSwitching && proxyModeSwitchingTo === mode}
                   onPress={() => {
                     if (proxyMode !== mode) setProxyMode(mode);
                   }}

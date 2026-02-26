@@ -442,6 +442,7 @@ interface AppState {
   proxyModeRunning: boolean;
   proxyModeSource: 'runtime' | 'settings';
   proxyModeSwitching: boolean;
+  proxyModeSwitchingTo: ProxyMode | null;
   fetchProxyMode: () => Promise<void>;
   setProxyMode: (mode: ProxyMode) => Promise<void>;
 
@@ -493,6 +494,7 @@ export const useStore = create<AppState>((set, get) => ({
   proxyModeRunning: false,
   proxyModeSource: 'settings',
   proxyModeSwitching: false,
+  proxyModeSwitchingTo: null,
   stabilityStats: {},
   unsupportedNodes: [],
   loading: false,
@@ -1376,7 +1378,7 @@ export const useStore = create<AppState>((set, get) => ({
   },
 
   setProxyMode: async (mode: ProxyMode) => {
-    set({ proxyModeSwitching: true });
+    set({ proxyModeSwitching: true, proxyModeSwitchingTo: mode });
     try {
       const res = await proxyModeApi.set(mode);
       const data = res.data.data;
@@ -1387,7 +1389,7 @@ export const useStore = create<AppState>((set, get) => ({
         });
       }
       if (res.data.warning) {
-        toast.warning(res.data.warning);
+        toast.info(res.data.warning);
       } else {
         toast.success(`Proxy mode: ${mode}`);
       }
@@ -1395,7 +1397,7 @@ export const useStore = create<AppState>((set, get) => ({
       console.error('Failed to set proxy mode:', error);
       toast.error(error.response?.data?.error || 'Failed to set proxy mode');
     } finally {
-      set({ proxyModeSwitching: false });
+      set({ proxyModeSwitching: false, proxyModeSwitchingTo: null });
     }
   },
 
