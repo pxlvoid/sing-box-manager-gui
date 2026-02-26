@@ -891,30 +891,6 @@ export default function Dashboard() {
         </Card>
       </div>
 
-      {/* Subscription overview */}
-      <Card>
-        <CardHeader>
-          <h2 className="text-lg font-semibold">Subscription Overview</h2>
-        </CardHeader>
-        <CardBody>
-          {subscriptions.length === 0 ? (
-            <p className="text-gray-500 text-center py-4">No subscriptions yet. Go to the Nodes page to add one.</p>
-          ) : (
-            <div className="space-y-3">
-              {subscriptions.map((sub) => (
-                <div key={sub.id} className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 p-3 bg-gray-50 dark:bg-gray-800 rounded-lg">
-                  <div className="flex items-center gap-3">
-                    <Chip size="sm" color={sub.enabled ? 'success' : 'default'} variant="dot">{sub.name}</Chip>
-                    <span className="text-sm text-gray-500">{sub.node_count} nodes</span>
-                  </div>
-                  <span className="text-sm text-gray-400">Updated {new Date(sub.updated_at).toLocaleString()}</span>
-                </div>
-              ))}
-            </div>
-          )}
-        </CardBody>
-      </Card>
-
       {/* Error modal */}
       <Modal isOpen={errorModal.isOpen} onClose={() => setErrorModal({ ...errorModal, isOpen: false })}>
         <ModalContent>
