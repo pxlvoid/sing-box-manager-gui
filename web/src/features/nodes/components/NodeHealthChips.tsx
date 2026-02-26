@@ -1,4 +1,4 @@
-import { Chip } from '@nextui-org/react';
+import { Chip, Tooltip } from '@nextui-org/react';
 import type { NodeHealthResult, HealthCheckMode, NodeSiteCheckResult } from '../../../store';
 import { shortSiteLabel } from '../types';
 
@@ -20,47 +20,81 @@ export default function NodeHealthChips({ tag, healthResults, healthMode, siteCh
     ? siteTargets.map((site) => [site, siteResult.sites?.[site] ?? 0] as const)
     : [];
 
-  return (
-    <>
-      {result && (
-        <>
-          {isClashMode && Object.keys(result.groups).length > 0 ? (
-            <div className="flex flex-wrap gap-1 mt-1">
-              {Object.entries(result.groups).map(([group, delay]) => (
-                <Chip
-                  key={group}
-                  size="sm"
-                  variant="flat"
-                  color={delay > 0 ? (delay < 300 ? 'success' : 'warning') : 'danger'}
-                >
-                  {group}: {delay > 0 ? `${delay}ms` : 'Timeout'}
-                </Chip>
-              ))}
-            </div>
-          ) : (
-            <div className="flex flex-wrap gap-1 mt-1">
-              <Chip size="sm" variant="flat" color={result.alive ? 'success' : 'danger'}>
-                {result.alive ? 'Proxy: OK' : 'Proxy: Fail'}
-              </Chip>
-            </div>
-          )}
-        </>
-      )}
+  const checks: Array<{
+    label: string;
+    value: string;
+    status: 'success' | 'warning' | 'danger';
+  }> = [];
 
-      {orderedSiteEntries.length > 0 && (
-        <div className="flex flex-wrap gap-1 mt-1">
-          {orderedSiteEntries.map(([site, delay]) => (
-            <Chip
-              key={site}
-              size="sm"
-              variant="flat"
-              color={delay > 0 ? (delay < 800 ? 'success' : 'warning') : 'danger'}
-            >
-              {shortSiteLabel(site)}: {delay > 0 ? `${delay}ms` : 'Fail'}
-            </Chip>
-          ))}
+  if (result) {
+    if (isClashMode && Object.keys(result.groups).length > 0) {
+      Object.entries(result.groups).forEach(([group, delay]) => {
+        checks.push({
+          label: group,
+          value: delay > 0 ? `${delay}ms` : 'Timeout',
+          status: delay > 0 ? (delay < 300 ? 'success' : 'warning') : 'danger',
+        });
+      });
+    } else {
+      checks.push({
+        label: 'Proxy',
+        value: result.alive ? (result.tcp_latency_ms > 0 ? `${result.tcp_latency_ms}ms` : 'OK') : 'Fail',
+        status: result.alive ? 'success' : 'danger',
+      });
+    }
+  }
+
+  orderedSiteEntries.forEach(([site, delay]) => {
+    checks.push({
+      label: shortSiteLabel(site),
+      value: delay > 0 ? `${delay}ms` : 'Fail',
+      status: delay > 0 ? (delay < 800 ? 'success' : 'warning') : 'danger',
+    });
+  });
+
+  if (checks.length === 0) return null;
+
+  const failCount = checks.filter((check) => check.status === 'danger').length;
+  const warningCount = checks.filter((check) => check.status === 'warning').length;
+
+  const summaryColor: 'success' | 'warning' | 'danger' =
+    failCount > 0 ? 'danger' : warningCount > 0 ? 'warning' : 'success';
+
+  const summaryLabel =
+    failCount > 0
+      ? `Fail (${failCount})`
+      : warningCount > 0
+        ? `Slow (${warningCount})`
+        : checks.length > 1
+          ? `OK (${checks.length})`
+          : 'OK';
+
+  const detailRows = (
+    <div className="flex flex-col gap-1 py-1">
+      {checks.map((check, index) => (
+        <div key={`${check.label}-${index}`} className="flex items-center justify-between gap-4 text-xs min-w-[180px]">
+          <span className="text-default-600">{check.label}</span>
+          <span
+            className={
+              check.status === 'danger'
+                ? 'text-danger'
+                : check.status === 'warning'
+                  ? 'text-warning'
+                  : 'text-success'
+            }
+          >
+            {check.value}
+          </span>
         </div>
-      )}
-    </>
+      ))}
+    </div>
+  );
+
+  return (
+    <Tooltip content={detailRows} placement="top-start" showArrow delay={100}>
+      <Chip size="sm" variant="flat" color={summaryColor} className="cursor-help">
+        {summaryLabel}
+      </Chip>
+    </Tooltip>
   );
 }

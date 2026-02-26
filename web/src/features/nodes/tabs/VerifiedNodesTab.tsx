@@ -146,7 +146,7 @@ export default function VerifiedNodesTab({
             <TableColumn width={100}>Type</TableColumn>
             <TableColumn width={200}>Server:Port</TableColumn>
             <TableColumn width={180}>Last Checked</TableColumn>
-            <TableColumn width={200}>Health</TableColumn>
+            <TableColumn width={140}>Health</TableColumn>
             <TableColumn width={140}>Actions</TableColumn>
           </TableHeader>
           <TableBody>

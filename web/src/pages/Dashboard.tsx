@@ -494,7 +494,7 @@ export default function Dashboard() {
                   size="sm"
                   color="primary"
                   variant="flat"
-                  startContent={<RefreshCw className={`w-4 h-4 ${activeProxyRefreshing ? 'animate-spin' : ''}`} />}
+                  startContent={!activeProxyRefreshing ? <RefreshCw className="w-4 h-4" /> : undefined}
                   isLoading={activeProxyRefreshing}
                   isDisabled={!resolvedActiveProxyTag || verificationRunning}
                   onPress={handleRefreshActiveProxy}

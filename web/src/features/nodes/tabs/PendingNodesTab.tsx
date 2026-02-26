@@ -236,7 +236,7 @@ export default function PendingNodesTab({
             <TableColumn width={100}>Type</TableColumn>
             <TableColumn>Server</TableColumn>
             <TableColumn width={80}>Failures</TableColumn>
-            <TableColumn width={200}>Status / Health</TableColumn>
+            <TableColumn width={140}>Status / Health</TableColumn>
             <TableColumn width={160}>Actions</TableColumn>
           </TableHeader>
           <TableBody>
