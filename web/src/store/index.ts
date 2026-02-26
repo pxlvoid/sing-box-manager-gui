@@ -33,6 +33,28 @@ export interface UnsupportedNodeInfo {
   detected_at: string;
 }
 
+export interface GeoData {
+  id: number;
+  server: string;
+  server_port: number;
+  node_tag: string;
+  timestamp: string;
+  status: string;
+  country: string;
+  country_code: string;
+  region: string;
+  region_name: string;
+  city: string;
+  zip: string;
+  lat: number;
+  lon: number;
+  timezone: string;
+  isp: string;
+  org: string;
+  as: string;
+  query_ip: string;
+}
+
 const MAX_MEASUREMENTS_PER_NODE = 20;
 
 function appendHealthHistory(
@@ -352,6 +374,10 @@ interface AppState {
   // Unsupported nodes
   unsupportedNodes: UnsupportedNodeInfo[];
 
+  // GeoIP data
+  geoData: Record<string, GeoData>;
+  geoChecking: boolean;
+
   // Loading state
   loading: boolean;
 
@@ -434,6 +460,10 @@ interface AppState {
   recheckUnsupportedNodes: () => Promise<void>;
   deleteUnsupportedNodes: (tags?: string[]) => Promise<void>;
 
+  // GeoIP operations
+  fetchGeoData: () => Promise<void>;
+  runGeoCheck: (tags?: string[]) => Promise<void>;
+
   // Proxy group operations
   fetchProxyGroups: () => Promise<void>;
   switchProxy: (group: string, selected: string) => Promise<void>;
@@ -499,6 +529,8 @@ export const useStore = create<AppState>((set, get) => ({
   proxyModeSwitchingTo: null,
   stabilityStats: {},
   unsupportedNodes: [],
+  geoData: {},
+  geoChecking: false,
   loading: false,
 
   fetchSubscriptions: async () => {
@@ -1343,6 +1375,34 @@ export const useStore = create<AppState>((set, get) => ({
     } catch (error: any) {
       console.error('Failed to delete unsupported nodes:', error);
       toast.error(error.response?.data?.error || 'Failed to delete nodes');
+    }
+  },
+
+  fetchGeoData: async () => {
+    try {
+      const res = await nodeApi.getGeoData();
+      const data = res.data.data || [];
+      const geoMap: Record<string, GeoData> = {};
+      for (const g of data) {
+        geoMap[`${g.server}:${g.server_port}`] = g;
+      }
+      set({ geoData: geoMap });
+    } catch (error) {
+      console.error('Failed to fetch geo data:', error);
+    }
+  },
+
+  runGeoCheck: async (tags?: string[]) => {
+    try {
+      set({ geoChecking: true });
+      await nodeApi.geoCheck(tags);
+      await get().fetchGeoData();
+      toast.success('GeoIP check completed');
+    } catch (error: any) {
+      console.error('GeoIP check failed:', error);
+      toast.error(error.response?.data?.error || 'GeoIP check failed');
+    } finally {
+      set({ geoChecking: false });
     }
   },
 

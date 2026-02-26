@@ -15,10 +15,11 @@ import {
   Tooltip,
 } from '@nextui-org/react';
 import { Search, Activity, Trash2, ArrowDownCircle, Pencil } from 'lucide-react';
-import type { UnifiedNode } from '../../../store';
+import type { UnifiedNode, GeoData } from '../../../store';
 import type { NodeHealthResult, HealthCheckMode, NodeSiteCheckResult } from '../../../store';
 import { SITE_CHECK_TARGETS } from '../types';
 import NodeHealthChips from '../components/NodeHealthChips';
+import GeoChip from '../components/GeoChip';
 const PAGE_SIZE = 50;
 
 interface VerifiedNodesTabProps {
@@ -28,6 +29,7 @@ interface VerifiedNodesTabProps {
   healthCheckingNodes: string[];
   siteCheckResults: Record<string, NodeSiteCheckResult>;
   siteCheckingNodes: string[];
+  geoData: Record<string, GeoData>;
   checkSingleNodeHealth: (tag: string) => void;
   checkSingleNodeSites: (tag: string, targets: string[]) => void;
   onDemote: (id: number) => void;
@@ -42,6 +44,7 @@ export default function VerifiedNodesTab({
   healthCheckingNodes,
   siteCheckResults,
   siteCheckingNodes: _siteCheckingNodes,
+  geoData,
   checkSingleNodeHealth,
   checkSingleNodeSites: _checkSingleNodeSites,
   onDemote,
@@ -145,6 +148,7 @@ export default function VerifiedNodesTab({
             <TableColumn>Tag</TableColumn>
             <TableColumn width={100}>Type</TableColumn>
             <TableColumn width={200}>Server:Port</TableColumn>
+            <TableColumn width={160}>GeoIP</TableColumn>
             <TableColumn width={180}>Last Checked</TableColumn>
             <TableColumn width={140}>Health</TableColumn>
             <TableColumn width={140}>Actions</TableColumn>
@@ -171,6 +175,9 @@ export default function VerifiedNodesTab({
                     <span className="text-xs text-gray-500 truncate">
                       {node.server}:{node.server_port}
                     </span>
+                  </TableCell>
+                  <TableCell>
+                    <GeoChip geo={geoData[key]} claimedCountry={node.country} />
                   </TableCell>
                   <TableCell>
                     <span className="text-xs text-gray-500">

@@ -16,9 +16,10 @@ import {
   Tooltip,
 } from '@nextui-org/react';
 import { Search, Activity, Trash2, ArrowUpCircle, Archive, Pencil } from 'lucide-react';
-import type { UnifiedNode, NodeHealthResult, HealthCheckMode, NodeSiteCheckResult } from '../../../store';
+import type { UnifiedNode, NodeHealthResult, HealthCheckMode, NodeSiteCheckResult, GeoData } from '../../../store';
 import { spKey, SITE_CHECK_TARGETS } from '../types';
 import NodeHealthChips from '../components/NodeHealthChips';
+import GeoChip from '../components/GeoChip';
 
 const ITEMS_PER_PAGE = 50;
 
@@ -29,6 +30,7 @@ interface PendingNodesTabProps {
   healthCheckingNodes: string[];
   siteCheckResults: Record<string, NodeSiteCheckResult>;
   siteCheckingNodes: string[];
+  geoData: Record<string, GeoData>;
   checkSingleNodeHealth: (tag: string) => void;
   checkSingleNodeSites: (tag: string, targets: string[]) => void;
   onPromote: (id: number) => void;
@@ -46,6 +48,7 @@ export default function PendingNodesTab({
   healthCheckingNodes,
   siteCheckResults,
   siteCheckingNodes: _siteCheckingNodes,
+  geoData,
   checkSingleNodeHealth,
   checkSingleNodeSites: _checkSingleNodeSites,
   onPromote,
@@ -235,6 +238,7 @@ export default function PendingNodesTab({
             <TableColumn>Tag</TableColumn>
             <TableColumn width={100}>Type</TableColumn>
             <TableColumn>Server</TableColumn>
+            <TableColumn width={160}>GeoIP</TableColumn>
             <TableColumn width={80}>Failures</TableColumn>
             <TableColumn width={140}>Status / Health</TableColumn>
             <TableColumn width={160}>Actions</TableColumn>
@@ -266,6 +270,9 @@ export default function PendingNodesTab({
                   </TableCell>
                   <TableCell>
                     <span className="text-sm text-gray-500">{node.server}:{node.server_port}</span>
+                  </TableCell>
+                  <TableCell>
+                    <GeoChip geo={geoData[key]} claimedCountry={node.country} />
                   </TableCell>
                   <TableCell>
                     {failures > 0 ? (

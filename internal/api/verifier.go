@@ -147,6 +147,19 @@ func (s *Server) runVerificationWithTagFilter(tagSet map[string]struct{}) {
 		}
 	}
 
+	// 2.5. GeoIP lookup for alive nodes
+	if len(aliveCheckNodes) > 0 {
+		s.eventBus.Publish("verify:geo_start", map[string]interface{}{
+			"total_nodes": len(aliveCheckNodes),
+		})
+		if _, err := s.performGeoCheck(aliveCheckNodes); err != nil {
+			logger.Printf("[verifier] GeoIP check failed (continuing): %v", err)
+		}
+		s.eventBus.Publish("verify:geo_complete", map[string]interface{}{
+			"checked": len(aliveCheckNodes),
+		})
+	}
+
 	// 3. Process pending nodes
 	vlog.PendingChecked = len(pendingNodes)
 	for i, pn := range pendingNodes {
@@ -363,7 +376,7 @@ func (s *Server) archiveBrokenNodes(
 	}
 
 	// Run probe validation only (no actual start)
-	_, _, brokenNodes, err := s.probeManager.EnsureRunning(uniqueNodes)
+	_, _, _, brokenNodes, err := s.probeManager.EnsureRunning(uniqueNodes)
 	if err != nil && len(brokenNodes) == 0 {
 		// No broken nodes detected, just a general failure — skip
 		logger.Printf("[verifier] Probe pre-validation failed: %v", err)

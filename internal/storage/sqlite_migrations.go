@@ -30,6 +30,7 @@ func (s *SQLiteStore) migrate() error {
 		s.migrateV3,
 		s.migrateV4,
 		s.migrateV5,
+		s.migrateV6,
 	}
 
 	for i, m := range migrations {
@@ -492,4 +493,46 @@ func (s *SQLiteStore) migrateV5() error {
 	}
 
 	return nil
+}
+
+// migrateV6 creates the geo_data table for GeoIP lookup results.
+func (s *SQLiteStore) migrateV6() error {
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	stmts := []string{
+		`CREATE TABLE IF NOT EXISTS geo_data (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			server TEXT NOT NULL,
+			server_port INTEGER NOT NULL,
+			node_tag TEXT NOT NULL DEFAULT '',
+			timestamp TIMESTAMP NOT NULL,
+			status TEXT NOT NULL DEFAULT '',
+			country TEXT NOT NULL DEFAULT '',
+			country_code TEXT NOT NULL DEFAULT '',
+			region TEXT NOT NULL DEFAULT '',
+			region_name TEXT NOT NULL DEFAULT '',
+			city TEXT NOT NULL DEFAULT '',
+			zip TEXT NOT NULL DEFAULT '',
+			lat REAL NOT NULL DEFAULT 0,
+			lon REAL NOT NULL DEFAULT 0,
+			timezone TEXT NOT NULL DEFAULT '',
+			isp TEXT NOT NULL DEFAULT '',
+			org TEXT NOT NULL DEFAULT '',
+			as_info TEXT NOT NULL DEFAULT '',
+			query_ip TEXT NOT NULL DEFAULT ''
+		)`,
+		`CREATE UNIQUE INDEX IF NOT EXISTS idx_geo_server ON geo_data(server, server_port)`,
+	}
+
+	for _, stmt := range stmts {
+		if _, err := tx.Exec(stmt); err != nil {
+			return fmt.Errorf("exec %q: %w", stmt[:60], err)
+		}
+	}
+
+	return tx.Commit()
 }

@@ -2,9 +2,9 @@ import { useEffect, useState, useCallback } from 'react';
 import { Card, CardBody, CardHeader, Button, Chip, Spinner } from '@nextui-org/react';
 import {
   Stethoscope, RefreshCw, Activity, Wifi, Shield, Server,
-  Radio, FileCheck, Ear, ScrollText, Zap,
+  Radio, FileCheck, Ear, ScrollText, Zap, Globe,
 } from 'lucide-react';
-import { diagnosticApi, proxyApi } from '../api';
+import { diagnosticApi, proxyApi, nodeApi } from '../api';
 import { toast } from '../components/Toast';
 
 interface DiagnosticData {
@@ -118,10 +118,45 @@ function InfoRow({ label, value, mono }: { label: string; value: string | number
   );
 }
 
+interface GeoSummary {
+  total: number;
+  checked: number;
+  mismatchCount: number;
+  countries: Record<string, number>;
+  lastChecked: string | null;
+}
+
 export default function Diagnostics() {
   const [data, setData] = useState<DiagnosticData | null>(null);
   const [loading, setLoading] = useState(true);
   const [testingDelay, setTestingDelay] = useState(false);
+  const [geoSummary, setGeoSummary] = useState<GeoSummary | null>(null);
+
+  const fetchGeoSummary = useCallback(async () => {
+    try {
+      const resp = await nodeApi.getGeoData();
+      const geoList = resp.data.data || [];
+      const countries: Record<string, number> = {};
+      let lastChecked: string | null = null;
+      for (const g of geoList) {
+        if (g.status === 'success') {
+          countries[g.country_code] = (countries[g.country_code] || 0) + 1;
+          if (!lastChecked || g.timestamp > lastChecked) {
+            lastChecked = g.timestamp;
+          }
+        }
+      }
+      setGeoSummary({
+        total: geoList.length,
+        checked: geoList.filter((g: any) => g.status === 'success').length,
+        mismatchCount: 0, // Would need node data to compute; shown as 0 for now
+        countries,
+        lastChecked,
+      });
+    } catch {
+      // Silently fail — geo summary is optional
+    }
+  }, []);
 
   const fetchDiagnostics = useCallback(async () => {
     setLoading(true);
@@ -137,7 +172,8 @@ export default function Diagnostics() {
 
   useEffect(() => {
     fetchDiagnostics();
-  }, [fetchDiagnostics]);
+    fetchGeoSummary();
+  }, [fetchDiagnostics, fetchGeoSummary]);
 
   const handleTestConnectivity = async () => {
     if (!data?.active_proxy?.selected) return;
@@ -308,6 +344,39 @@ export default function Diagnostics() {
         <SectionCard icon={Activity} title="DNS Check" status={dnsStatusColor} statusLabel={dnsStatusLabel}>
           <InfoRow label="Proxy DNS" value={data.dns.proxy_dns || 'not set'} mono />
           <InfoRow label="Direct DNS" value={data.dns.direct_dns || 'not set'} mono />
+        </SectionCard>
+
+        {/* GeoIP Summary */}
+        <SectionCard
+          icon={Globe}
+          title="GeoIP Data"
+          status={geoSummary && geoSummary.checked > 0 ? 'success' : 'default'}
+          statusLabel={geoSummary ? `${geoSummary.checked} checked` : 'N/A'}
+        >
+          {geoSummary && geoSummary.checked > 0 ? (
+            <>
+              <InfoRow label="Nodes checked" value={geoSummary.checked} />
+              <InfoRow label="Unique countries" value={Object.keys(geoSummary.countries).length} />
+              <InfoRow
+                label="Last checked"
+                value={geoSummary.lastChecked ? new Date(geoSummary.lastChecked).toLocaleString() : '-'}
+              />
+              <div className="mt-2 flex flex-wrap gap-1">
+                {Object.entries(geoSummary.countries)
+                  .sort((a, b) => b[1] - a[1])
+                  .slice(0, 10)
+                  .map(([code, count]) => (
+                    <Chip key={code} size="sm" variant="flat" className="text-xs">
+                      {code}: {count}
+                    </Chip>
+                  ))}
+              </div>
+            </>
+          ) : (
+            <div className="text-xs text-gray-500 dark:text-gray-400">
+              No GeoIP data available. Run verification or manual GeoIP check.
+            </div>
+          )}
         </SectionCard>
 
         {/* Inbound Listeners */}

@@ -164,6 +164,29 @@ type NodeStabilityStats struct {
 	LatencyTrend  string  `json:"latency_trend"` // "up", "down", "stable"
 }
 
+// GeoData represents GeoIP lookup data for a node
+type GeoData struct {
+	ID          int64     `json:"id"`
+	Server      string    `json:"server"`
+	ServerPort  int       `json:"server_port"`
+	NodeTag     string    `json:"node_tag"`
+	Timestamp   time.Time `json:"timestamp"`
+	Status      string    `json:"status"`       // "success" / "fail"
+	Country     string    `json:"country"`       // "Germany"
+	CountryCode string    `json:"country_code"`  // "DE"
+	Region      string    `json:"region"`        // "HE"
+	RegionName  string    `json:"region_name"`   // "Hesse"
+	City        string    `json:"city"`
+	Zip         string    `json:"zip"`
+	Lat         float64   `json:"lat"`
+	Lon         float64   `json:"lon"`
+	Timezone    string    `json:"timezone"`
+	ISP         string    `json:"isp"`
+	Org         string    `json:"org"`
+	AS          string    `json:"as"`
+	QueryIP     string    `json:"query_ip"`
+}
+
 // CountryGroup represents a country-based node group
 type CountryGroup struct {
 	Code      string `json:"code"`       // country code (e.g. HK, US, JP)

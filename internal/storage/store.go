@@ -1,5 +1,7 @@
 package storage
 
+import "time"
+
 // Store defines the interface for all storage operations.
 type Store interface {
 	// Subscriptions
@@ -79,6 +81,15 @@ type Store interface {
 	AddSiteMeasurements(measurements []SiteMeasurement) error
 	GetSiteMeasurements(server string, port int, limit int) ([]SiteMeasurement, error)
 	GetLatestSiteMeasurements() ([]SiteMeasurement, error)
+
+	// GeoIP Data
+	UpsertGeoData(data GeoData) error
+	UpsertGeoDataBulk(data []GeoData) error
+	GetGeoData(server string, port int) (*GeoData, error)
+	GetAllGeoData() ([]GeoData, error)
+	GetStaleGeoNodes(maxAge time.Duration) ([]GeoData, error)
+	GetGeoDataBulk(keys []string) (map[string]*GeoData, error)
+	UpdateNodeCountry(server string, port int, countryCode, countryEmoji string) error
 
 	// Lifecycle
 	Close() error

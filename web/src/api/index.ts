@@ -107,6 +107,11 @@ export const nodeApi = {
     api.post('/nodes/health-check-single', { tag }, { timeout: 15000 }),
   siteCheck: (tags?: string[], sites?: string[]) =>
     api.post('/nodes/site-check', { tags, sites }, { timeout: 180000 }),
+  getGeoData: () => api.get('/nodes/geo'),
+  getNodeGeo: (server: string, port: number) =>
+    api.get(`/nodes/geo/${encodeURIComponent(server)}/${port}`),
+  geoCheck: (tags?: string[]) =>
+    api.post('/nodes/geo-check', { tags }, { timeout: 300000 }),
   getUnsupported: () => api.get('/nodes/unsupported'),
   recheckUnsupported: () => api.post('/nodes/unsupported/recheck'),
   clearUnsupported: () => api.delete('/nodes/unsupported'),

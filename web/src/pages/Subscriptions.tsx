@@ -70,6 +70,8 @@ export default function Subscriptions() {
     fetchUnsupportedNodes,
     recheckUnsupportedNodes,
     deleteUnsupportedNodes,
+    geoData,
+    fetchGeoData,
     fetchProbeStatus,
     fetchVerificationStatus,
     fetchLatestMeasurements,
@@ -93,6 +95,7 @@ export default function Subscriptions() {
     fetchProbeStatus();
     fetchVerificationStatus();
     fetchLatestMeasurements();
+    fetchGeoData();
   }, []);
 
   const handleDeleteSubscription = async (id: string) => {
@@ -198,6 +201,7 @@ export default function Subscriptions() {
             healthCheckingNodes={healthCheckingNodes}
             siteCheckResults={siteCheckResults}
             siteCheckingNodes={siteCheckingNodes}
+            geoData={geoData}
             checkSingleNodeHealth={checkSingleNodeHealth}
             checkSingleNodeSites={checkSingleNodeSites}
             onPromote={promoteNode}
@@ -217,6 +221,7 @@ export default function Subscriptions() {
             healthCheckingNodes={healthCheckingNodes}
             siteCheckResults={siteCheckResults}
             siteCheckingNodes={siteCheckingNodes}
+            geoData={geoData}
             checkSingleNodeHealth={checkSingleNodeHealth}
             checkSingleNodeSites={checkSingleNodeSites}
             onDemote={demoteNode}

@@ -62,7 +62,14 @@ func (s *SubscriptionService) Add(name, url string) (*storage.Subscription, erro
 	}
 
 	// Sync nodes to unified nodes table as pending
-	s.syncToUnifiedNodes(&sub)
+	added, total, _ := s.syncToUnifiedNodes(&sub)
+	if s.eventBus != nil {
+		s.eventBus.Publish("sub:nodes_synced", map[string]interface{}{
+			"total":   total,
+			"added":   added,
+			"skipped": total - added,
+		})
+	}
 
 	return &sub, nil
 }
@@ -101,7 +108,14 @@ func (s *SubscriptionService) Refresh(id string) error {
 	}
 
 	// Sync new nodes to unified nodes table as pending
-	s.syncToUnifiedNodes(sub)
+	added, total, _ := s.syncToUnifiedNodes(sub)
+	if s.eventBus != nil {
+		s.eventBus.Publish("sub:nodes_synced", map[string]interface{}{
+			"total":   total,
+			"added":   added,
+			"skipped": total - added,
+		})
+	}
 
 	return nil
 }
@@ -109,6 +123,7 @@ func (s *SubscriptionService) Refresh(id string) error {
 // RefreshAll refreshes all subscriptions
 func (s *SubscriptionService) RefreshAll() error {
 	subs := s.store.GetSubscriptions()
+	var totalAdded, totalAll int
 	for _, sub := range subs {
 		if sub.Enabled {
 			if err := s.refresh(&sub); err != nil {
@@ -118,17 +133,26 @@ func (s *SubscriptionService) RefreshAll() error {
 			if err := s.store.UpdateSubscription(sub); err != nil {
 				continue
 			}
-			// Sync new nodes to unified nodes table as pending
-			s.syncToUnifiedNodes(&sub)
+			added, total, _ := s.syncToUnifiedNodes(&sub)
+			totalAdded += added
+			totalAll += total
 		}
+	}
+	if s.eventBus != nil && totalAll > 0 {
+		s.eventBus.Publish("sub:nodes_synced", map[string]interface{}{
+			"total":   totalAll,
+			"added":   totalAdded,
+			"skipped": totalAll - totalAdded,
+		})
 	}
 	return nil
 }
 
 // syncToUnifiedNodes converts subscription nodes to unified nodes (pending) with deduplication.
-func (s *SubscriptionService) syncToUnifiedNodes(sub *storage.Subscription) (int, error) {
+// Returns (added, total, error).
+func (s *SubscriptionService) syncToUnifiedNodes(sub *storage.Subscription) (int, int, error) {
 	if len(sub.Nodes) == 0 {
-		return 0, nil
+		return 0, 0, nil
 	}
 
 	var unified []storage.UnifiedNode
@@ -147,14 +171,7 @@ func (s *SubscriptionService) syncToUnifiedNodes(sub *storage.Subscription) (int
 	}
 
 	added, err := s.store.AddNodesBulk(unified)
-	if s.eventBus != nil {
-		s.eventBus.Publish("sub:nodes_synced", map[string]interface{}{
-			"subscription_id": sub.ID,
-			"added":           added,
-			"skipped":         len(unified) - added,
-		})
-	}
-	return added, err
+	return added, len(unified), err
 }
 
 // refresh internal refresh method

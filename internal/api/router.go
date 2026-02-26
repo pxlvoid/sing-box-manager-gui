@@ -288,6 +288,11 @@ func (s *Server) setupRoutes() {
 		api.GET("/probe/status", s.getProbeStatus)
 		api.POST("/probe/stop", s.stopProbe)
 
+		// GeoIP
+		api.GET("/nodes/geo", s.getAllGeoData)
+		api.GET("/nodes/geo/:server/:port", s.getNodeGeoData)
+		api.POST("/nodes/geo-check", s.geoCheckNodes)
+
 		// Diagnostics
 		api.GET("/diagnostic", s.getDiagnostic)
 
@@ -1982,7 +1987,7 @@ func (s *Server) performHealthCheck(nodes []storage.Node) (map[string]*NodeHealt
 		}
 	}
 
-	port, tagMap, _, err := s.probeManager.EnsureRunning(uniqueNodes)
+	port, tagMap, _, _, err := s.probeManager.EnsureRunning(uniqueNodes)
 	if err != nil {
 		return nil, "", err
 	}
@@ -2151,7 +2156,7 @@ func (s *Server) performSiteCheck(nodes []storage.Node, targets []string) (map[s
 		}
 	}
 
-	port, tagMap, _, err := s.probeManager.EnsureRunning(uniqueNodes)
+	port, tagMap, _, _, err := s.probeManager.EnsureRunning(uniqueNodes)
 	if err != nil {
 		return nil, "", err
 	}

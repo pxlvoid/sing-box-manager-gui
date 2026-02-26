@@ -81,8 +81,8 @@ func pipelineActivityMessage(eventType string, data interface{}) (string, bool) 
 		return fmt.Sprintf("Subscription refreshed: %s (%d nodes)",
 			stringFromMap(m, "name"), intFromMap(m, "node_count")), true
 	case "sub:nodes_synced":
-		return fmt.Sprintf("Nodes synced: +%d added, %d skipped",
-			intFromMap(m, "added"), intFromMap(m, "skipped")), true
+		return fmt.Sprintf("Nodes synced: %d processed, +%d added, %d skipped",
+			intFromMap(m, "total"), intFromMap(m, "added"), intFromMap(m, "skipped")), true
 	case "probe:started":
 		return fmt.Sprintf("Probe started on port %d with %d nodes",
 			intFromMap(m, "port"), intFromMap(m, "node_count")), true

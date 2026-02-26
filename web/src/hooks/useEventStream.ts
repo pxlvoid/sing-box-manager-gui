@@ -135,7 +135,7 @@ export function useEventStream() {
 
       es.addEventListener('sub:nodes_synced', (e) => {
         const data = JSON.parse(e.data);
-        useStore.getState().addPipelineEvent('sub:nodes_synced', `Nodes synced: +${data.added} added, ${data.skipped} skipped`);
+        useStore.getState().addPipelineEvent('sub:nodes_synced', `Nodes synced: ${data.total} processed, +${data.added} added, ${data.skipped} skipped`);
       });
 
       es.addEventListener('probe:started', (e) => {
