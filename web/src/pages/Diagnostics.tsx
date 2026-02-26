@@ -7,6 +7,15 @@ import {
 import { diagnosticApi, proxyApi, nodeApi } from '../api';
 import { toast } from '../components/Toast';
 
+const countryCodeToEmoji = (code: string): string => {
+  const upper = code.toUpperCase();
+  if (upper.length !== 2) return '🌐';
+  return String.fromCodePoint(
+    0x1F1E6 + upper.charCodeAt(0) - 65,
+    0x1F1E6 + upper.charCodeAt(1) - 65,
+  );
+};
+
 interface DiagnosticData {
   service: {
     status: string;
@@ -367,7 +376,7 @@ export default function Diagnostics() {
                   .slice(0, 10)
                   .map(([code, count]) => (
                     <Chip key={code} size="sm" variant="flat" className="text-xs">
-                      {code}: {count}
+                      {countryCodeToEmoji(code)} {code}: {count}
                     </Chip>
                   ))}
               </div>
