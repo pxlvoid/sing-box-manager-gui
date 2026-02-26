@@ -423,6 +423,7 @@ interface AppState {
   fetchSystemInfo: () => Promise<void>;
 
   addSubscription: (name: string, url: string) => Promise<void>;
+  addSubscriptionsBulk: (subs: { name: string; url: string }[]) => Promise<{ added: number; failed: number }>;
   updateSubscription: (id: string, name: string, url: string) => Promise<void>;
   deleteSubscription: (id: string) => Promise<void>;
   refreshSubscription: (id: string) => Promise<void>;
@@ -717,6 +718,49 @@ export const useStore = create<AppState>((set, get) => ({
     } catch (error: any) {
       toast.error(error.response?.data?.error || 'Failed to add subscription');
       throw error;
+    } finally {
+      set({ loading: false });
+    }
+  },
+
+  addSubscriptionsBulk: async (subs: { name: string; url: string }[]) => {
+    const preparedSubs = subs
+      .map((sub) => ({ name: sub.name.trim(), url: sub.url.trim() }))
+      .filter((sub) => sub.name && sub.url);
+
+    if (preparedSubs.length === 0) {
+      return { added: 0, failed: 0 };
+    }
+
+    set({ loading: true });
+    let added = 0;
+    let failed = 0;
+
+    try {
+      for (const sub of preparedSubs) {
+        try {
+          await subscriptionApi.add(sub.name, sub.url);
+          added++;
+        } catch (error: any) {
+          failed++;
+          console.error(`Failed to add subscription ${sub.url}:`, error);
+        }
+      }
+
+      if (added > 0) {
+        await get().fetchSubscriptions();
+      }
+
+      if (added > 0 && failed === 0) {
+        toast.success(`Added ${added} subscription${added > 1 ? 's' : ''}`);
+      } else if (added > 0 && failed > 0) {
+        toast.success(`Added ${added} subscription${added > 1 ? 's' : ''}`);
+        toast.error(`Failed to add ${failed} subscription${failed > 1 ? 's' : ''}`);
+      } else {
+        toast.error(`Failed to add ${failed} subscription${failed > 1 ? 's' : ''}`);
+      }
+
+      return { added, failed };
     } finally {
       set({ loading: false });
     }
