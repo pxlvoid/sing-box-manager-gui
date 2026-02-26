@@ -5,6 +5,7 @@ import Subscriptions from './pages/Subscriptions';
 import Rules from './pages/Rules';
 import Settings from './pages/Settings';
 import Logs from './pages/Logs';
+import Diagnostics from './pages/Diagnostics';
 import { ToastContainer } from './components/Toast';
 import { useEventStream } from './hooks/useEventStream';
 
@@ -19,6 +20,7 @@ function AppInner() {
         <Route path="/rules" element={<Rules />} />
         <Route path="/logs" element={<Logs />} />
         <Route path="/settings" element={<Settings />} />
+        <Route path="/diagnostics" element={<Diagnostics />} />
       </Routes>
     </Layout>
   );

@@ -193,4 +193,9 @@ export const measurementApi = {
     api.get('/measurements/site', { params: { server, port, limit } }),
 };
 
+// Diagnostic API
+export const diagnosticApi = {
+  getAll: () => api.get('/diagnostic'),
+};
+
 export default api;

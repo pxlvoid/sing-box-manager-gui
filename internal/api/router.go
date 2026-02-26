@@ -288,6 +288,9 @@ func (s *Server) setupRoutes() {
 		api.GET("/probe/status", s.getProbeStatus)
 		api.POST("/probe/stop", s.stopProbe)
 
+		// Diagnostics
+		api.GET("/diagnostic", s.getDiagnostic)
+
 		// SSE event stream
 		api.GET("/events/stream", s.handleEventStream)
 
@@ -3427,4 +3430,202 @@ func (s *Server) saveSiteMeasurements(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"message": fmt.Sprintf("Saved %d measurements", len(req.Measurements))})
+}
+
+// ==================== Diagnostics ====================
+
+func (s *Server) getDiagnostic(c *gin.Context) {
+	result := gin.H{}
+
+	// 1. Service Status
+	running := s.processManager.IsRunning()
+	pid := s.processManager.GetPID()
+	version := ""
+	if v, err := s.processManager.Version(); err == nil {
+		version = v
+	}
+	serviceStatus := "ok"
+	if !running {
+		serviceStatus = "error"
+	}
+	result["service"] = gin.H{
+		"status":      serviceStatus,
+		"running":     running,
+		"pid":         pid,
+		"version":     version,
+		"sbm_version": s.version,
+	}
+
+	// 2. Settings & Inbound Listeners
+	settings := s.store.GetSettings()
+	var listeners []gin.H
+	if settings.MixedPort > 0 {
+		listeners = append(listeners, gin.H{"type": "mixed", "port": settings.MixedPort, "bind": settings.MixedAddress})
+	}
+	if settings.SocksPort > 0 {
+		listeners = append(listeners, gin.H{"type": "socks", "port": settings.SocksPort, "bind": settings.SocksAddress})
+	}
+	if settings.HttpPort > 0 {
+		listeners = append(listeners, gin.H{"type": "http", "port": settings.HttpPort, "bind": settings.HttpAddress})
+	}
+	if settings.ShadowsocksPort > 0 {
+		listeners = append(listeners, gin.H{"type": "shadowsocks", "port": settings.ShadowsocksPort, "bind": settings.ShadowsocksAddress, "method": settings.ShadowsocksMethod})
+	}
+	if settings.TunEnabled {
+		listeners = append(listeners, gin.H{"type": "tun", "port": "-", "bind": "-"})
+	}
+	result["listeners"] = gin.H{
+		"items": listeners,
+		"count": len(listeners),
+	}
+
+	// 3. DNS Check
+	result["dns"] = gin.H{
+		"proxy_dns":  settings.ProxyDNS,
+		"direct_dns": settings.DirectDNS,
+	}
+
+	// 4. Proxy Mode
+	settingsMode := storage.NormalizeProxyMode(settings.ProxyMode)
+	proxyModeData := gin.H{
+		"settings_mode": settingsMode,
+		"runtime_mode":  "",
+		"match":         false,
+		"source":        "settings",
+	}
+	if running {
+		resp, err := s.clashAPIRequest("GET", "/configs", nil)
+		if err == nil {
+			defer resp.Body.Close()
+			body, err := io.ReadAll(resp.Body)
+			if err == nil {
+				var configResp struct {
+					Mode string `json:"mode"`
+				}
+				if json.Unmarshal(body, &configResp) == nil && storage.IsValidProxyMode(configResp.Mode) {
+					runtimeMode := storage.NormalizeProxyMode(configResp.Mode)
+					proxyModeData["runtime_mode"] = runtimeMode
+					proxyModeData["match"] = (runtimeMode == settingsMode)
+					proxyModeData["source"] = "runtime"
+				}
+			}
+		}
+	}
+	result["proxy_mode"] = proxyModeData
+
+	// 5. Active Proxy (from Clash API)
+	activeProxy := gin.H{
+		"available": false,
+	}
+	var selectedProxyName string
+	if running {
+		resp, err := s.clashAPIRequest("GET", "/proxies", nil)
+		if err == nil {
+			defer resp.Body.Close()
+			body, err := io.ReadAll(resp.Body)
+			if err == nil {
+				var clashResp struct {
+					Proxies map[string]struct {
+						Type string   `json:"type"`
+						Now  string   `json:"now"`
+						All  []string `json:"all"`
+					} `json:"proxies"`
+				}
+				if json.Unmarshal(body, &clashResp) == nil {
+					if proxy, ok := clashResp.Proxies["Proxy"]; ok {
+						selectedProxyName = proxy.Now
+						activeProxy["available"] = true
+						activeProxy["selector"] = "Proxy"
+						activeProxy["selected"] = proxy.Now
+						activeProxy["total_nodes"] = len(proxy.All)
+
+						// Get info about the selected node
+						if selected, ok := clashResp.Proxies[proxy.Now]; ok {
+							activeProxy["selected_type"] = selected.Type
+						}
+					}
+				}
+			}
+		}
+	}
+	result["active_proxy"] = activeProxy
+
+	// 6. Connectivity Test
+	connectivity := gin.H{
+		"tested": false,
+	}
+	if running && selectedProxyName != "" {
+		delay := s.clashProxyDelay(settings.ClashAPIPort, settings.ClashAPISecret, selectedProxyName)
+		connectivity["tested"] = true
+		connectivity["node"] = selectedProxyName
+		connectivity["delay_ms"] = delay
+		if delay > 0 {
+			connectivity["status"] = "ok"
+		} else {
+			connectivity["status"] = "error"
+		}
+	}
+	result["connectivity"] = connectivity
+
+	// 7. Config Validation
+	configData := gin.H{
+		"valid": false,
+	}
+	configJSON, err := s.buildConfig()
+	if err != nil {
+		configData["error"] = err.Error()
+	} else {
+		configData["valid"] = true
+		// Parse to count outbounds/inbounds
+		var parsed struct {
+			Outbounds []struct {
+				Tag  string `json:"tag"`
+				Type string `json:"type"`
+			} `json:"outbounds"`
+			Inbounds []struct {
+				Tag  string `json:"tag"`
+				Type string `json:"type"`
+			} `json:"inbounds"`
+		}
+		if json.Unmarshal([]byte(configJSON), &parsed) == nil {
+			configData["outbound_count"] = len(parsed.Outbounds)
+			configData["inbound_count"] = len(parsed.Inbounds)
+
+			ssCount := 0
+			for _, ob := range parsed.Outbounds {
+				if ob.Type == "shadowsocks" {
+					ssCount++
+				}
+			}
+			configData["shadowsocks_nodes"] = ssCount
+		}
+	}
+	result["config"] = configData
+
+	// 8. Recent Logs
+	logsData := gin.H{}
+	logs, err := logger.ReadSingboxLogs(50)
+	if err != nil {
+		logsData["error"] = err.Error()
+		logsData["lines"] = []string{}
+	} else {
+		// Filter for ERROR/WARN
+		var filtered []string
+		for _, line := range logs {
+			upper := strings.ToUpper(line)
+			if strings.Contains(upper, "ERROR") || strings.Contains(upper, "WARN") {
+				filtered = append(filtered, line)
+			}
+		}
+		// Keep last 20
+		if len(filtered) > 20 {
+			filtered = filtered[len(filtered)-20:]
+		}
+		logsData["lines"] = filtered
+		logsData["total_recent"] = len(logs)
+		logsData["error_warn_count"] = len(filtered)
+	}
+	result["logs"] = logsData
+
+	c.JSON(http.StatusOK, gin.H{"data": result})
 }
