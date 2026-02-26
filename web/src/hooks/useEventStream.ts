@@ -89,20 +89,8 @@ export function useEventStream() {
         s.incrementRunCounter('demoted');
       });
 
-      es.addEventListener('verify:node_archived', (e) => {
-        const data = JSON.parse(e.data) as Record<string, unknown>;
-        const s = useStore.getState();
-        const failures = typeof data.failures === 'number' ? data.failures : Number(data.failures);
-        const reason = typeof data.reason === 'string' ? data.reason : '';
-        const node = formatNodeIdentity(data);
-        if (Number.isFinite(failures) && failures > 0) {
-          s.addPipelineEvent('verify:node_archived', `Node archived: ${node} (${failures} failures)`);
-        } else if (reason) {
-          s.addPipelineEvent('verify:node_archived', `Node archived: ${node} (${reason})`);
-        } else {
-          s.addPipelineEvent('verify:node_archived', `Node archived: ${node}`);
-        }
-        s.incrementRunCounter('archived');
+      es.addEventListener('verify:node_archived', () => {
+        useStore.getState().incrementRunCounter('archived');
       });
 
       es.addEventListener('verify:complete', (e) => {

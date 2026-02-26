@@ -960,7 +960,8 @@ export const useStore = create<AppState>((set, get) => ({
   fetchPipelineEvents: async (limit?: number) => {
     try {
       const res = await pipelineApi.getActivity(limit);
-      const logs = (res.data.data || []) as PipelineEvent[];
+      const logs = ((res.data.data || []) as PipelineEvent[])
+        .filter((event) => event.type !== 'verify:node_archived');
       const events = [...logs].reverse();
       for (const event of events) {
         if (event.id > _pipelineEventId) {

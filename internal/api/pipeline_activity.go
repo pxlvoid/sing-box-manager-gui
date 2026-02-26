@@ -56,17 +56,6 @@ func pipelineActivityMessage(eventType string, data interface{}) (string, bool) 
 		return fmt.Sprintf("Node promoted: %s", nodeIdentityFromMap(m)), true
 	case "verify:node_demoted":
 		return fmt.Sprintf("Node demoted: %s", nodeIdentityFromMap(m)), true
-	case "verify:node_archived":
-		node := nodeIdentityFromMap(m)
-		failures := intFromMap(m, "failures")
-		if failures > 0 {
-			return fmt.Sprintf("Node archived: %s (%d failures)", node, failures), true
-		}
-		reason := stringFromMap(m, "reason")
-		if reason != "" {
-			return fmt.Sprintf("Node archived: %s (%s)", node, reason), true
-		}
-		return fmt.Sprintf("Node archived: %s", node), true
 	case "verify:complete":
 		return fmt.Sprintf("Verification complete in %dms - promoted: %d, demoted: %d, archived: %d",
 			int64FromMap(m, "duration_ms"),
