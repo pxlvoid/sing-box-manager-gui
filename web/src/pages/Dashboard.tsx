@@ -1,10 +1,10 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Card, CardBody, CardHeader, Button, Chip, Input, Modal, ModalContent, ModalHeader, ModalBody, ModalFooter, Tooltip, Select, SelectItem, Spinner, Progress } from '@nextui-org/react';
 import { Play, Square, RefreshCw, Cpu, HardDrive, Wifi, Info, Activity, Copy, ClipboardCheck, Link, Globe, QrCode, Search, Stethoscope, ShieldCheck, Clock, CheckCircle, Archive } from 'lucide-react';
 import { useStore } from '../store';
 import type { NodeSiteCheckResult } from '../store';
 import { shortSiteLabel } from '../features/nodes/types';
-import { serviceApi, configApi, proxyApi } from '../api';
+import { serviceApi, configApi } from '../api';
 import { toast } from '../components/Toast';
 
 export default function Dashboard() {
@@ -26,9 +26,6 @@ export default function Dashboard() {
   const [qrLink, setQrLink] = useState<string | null>(null);
   const [proxyLinksOpen, setProxyLinksOpen] = useState(false);
   const [proxySearch, setProxySearch] = useState('');
-  const [activeProxyDelay, setActiveProxyDelay] = useState<number | null>(null);
-  const [checkingActiveProxyDelay, setCheckingActiveProxyDelay] = useState(false);
-  const activeProxyDelayRequestRef = useRef(0);
 
   const [errorModal, setErrorModal] = useState<{
     isOpen: boolean;
@@ -215,37 +212,6 @@ export default function Dashboard() {
     }
     return matchedOptions;
   }, [mainProxyGroup, normalizedProxySearch]);
-
-  const checkActiveProxyDelay = useCallback(async (proxyName: string) => {
-    const requestId = ++activeProxyDelayRequestRef.current;
-    setCheckingActiveProxyDelay(true);
-    try {
-      const res = await proxyApi.checkDelay(proxyName);
-      const delay = Number(res.data?.data?.delay) || 0;
-      if (requestId === activeProxyDelayRequestRef.current) {
-        setActiveProxyDelay(delay);
-      }
-    } catch (error) {
-      if (requestId === activeProxyDelayRequestRef.current) {
-        setActiveProxyDelay(null);
-      }
-      console.error('Failed to check proxy delay:', error);
-    } finally {
-      if (requestId === activeProxyDelayRequestRef.current) {
-        setCheckingActiveProxyDelay(false);
-      }
-    }
-  }, []);
-
-  useEffect(() => {
-    if (!serviceStatus?.running || !resolvedActiveProxyTag) {
-      activeProxyDelayRequestRef.current += 1;
-      setActiveProxyDelay(null);
-      setCheckingActiveProxyDelay(false);
-      return;
-    }
-    checkActiveProxyDelay(resolvedActiveProxyTag);
-  }, [serviceStatus?.running, resolvedActiveProxyTag, checkActiveProxyDelay]);
 
   return (
     <div className="space-y-6">
@@ -511,16 +477,6 @@ export default function Dashboard() {
                       <Chip size="sm" variant="flat" color="primary">{resolvedActiveProxyTag}</Chip>
                     </div>
                   )}
-                </div>
-                <div className="flex items-center gap-2">
-                  <Chip
-                    size="sm"
-                    variant="flat"
-                    color={activeProxyDelay === null ? 'default' : activeProxyDelay > 0 ? (activeProxyDelay < 300 ? 'success' : 'warning') : 'danger'}
-                  >
-                    {activeProxyDelay === null ? 'Ping: N/A' : activeProxyDelay > 0 ? `Ping: ${activeProxyDelay}ms` : 'Ping: Timeout'}
-                  </Chip>
-                  {checkingActiveProxyDelay && <Spinner size="sm" />}
                 </div>
               </div>
 
