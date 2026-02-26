@@ -173,6 +173,7 @@ export interface VerificationStatus {
   last_run_at?: string;
   next_run_at?: string;
   node_counts: NodeCounts;
+  scheduler_running: boolean;
 }
 
 export interface Subscription {
@@ -412,6 +413,8 @@ interface AppState {
   runVerification: () => Promise<void>;
   fetchVerificationStatus: () => Promise<void>;
   fetchVerificationLogs: (limit?: number) => Promise<void>;
+  startVerificationScheduler: () => Promise<void>;
+  stopVerificationScheduler: () => Promise<void>;
 
   updateSettings: (settings: Settings) => Promise<void>;
 
@@ -891,6 +894,26 @@ export const useStore = create<AppState>((set, get) => ({
       set({ verificationLogs: res.data.data || [] });
     } catch (error) {
       console.error('Failed to fetch verification logs:', error);
+    }
+  },
+
+  startVerificationScheduler: async () => {
+    try {
+      await verificationApi.start();
+      await get().fetchVerificationStatus();
+      toast.success('Scheduler started');
+    } catch (error: any) {
+      toast.error(error.response?.data?.error || 'Failed to start scheduler');
+    }
+  },
+
+  stopVerificationScheduler: async () => {
+    try {
+      await verificationApi.stop();
+      await get().fetchVerificationStatus();
+      toast.success('Scheduler stopped');
+    } catch (error: any) {
+      toast.error(error.response?.data?.error || 'Failed to stop scheduler');
     }
   },
 

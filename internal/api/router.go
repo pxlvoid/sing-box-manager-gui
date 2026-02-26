@@ -246,6 +246,8 @@ func (s *Server) setupRoutes() {
 		api.POST("/verification/run", s.runVerification)
 		api.GET("/verification/logs", s.getVerificationLogs)
 		api.GET("/verification/status", s.getVerificationStatus)
+		api.POST("/verification/start", s.startVerificationScheduler)
+		api.POST("/verification/stop", s.stopVerificationScheduler)
 
 		// Kernel management
 		api.GET("/kernel/info", s.getKernelInfo)
@@ -2429,13 +2431,24 @@ func (s *Server) runVerification(c *gin.Context) {
 func (s *Server) getVerificationStatus(c *gin.Context) {
 	settings := s.store.GetSettings()
 	result := gin.H{
-		"enabled":       settings.VerificationInterval > 0,
-		"interval_min":  settings.VerificationInterval,
-		"last_run_at":   s.scheduler.GetLastVerifyTime(),
-		"next_run_at":   s.scheduler.GetNextVerifyTime(),
-		"node_counts":   s.store.GetNodeCounts(),
+		"enabled":            settings.VerificationInterval > 0,
+		"interval_min":       settings.VerificationInterval,
+		"last_run_at":        s.scheduler.GetLastVerifyTime(),
+		"next_run_at":        s.scheduler.GetNextVerifyTime(),
+		"node_counts":        s.store.GetNodeCounts(),
+		"scheduler_running":  s.scheduler.IsRunning(),
 	}
 	c.JSON(http.StatusOK, gin.H{"data": result})
+}
+
+func (s *Server) startVerificationScheduler(c *gin.Context) {
+	s.scheduler.Start()
+	c.JSON(http.StatusOK, gin.H{"message": "Scheduler started"})
+}
+
+func (s *Server) stopVerificationScheduler(c *gin.Context) {
+	s.scheduler.Stop()
+	c.JSON(http.StatusOK, gin.H{"message": "Scheduler stopped"})
 }
 
 func (s *Server) getVerificationLogs(c *gin.Context) {

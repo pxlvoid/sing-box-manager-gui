@@ -12,6 +12,7 @@ export default function Dashboard() {
     fetchServiceStatus, fetchProbeStatus, stopProbe, fetchSubscriptions,
     fetchNodeCounts, fetchSystemInfo, fetchSettings, fetchUnsupportedNodes,
     fetchProxyGroups, switchProxy, runVerification, fetchVerificationStatus,
+    startVerificationScheduler, stopVerificationScheduler,
   } = useStore();
 
   const [copiedLink, setCopiedLink] = useState<string | null>(null);
@@ -496,16 +497,39 @@ export default function Dashboard() {
               {verificationStatus?.enabled ? `Every ${verificationStatus.interval_min}min` : 'Disabled'}
             </Chip>
           </div>
-          <Button
-            size="sm"
-            color="success"
-            variant="flat"
-            startContent={verificationRunning ? <Spinner size="sm" /> : <ShieldCheck className="w-4 h-4" />}
-            onPress={() => runVerification()}
-            isDisabled={verificationRunning}
-          >
-            Run Now
-          </Button>
+          <div className="flex gap-2">
+            {verificationStatus?.scheduler_running ? (
+              <Button
+                size="sm"
+                color="danger"
+                variant="flat"
+                startContent={<Square className="w-4 h-4" />}
+                onPress={() => stopVerificationScheduler()}
+              >
+                Stop
+              </Button>
+            ) : (
+              <Button
+                size="sm"
+                color="success"
+                variant="flat"
+                startContent={<Play className="w-4 h-4" />}
+                onPress={() => startVerificationScheduler()}
+              >
+                Start
+              </Button>
+            )}
+            <Button
+              size="sm"
+              color="success"
+              variant="flat"
+              startContent={verificationRunning ? <Spinner size="sm" /> : <ShieldCheck className="w-4 h-4" />}
+              onPress={() => runVerification()}
+              isDisabled={verificationRunning}
+            >
+              Run Now
+            </Button>
+          </div>
         </CardHeader>
         <CardBody>
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">

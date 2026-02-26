@@ -135,6 +135,8 @@ export const verificationApi = {
   run: () => api.post('/verification/run'),
   getLogs: (limit?: number) => api.get('/verification/logs', { params: { limit: limit || 20 } }),
   getStatus: () => api.get('/verification/status'),
+  start: () => api.post('/verification/start'),
+  stop: () => api.post('/verification/stop'),
 };
 
 // Kernel management API
