@@ -7,7 +7,10 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"regexp"
 	"sort"
+	"strconv"
+	"strings"
 	"sync"
 	"syscall"
 	"time"
@@ -16,6 +19,13 @@ import (
 	"github.com/xiaobei/singbox-manager/internal/logger"
 	"github.com/xiaobei/singbox-manager/internal/storage"
 )
+
+// BrokenNode describes a node that failed sing-box config validation.
+type BrokenNode struct {
+	Index int    // index in the original nodes slice
+	Tag   string // original node tag
+	Error string // validation error message
+}
 
 // ProbeStatus represents the current state of the probe sing-box instance.
 type ProbeStatus struct {
@@ -59,7 +69,8 @@ func (pm *ProbeManager) SetSingBoxPath(path string) {
 
 // Start launches a probe sing-box with a minimal config for the given nodes.
 // If already running, it stops the previous instance first.
-func (pm *ProbeManager) Start(nodes []storage.Node) error {
+// Returns the list of broken nodes that were excluded during config validation.
+func (pm *ProbeManager) Start(nodes []storage.Node) ([]BrokenNode, error) {
 	pm.mu.Lock()
 	defer pm.mu.Unlock()
 
@@ -67,34 +78,44 @@ func (pm *ProbeManager) Start(nodes []storage.Node) error {
 	pm.stopLocked()
 
 	if _, err := os.Stat(pm.singboxPath); os.IsNotExist(err) {
-		return fmt.Errorf("sing-box binary not found: %s", pm.singboxPath)
+		return nil, fmt.Errorf("sing-box binary not found: %s", pm.singboxPath)
 	}
 
 	port, err := getFreePort()
 	if err != nil {
-		return fmt.Errorf("failed to find free port: %w", err)
+		return nil, fmt.Errorf("failed to find free port: %w", err)
 	}
 
-	cfg, tagMap := buildProbeConfig(nodes, port)
+	// Validate config iteratively, removing broken nodes.
+	validNodes, brokenNodes, err := pm.validateProbeConfig(nodes, port)
+	if err != nil {
+		return brokenNodes, fmt.Errorf("probe config validation failed: %w", err)
+	}
+
+	if len(validNodes) == 0 {
+		return brokenNodes, fmt.Errorf("no valid nodes remaining after validation")
+	}
+
+	cfg, tagMap := buildProbeConfig(validNodes, port)
 	cfgJSON, err := json.MarshalIndent(cfg, "", "  ")
 	if err != nil {
-		return fmt.Errorf("failed to marshal config: %w", err)
+		return brokenNodes, fmt.Errorf("failed to marshal config: %w", err)
 	}
 
 	tmpFile, err := os.CreateTemp("", "sbm-probe-*.json")
 	if err != nil {
-		return fmt.Errorf("failed to create temp file: %w", err)
+		return brokenNodes, fmt.Errorf("failed to create temp file: %w", err)
 	}
 	tmpPath := tmpFile.Name()
 
 	if _, err := tmpFile.Write(cfgJSON); err != nil {
 		tmpFile.Close()
 		os.Remove(tmpPath)
-		return fmt.Errorf("failed to write config: %w", err)
+		return brokenNodes, fmt.Errorf("failed to write config: %w", err)
 	}
 	tmpFile.Close()
 
-	logger.Printf("[probe] Starting probe sing-box on port %d for %d nodes", port, len(nodes))
+	logger.Printf("[probe] Starting probe sing-box on port %d for %d nodes (%d broken excluded)", port, len(validNodes), len(brokenNodes))
 	cmd := exec.Command(pm.singboxPath, "run", "-c", tmpPath)
 	cmd.Dir = pm.dataDir
 
@@ -110,7 +131,7 @@ func (pm *ProbeManager) Start(nodes []storage.Node) error {
 
 	if err := cmd.Start(); err != nil {
 		os.Remove(tmpPath)
-		return fmt.Errorf("failed to start probe sing-box: %w", err)
+		return brokenNodes, fmt.Errorf("failed to start probe sing-box: %w", err)
 	}
 
 	pm.cmd = cmd
@@ -118,7 +139,7 @@ func (pm *ProbeManager) Start(nodes []storage.Node) error {
 	pm.pid = cmd.Process.Pid
 	pm.running = true
 	pm.configPath = tmpPath
-	pm.nodeTags = sortedNodeTags(nodes)
+	pm.nodeTags = sortedNodeTags(validNodes)
 	pm.tagMap = tagMap
 	pm.startedAt = time.Now()
 
@@ -130,10 +151,10 @@ func (pm *ProbeManager) Start(nodes []storage.Node) error {
 	// Wait for Clash API readiness (up to 5s).
 	if err := pm.waitForReady(port); err != nil {
 		pm.stopLocked()
-		return err
+		return brokenNodes, err
 	}
 
-	return nil
+	return brokenNodes, nil
 }
 
 // Stop kills the probe sing-box process.
@@ -182,7 +203,8 @@ func (pm *ProbeManager) stopLocked() {
 // EnsureRunning makes sure the probe is running with the given set of nodes.
 // If it's already running with the same nodes, it returns the existing port and tag map.
 // Otherwise it restarts with the new set.
-func (pm *ProbeManager) EnsureRunning(nodes []storage.Node) (int, *ProbeTagMap, error) {
+// Returns broken nodes that were excluded during config validation.
+func (pm *ProbeManager) EnsureRunning(nodes []storage.Node) (int, *ProbeTagMap, []BrokenNode, error) {
 	pm.mu.Lock()
 
 	// Check if the current instance is alive and has the same nodes.
@@ -190,21 +212,22 @@ func (pm *ProbeManager) EnsureRunning(nodes []storage.Node) (int, *ProbeTagMap, 
 		port := pm.port
 		tagMap := pm.tagMap
 		pm.mu.Unlock()
-		return port, tagMap, nil
+		return port, tagMap, nil, nil
 	}
 
 	pm.mu.Unlock()
 
 	// Need to (re)start.
-	if err := pm.Start(nodes); err != nil {
-		return 0, nil, err
+	brokenNodes, err := pm.Start(nodes)
+	if err != nil {
+		return 0, nil, brokenNodes, err
 	}
 
 	pm.mu.Lock()
 	port := pm.port
 	tagMap := pm.tagMap
 	pm.mu.Unlock()
-	return port, tagMap, nil
+	return port, tagMap, brokenNodes, nil
 }
 
 // Port returns the current Clash API port (0 if not running).
@@ -289,6 +312,150 @@ func (pm *ProbeManager) monitor(cmd *exec.Cmd, pid int) {
 		pm.nodeTags = nil
 		logger.Printf("[probe] Probe sing-box process exited, PID: %d", pid)
 	}
+}
+
+// validateProbeConfig runs `sing-box check` iteratively, removing broken nodes
+// until the config validates. Returns the list of valid nodes and broken nodes.
+func (pm *ProbeManager) validateProbeConfig(nodes []storage.Node, port int) ([]storage.Node, []BrokenNode, error) {
+	excluded := make(map[int]bool) // indices of broken nodes
+	var brokenNodes []BrokenNode
+	const maxIterations = 50
+
+	// Regex for parsing probe outbound errors: outbound[N] or outbounds[N]
+	outboundRe := regexp.MustCompile(`outbounds?\[(\d+)\]\.?([^:]*?):\s*(.+)`)
+	unknownTransportRe := regexp.MustCompile(`unknown transport type:\s*(.+)`)
+
+	for iter := 0; iter < maxIterations; iter++ {
+		// Build filtered node list
+		var validNodes []storage.Node
+		for i, n := range nodes {
+			if !excluded[i] {
+				validNodes = append(validNodes, n)
+			}
+		}
+
+		if len(validNodes) == 0 {
+			return nil, brokenNodes, fmt.Errorf("all nodes are broken")
+		}
+
+		cfg, _ := buildProbeConfig(validNodes, port)
+		cfgJSON, err := json.MarshalIndent(cfg, "", "  ")
+		if err != nil {
+			return nil, brokenNodes, err
+		}
+
+		tmpFile, err := os.CreateTemp("", "sbm-probe-validate-*.json")
+		if err != nil {
+			return nil, brokenNodes, err
+		}
+		tmpPath := tmpFile.Name()
+		tmpFile.Write(cfgJSON)
+		tmpFile.Close()
+
+		checkCmd := exec.Command(pm.singboxPath, "check", "-c", tmpPath)
+		output, checkErr := checkCmd.CombinedOutput()
+		os.Remove(tmpPath)
+
+		if checkErr == nil {
+			// Config is valid
+			if len(brokenNodes) > 0 {
+				tags := make([]string, len(brokenNodes))
+				for i, bn := range brokenNodes {
+					tags[i] = bn.Tag
+				}
+				logger.Printf("[probe] Excluded %d broken node(s): %s", len(brokenNodes), strings.Join(tags, ", "))
+			}
+			return validNodes, brokenNodes, nil
+		}
+
+		// Parse errors and find broken node indices
+		outputStr := string(output)
+		foundNew := false
+
+		// Parse outbound index errors (e.g. outbounds[5].transport: unknown transport type: xhttp)
+		for _, match := range outboundRe.FindAllStringSubmatch(outputStr, -1) {
+			if len(match) < 4 {
+				continue
+			}
+			idx, err := strconv.Atoi(match[1])
+			if err != nil {
+				continue
+			}
+			// Probe config has 2 system outbounds (DIRECT, REJECT) at the start
+			nodeIdx := idx - 2
+			if nodeIdx < 0 || nodeIdx >= len(validNodes) {
+				continue
+			}
+			// Map back to original index
+			origIdx := pm.findOriginalIndex(nodes, validNodes[nodeIdx], excluded)
+			if origIdx >= 0 && !excluded[origIdx] {
+				errMsg := strings.TrimSpace(match[3])
+				excluded[origIdx] = true
+				brokenNodes = append(brokenNodes, BrokenNode{
+					Index: origIdx,
+					Tag:   nodes[origIdx].Tag,
+					Error: errMsg,
+				})
+				foundNew = true
+				logger.Printf("[probe] Broken node detected: %s — %s", nodes[origIdx].Tag, errMsg)
+			}
+		}
+
+		// Parse unknown transport type (general, not index-based)
+		if !foundNew {
+			for _, match := range unknownTransportRe.FindAllStringSubmatch(outputStr, -1) {
+				if len(match) >= 2 {
+					logger.Printf("[probe] Unknown transport type in config: %s", match[1])
+				}
+			}
+		}
+
+		// Parse duplicate tag errors (shouldn't happen with probe_ prefix, but just in case)
+		dupRe := regexp.MustCompile(`duplicate outbound/endpoint tag:\s*(.+)`)
+		for _, match := range dupRe.FindAllStringSubmatch(outputStr, -1) {
+			if len(match) >= 2 {
+				dupTag := strings.TrimSpace(match[1])
+				// Find the node with this probe tag
+				for vi, vn := range validNodes {
+					probeTag := fmt.Sprintf("probe_%d", vi)
+					if probeTag == dupTag {
+						origIdx := pm.findOriginalIndex(nodes, vn, excluded)
+						if origIdx >= 0 && !excluded[origIdx] {
+							excluded[origIdx] = true
+							brokenNodes = append(brokenNodes, BrokenNode{
+								Index: origIdx,
+								Tag:   nodes[origIdx].Tag,
+								Error: fmt.Sprintf("duplicate tag: %s", dupTag),
+							})
+							foundNew = true
+						}
+						break
+					}
+				}
+			}
+		}
+
+		if !foundNew {
+			// Cannot auto-fix — return what we have with the error
+			return nil, brokenNodes, fmt.Errorf("probe config check failed: %s", outputStr)
+		}
+	}
+
+	return nil, brokenNodes, fmt.Errorf("probe config validation exceeded max iterations (%d)", maxIterations)
+}
+
+// findOriginalIndex finds the index of a node in the original slice, skipping excluded indices.
+func (pm *ProbeManager) findOriginalIndex(original []storage.Node, node storage.Node, excluded map[int]bool) int {
+	key := fmt.Sprintf("%s:%d", node.Server, node.ServerPort)
+	for i, n := range original {
+		if excluded[i] {
+			continue
+		}
+		if fmt.Sprintf("%s:%d", n.Server, n.ServerPort) == key && n.Tag == node.Tag {
+			return i
+		}
+	}
+	return -1
 }
 
 // ---------- helpers ----------

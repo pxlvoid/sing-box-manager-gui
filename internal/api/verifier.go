@@ -55,6 +55,34 @@ func (s *Server) RunVerification() {
 	// Combine all nodes for health check
 	var allCheckNodes []storage.Node
 	nodeMap := make(map[string]*storage.UnifiedNode) // server:port -> unified node
+	tagToUnified := make(map[string]*storage.UnifiedNode) // tag -> unified node
+
+	for i := range pendingNodes {
+		n := &pendingNodes[i]
+		key := fmt.Sprintf("%s:%d", n.Server, n.ServerPort)
+		nodeMap[key] = n
+		tagToUnified[n.Tag] = n
+		allCheckNodes = append(allCheckNodes, n.ToNode())
+	}
+	for i := range verifiedNodes {
+		n := &verifiedNodes[i]
+		key := fmt.Sprintf("%s:%d", n.Server, n.ServerPort)
+		nodeMap[key] = n
+		tagToUnified[n.Tag] = n
+		allCheckNodes = append(allCheckNodes, n.ToNode())
+	}
+
+	// 0. Pre-validate: run probe config validation to detect broken nodes
+	//    and archive them immediately before health checks.
+	configChanged := false
+	s.archiveBrokenNodes(allCheckNodes, tagToUnified, &vlog, &configChanged)
+
+	// Re-fetch nodes after archiving broken ones (they may have changed status)
+	pendingNodes = s.store.GetNodes(storage.NodeStatusPending)
+	verifiedNodes = s.store.GetNodes(storage.NodeStatusVerified)
+
+	allCheckNodes = allCheckNodes[:0]
+	nodeMap = make(map[string]*storage.UnifiedNode)
 
 	for i := range pendingNodes {
 		n := &pendingNodes[i]
@@ -67,6 +95,10 @@ func (s *Server) RunVerification() {
 		key := fmt.Sprintf("%s:%d", n.Server, n.ServerPort)
 		nodeMap[key] = n
 		allCheckNodes = append(allCheckNodes, n.ToNode())
+	}
+
+	if len(allCheckNodes) == 0 {
+		return
 	}
 
 	// 1. Health check via probe
@@ -88,8 +120,6 @@ func (s *Server) RunVerification() {
 		logger.Printf("[verifier] Site check failed (continuing with health only): %v", err)
 		// Continue — don't fail entirely, just use health check results
 	}
-
-	configChanged := false
 
 	// 3. Process pending nodes
 	vlog.PendingChecked = len(pendingNodes)
@@ -208,6 +238,76 @@ func (s *Server) RunVerification() {
 			logger.Printf("[verifier] Auto-apply failed: %v", err)
 		} else {
 			logger.Printf("[verifier] Config auto-applied")
+		}
+	}
+}
+
+// archiveBrokenNodes runs a dry-run probe config validation to detect
+// structurally invalid nodes (unsupported transport, broken config, etc.)
+// and archives them immediately.
+func (s *Server) archiveBrokenNodes(
+	nodes []storage.Node,
+	tagToUnified map[string]*storage.UnifiedNode,
+	vlog *storage.VerificationLog,
+	configChanged *bool,
+) {
+	// Deduplicate by server:port (same as performHealthCheck)
+	seen := make(map[string]bool, len(nodes))
+	var uniqueNodes []storage.Node
+	for _, n := range nodes {
+		key := fmt.Sprintf("%s:%d", n.Server, n.ServerPort)
+		if !seen[key] {
+			seen[key] = true
+			uniqueNodes = append(uniqueNodes, n)
+		}
+	}
+
+	// Run probe validation only (no actual start)
+	_, _, brokenNodes, err := s.probeManager.EnsureRunning(uniqueNodes)
+	if err != nil && len(brokenNodes) == 0 {
+		// No broken nodes detected, just a general failure — skip
+		logger.Printf("[verifier] Probe pre-validation failed: %v", err)
+		return
+	}
+
+	if len(brokenNodes) == 0 {
+		return
+	}
+
+	logger.Printf("[verifier] Found %d broken node(s) during probe validation", len(brokenNodes))
+
+	for _, bn := range brokenNodes {
+		un, ok := tagToUnified[bn.Tag]
+		if !ok {
+			// Try to find by server:port from the broken node
+			continue
+		}
+
+		// Archive the broken node immediately
+		if err := s.store.ArchiveNode(un.ID); err != nil {
+			logger.Printf("[verifier] Failed to archive broken node %d (%s): %v", un.ID, bn.Tag, err)
+			continue
+		}
+
+		vlog.PendingArchived++
+		*configChanged = true
+
+		s.eventBus.Publish("verify:node_archived", map[string]interface{}{
+			"tag":    bn.Tag,
+			"reason": fmt.Sprintf("broken config: %s", bn.Error),
+		})
+		logger.Printf("[verifier] Archived broken node: %s — %s", bn.Tag, bn.Error)
+
+		// Also record as unsupported node for visibility
+		unsup := storage.UnsupportedNode{
+			NodeTag:    bn.Tag,
+			Error:      bn.Error,
+			Server:     un.Server,
+			ServerPort: un.ServerPort,
+			DetectedAt: time.Now(),
+		}
+		if err := s.store.AddUnsupportedNode(unsup); err != nil {
+			logger.Printf("[verifier] Failed to persist unsupported node %s: %v", bn.Tag, err)
 		}
 	}
 }

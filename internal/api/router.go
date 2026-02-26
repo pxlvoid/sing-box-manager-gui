@@ -1964,7 +1964,7 @@ func (s *Server) performHealthCheck(nodes []storage.Node) (map[string]*NodeHealt
 		}
 	}
 
-	port, tagMap, err := s.probeManager.EnsureRunning(uniqueNodes)
+	port, tagMap, _, err := s.probeManager.EnsureRunning(uniqueNodes)
 	if err != nil {
 		return nil, "", err
 	}
@@ -2125,7 +2125,7 @@ func (s *Server) performSiteCheck(nodes []storage.Node, targets []string) (map[s
 		}
 	}
 
-	port, tagMap, err := s.probeManager.EnsureRunning(uniqueNodes)
+	port, tagMap, _, err := s.probeManager.EnsureRunning(uniqueNodes)
 	if err != nil {
 		return nil, "", err
 	}
