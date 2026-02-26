@@ -14,6 +14,7 @@ export default function Dashboard() {
     pendingNodes, verifiedNodes, archivedNodes, countryGroups,
     verificationStatus, verificationRunning,
     healthResults, siteCheckResults,
+    geoData, fetchGeoData,
     pipelineEvents, verificationProgress, runCounters,
     fetchServiceStatus, fetchProbeStatus, stopProbe, fetchSubscriptions,
     fetchNodeCounts, fetchSystemInfo, fetchSettings, fetchUnsupportedNodes, fetchNodes, fetchCountryGroups,
@@ -64,6 +65,7 @@ export default function Dashboard() {
     fetchVerificationStatus();
     fetchLatestMeasurements();
     fetchPipelineEvents();
+    fetchGeoData();
 
     const interval = setInterval(() => {
       fetchServiceStatus();
@@ -222,6 +224,20 @@ export default function Dashboard() {
   const getServerPortLabel = (tag: string): string => {
     const node = knownNodesByTag.get(tag);
     return node ? `${node.server}:${node.server_port}` : '';
+  };
+
+  const countryCodeToEmoji = (code: string): string => {
+    const upper = code.toUpperCase();
+    if (upper.length !== 2) return '';
+    return String.fromCodePoint(0x1F1E6 + upper.charCodeAt(0) - 65, 0x1F1E6 + upper.charCodeAt(1) - 65);
+  };
+
+  const getGeoLabel = (tag: string): { emoji: string; country: string } | null => {
+    const spLabel = getServerPortLabel(tag);
+    if (!spLabel) return null;
+    const geo = geoData[spLabel];
+    if (!geo || geo.status !== 'success' || !geo.country_code) return null;
+    return { emoji: countryCodeToEmoji(geo.country_code), country: `${geo.country} (${geo.country_code})` };
   };
 
   const getLatestMeasuredDelay = (tag: string): number | null => {
@@ -472,10 +488,10 @@ export default function Dashboard() {
           )}
 
           {/* Scheduler tasks */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
             {/* Subscription auto-update */}
             <div className="p-3 bg-gray-50 dark:bg-gray-800 rounded-lg space-y-2">
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 flex-wrap">
                 <RefreshCw className="w-4 h-4 text-blue-500" />
                 <span className="font-medium text-sm">Subscription Update</span>
                 <Chip size="sm" variant="flat" color={verificationStatus?.sub_update_enabled ? 'success' : 'default'}>
@@ -501,7 +517,7 @@ export default function Dashboard() {
                   {verificationStatus?.enabled ? `Every ${verificationStatus.interval_min}min` : 'Disabled'}
                 </Chip>
               </div>
-              <div className="grid grid-cols-2 gap-1 text-sm text-gray-500">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-1 text-sm text-gray-500">
                 <div>Last: {verificationStatus?.last_run_at ? new Date(verificationStatus.last_run_at).toLocaleString() : 'Never'}</div>
                 <div>Next: {verificationStatus?.next_run_at ? new Date(verificationStatus.next_run_at).toLocaleString() : '-'}</div>
                 <div>Threshold: {settings?.archive_threshold || 10} failures</div>
@@ -546,7 +562,7 @@ export default function Dashboard() {
       </Card>
 
       {/* Active Proxy */}
-      {serviceStatus?.running && mainProxyGroup && (
+      {mainProxyGroup && (
         <Card>
           <CardHeader>
             <div className="flex items-center gap-2">
@@ -559,6 +575,14 @@ export default function Dashboard() {
               <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
                 <div className="min-w-0">
                   <div className="flex items-center gap-2 flex-wrap min-w-0">
+                    {(() => {
+                      const geo = getGeoLabel(resolvedActiveProxyTag || mainProxyGroup.now);
+                      return geo ? (
+                        <Tooltip content={geo.country}>
+                          <span className="text-xl cursor-default">{geo.emoji}</span>
+                        </Tooltip>
+                      ) : null;
+                    })()}
                     <span className="font-semibold text-base truncate">{resolvedActiveProxyTag || mainProxyGroup.now}</span>
                     {getServerPortLabel(resolvedActiveProxyTag || mainProxyGroup.now) && (
                       <span className="text-xs text-gray-500 truncate">{getServerPortLabel(resolvedActiveProxyTag || mainProxyGroup.now)}</span>
@@ -638,14 +662,18 @@ export default function Dashboard() {
               >
                 {filteredMainProxyOptions.map((item) => {
                   const siteSummary = getSiteCheckSummary(item);
+                  const itemGeo = getGeoLabel(item);
                   return (
                     <SelectItem key={item} textValue={item}>
                       <div className="flex items-center justify-between gap-3">
-                        <div className="min-w-0">
-                          <p className="text-sm truncate">{item}</p>
-                          {getServerPortLabel(item) && (
-                            <p className="text-xs text-gray-500 truncate">{getServerPortLabel(item)}</p>
-                          )}
+                        <div className="flex items-center gap-2 min-w-0">
+                          {itemGeo && <span className="text-lg shrink-0">{itemGeo.emoji}</span>}
+                          <div className="min-w-0">
+                            <p className="text-sm truncate">{item}</p>
+                            {getServerPortLabel(item) && (
+                              <p className="text-xs text-gray-500 truncate">{getServerPortLabel(item)}</p>
+                            )}
+                          </div>
                         </div>
                         <div className="flex items-center gap-1 shrink-0">
                           {getLatestMeasuredDelay(item) !== null && (
@@ -727,78 +755,78 @@ export default function Dashboard() {
       </Modal>
 
       {/* Statistics cards */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3 sm:gap-4">
         <Card>
-          <CardBody className="flex flex-row items-center gap-4">
-            <div className="p-3 bg-blue-100 dark:bg-blue-900 rounded-lg">
-              <Wifi className="w-6 h-6 text-blue-600 dark:text-blue-300" />
+          <CardBody className="flex flex-row items-center gap-3 sm:gap-4 p-3 sm:p-4">
+            <div className="p-2 sm:p-3 bg-blue-100 dark:bg-blue-900 rounded-lg">
+              <Wifi className="w-5 h-5 sm:w-6 sm:h-6 text-blue-600 dark:text-blue-300" />
             </div>
-            <div>
-              <p className="text-sm text-gray-500">Subscriptions</p>
-              <p className="text-2xl font-bold">{enabledSubs} / {subscriptions.length}</p>
+            <div className="min-w-0">
+              <p className="text-xs sm:text-sm text-gray-500">Subscriptions</p>
+              <p className="text-xl sm:text-2xl font-bold">{enabledSubs} / {subscriptions.length}</p>
             </div>
           </CardBody>
         </Card>
 
         <Card>
-          <CardBody className="flex flex-row items-center gap-4">
-            <div className="p-3 bg-yellow-100 dark:bg-yellow-900 rounded-lg">
-              <Clock className="w-6 h-6 text-yellow-600 dark:text-yellow-300" />
+          <CardBody className="flex flex-row items-center gap-3 sm:gap-4 p-3 sm:p-4">
+            <div className="p-2 sm:p-3 bg-yellow-100 dark:bg-yellow-900 rounded-lg">
+              <Clock className="w-5 h-5 sm:w-6 sm:h-6 text-yellow-600 dark:text-yellow-300" />
             </div>
-            <div>
-              <p className="text-sm text-gray-500">Pending</p>
-              <p className="text-2xl font-bold">{nodeCounts.pending}</p>
-            </div>
-          </CardBody>
-        </Card>
-
-        <Card>
-          <CardBody className="flex flex-row items-center gap-4">
-            <div className="p-3 bg-green-100 dark:bg-green-900 rounded-lg">
-              <CheckCircle className="w-6 h-6 text-green-600 dark:text-green-300" />
-            </div>
-            <div>
-              <p className="text-sm text-gray-500">Verified</p>
-              <p className="text-2xl font-bold">{nodeCounts.verified}</p>
+            <div className="min-w-0">
+              <p className="text-xs sm:text-sm text-gray-500">Pending</p>
+              <p className="text-xl sm:text-2xl font-bold">{nodeCounts.pending}</p>
             </div>
           </CardBody>
         </Card>
 
         <Card>
-          <CardBody className="flex flex-row items-center gap-4">
-            <div className="p-3 bg-gray-100 dark:bg-gray-700 rounded-lg">
-              <Archive className="w-6 h-6 text-gray-600 dark:text-gray-300" />
+          <CardBody className="flex flex-row items-center gap-3 sm:gap-4 p-3 sm:p-4">
+            <div className="p-2 sm:p-3 bg-green-100 dark:bg-green-900 rounded-lg">
+              <CheckCircle className="w-5 h-5 sm:w-6 sm:h-6 text-green-600 dark:text-green-300" />
             </div>
-            <div>
-              <p className="text-sm text-gray-500">Archived</p>
-              <p className="text-2xl font-bold">{nodeCounts.archived}</p>
+            <div className="min-w-0">
+              <p className="text-xs sm:text-sm text-gray-500">Verified</p>
+              <p className="text-xl sm:text-2xl font-bold">{nodeCounts.verified}</p>
             </div>
           </CardBody>
         </Card>
 
         <Card>
-          <CardBody className="flex flex-row items-center gap-4">
-            <div className="p-3 bg-green-100 dark:bg-green-900 rounded-lg">
-              <HardDrive className="w-6 h-6 text-green-600 dark:text-green-300" />
+          <CardBody className="flex flex-row items-center gap-3 sm:gap-4 p-3 sm:p-4">
+            <div className="p-2 sm:p-3 bg-gray-100 dark:bg-gray-700 rounded-lg">
+              <Archive className="w-5 h-5 sm:w-6 sm:h-6 text-gray-600 dark:text-gray-300" />
             </div>
-            <div>
-              <p className="text-sm text-gray-500">Total Nodes</p>
-              <p className="text-2xl font-bold">{totalNodes}</p>
+            <div className="min-w-0">
+              <p className="text-xs sm:text-sm text-gray-500">Archived</p>
+              <p className="text-xl sm:text-2xl font-bold">{nodeCounts.archived}</p>
+            </div>
+          </CardBody>
+        </Card>
+
+        <Card className="col-span-2 sm:col-span-1">
+          <CardBody className="flex flex-row items-center gap-3 sm:gap-4 p-3 sm:p-4">
+            <div className="p-2 sm:p-3 bg-green-100 dark:bg-green-900 rounded-lg">
+              <HardDrive className="w-5 h-5 sm:w-6 sm:h-6 text-green-600 dark:text-green-300" />
+            </div>
+            <div className="min-w-0">
+              <p className="text-xs sm:text-sm text-gray-500">Total Nodes</p>
+              <p className="text-xl sm:text-2xl font-bold">{totalNodes}</p>
             </div>
           </CardBody>
         </Card>
       </div>
 
       {/* System Resources */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4">
         <Card>
-          <CardBody className="flex flex-row items-center gap-4">
-            <div className="p-3 bg-purple-100 dark:bg-purple-900 rounded-lg">
-              <Cpu className="w-6 h-6 text-purple-600 dark:text-purple-300" />
+          <CardBody className="flex flex-row items-center gap-3 sm:gap-4 p-3 sm:p-4">
+            <div className="p-2 sm:p-3 bg-purple-100 dark:bg-purple-900 rounded-lg">
+              <Cpu className="w-5 h-5 sm:w-6 sm:h-6 text-purple-600 dark:text-purple-300" />
             </div>
-            <div>
-              <p className="text-sm text-gray-500">sbm Resources</p>
-              <p className="text-lg font-bold">
+            <div className="min-w-0">
+              <p className="text-xs sm:text-sm text-gray-500">sbm Resources</p>
+              <p className="text-base sm:text-lg font-bold">
                 {systemInfo?.sbm ? (
                   <>
                     <span className="text-sm font-normal text-gray-500">CPU </span>
@@ -813,19 +841,42 @@ export default function Dashboard() {
         </Card>
 
         <Card>
-          <CardBody className="flex flex-row items-center gap-4">
-            <div className="p-3 bg-orange-100 dark:bg-orange-900 rounded-lg">
-              <Activity className="w-6 h-6 text-orange-600 dark:text-orange-300" />
+          <CardBody className="flex flex-row items-center gap-3 sm:gap-4 p-3 sm:p-4">
+            <div className="p-2 sm:p-3 bg-orange-100 dark:bg-orange-900 rounded-lg">
+              <Activity className="w-5 h-5 sm:w-6 sm:h-6 text-orange-600 dark:text-orange-300" />
             </div>
-            <div>
-              <p className="text-sm text-gray-500">sing-box Resources</p>
-              <p className="text-lg font-bold">
+            <div className="min-w-0">
+              <p className="text-xs sm:text-sm text-gray-500">sing-box Resources</p>
+              <p className="text-base sm:text-lg font-bold">
                 {serviceStatus?.running && systemInfo?.singbox ? (
                   <>
                     <span className="text-sm font-normal text-gray-500">CPU </span>
                     {systemInfo.singbox.cpu_percent.toFixed(1)}%
                     <span className="text-sm font-normal text-gray-500 ml-2">Mem </span>
                     {systemInfo.singbox.memory_mb.toFixed(1)}MB
+                  </>
+                ) : (
+                  <span className="text-gray-400">Not running</span>
+                )}
+              </p>
+            </div>
+          </CardBody>
+        </Card>
+
+        <Card>
+          <CardBody className="flex flex-row items-center gap-3 sm:gap-4 p-3 sm:p-4">
+            <div className="p-2 sm:p-3 bg-teal-100 dark:bg-teal-900 rounded-lg">
+              <Stethoscope className="w-5 h-5 sm:w-6 sm:h-6 text-teal-600 dark:text-teal-300" />
+            </div>
+            <div className="min-w-0">
+              <p className="text-xs sm:text-sm text-gray-500">Probe Resources</p>
+              <p className="text-base sm:text-lg font-bold">
+                {probeStatus?.running && systemInfo?.probe ? (
+                  <>
+                    <span className="text-sm font-normal text-gray-500">CPU </span>
+                    {systemInfo.probe.cpu_percent.toFixed(1)}%
+                    <span className="text-sm font-normal text-gray-500 ml-2">Mem </span>
+                    {systemInfo.probe.memory_mb.toFixed(1)}MB
                   </>
                 ) : (
                   <span className="text-gray-400">Not running</span>
