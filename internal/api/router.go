@@ -274,6 +274,10 @@ func (s *Server) setupRoutes() {
 		api.PUT("/proxy/groups/:name", s.switchProxyGroup)
 		api.GET("/proxy/delay/:name", s.getProxyDelay)
 
+		// Proxy mode
+		api.GET("/proxy/mode", s.getProxyMode)
+		api.PUT("/proxy/mode", s.setProxyMode)
+
 		// Debug API
 		api.GET("/debug/dump", s.debugDump)
 		api.GET("/debug/logs/singbox", s.debugSingboxLogs)
@@ -759,6 +763,13 @@ func (s *Server) updateSettings(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
+
+	// Preserve proxy_mode if not provided (backward compatibility)
+	if settings.ProxyMode == "" {
+		current := s.store.GetSettings()
+		settings.ProxyMode = current.ProxyMode
+	}
+	settings.ProxyMode = storage.NormalizeProxyMode(settings.ProxyMode)
 
 	// Handle secret based on LAN access setting
 	if settings.AllowLAN {
@@ -2817,6 +2828,186 @@ func (s *Server) getProxyDelay(c *gin.Context) {
 		"data": gin.H{
 			"name":  proxyName,
 			"delay": delay,
+		},
+	})
+}
+
+// ==================== Proxy Mode ====================
+
+func (s *Server) clashAPIRequest(method, path string, body io.Reader) (*http.Response, error) {
+	settings := s.store.GetSettings()
+	if settings.ClashAPIPort == 0 {
+		return nil, fmt.Errorf("Clash API port is not configured")
+	}
+	client := &http.Client{Timeout: 5 * time.Second}
+	url := fmt.Sprintf("http://127.0.0.1:%d%s", settings.ClashAPIPort, path)
+	req, err := http.NewRequest(method, url, body)
+	if err != nil {
+		return nil, err
+	}
+	if body != nil {
+		req.Header.Set("Content-Type", "application/json")
+	}
+	if settings.ClashAPISecret != "" {
+		req.Header.Set("Authorization", "Bearer "+settings.ClashAPISecret)
+	}
+	return client.Do(req)
+}
+
+func (s *Server) getProxyMode(c *gin.Context) {
+	settingsMode := storage.NormalizeProxyMode(s.store.GetSettings().ProxyMode)
+	running := s.processManager.IsRunning()
+
+	if !running {
+		c.JSON(http.StatusOK, gin.H{
+			"data": gin.H{
+				"mode":    settingsMode,
+				"running": false,
+				"source":  "settings",
+			},
+		})
+		return
+	}
+
+	// Try to read runtime mode from Clash API
+	resp, err := s.clashAPIRequest("GET", "/configs", nil)
+	if err != nil {
+		c.JSON(http.StatusOK, gin.H{
+			"data": gin.H{
+				"mode":    settingsMode,
+				"running": true,
+				"source":  "settings",
+			},
+			"warning": "Failed to read runtime mode: " + err.Error(),
+		})
+		return
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		c.JSON(http.StatusOK, gin.H{
+			"data": gin.H{
+				"mode":    settingsMode,
+				"running": true,
+				"source":  "settings",
+			},
+			"warning": "Failed to read runtime mode response",
+		})
+		return
+	}
+
+	var configResp struct {
+		Mode string `json:"mode"`
+	}
+	if err := json.Unmarshal(body, &configResp); err != nil || !storage.IsValidProxyMode(configResp.Mode) {
+		c.JSON(http.StatusOK, gin.H{
+			"data": gin.H{
+				"mode":    settingsMode,
+				"running": true,
+				"source":  "settings",
+			},
+			"warning": "Could not parse runtime mode",
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"data": gin.H{
+			"mode":    storage.NormalizeProxyMode(configResp.Mode),
+			"running": true,
+			"source":  "runtime",
+		},
+	})
+}
+
+func (s *Server) setProxyMode(c *gin.Context) {
+	var req struct {
+		Mode string `json:"mode" binding:"required"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	if !storage.IsValidProxyMode(req.Mode) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid proxy mode. Must be one of: rule, global, direct"})
+		return
+	}
+
+	mode := storage.NormalizeProxyMode(req.Mode)
+
+	// Save to DB
+	if err := s.store.UpdateProxyMode(mode); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to save proxy mode: " + err.Error()})
+		return
+	}
+
+	// Regenerate config and save to file
+	configJSON, err := s.buildConfig()
+	if err != nil {
+		c.JSON(http.StatusOK, gin.H{
+			"data": gin.H{
+				"mode":            mode,
+				"running":         s.processManager.IsRunning(),
+				"runtime_applied": false,
+			},
+			"warning": "Mode saved but config regeneration failed: " + err.Error(),
+		})
+		return
+	}
+
+	settings := s.store.GetSettings()
+	if err := s.saveConfigFile(s.resolvePath(settings.ConfigPath), configJSON); err != nil {
+		c.JSON(http.StatusOK, gin.H{
+			"data": gin.H{
+				"mode":            mode,
+				"running":         s.processManager.IsRunning(),
+				"runtime_applied": false,
+			},
+			"warning": "Mode saved but config file write failed: " + err.Error(),
+		})
+		return
+	}
+
+	running := s.processManager.IsRunning()
+
+	// If running, apply via Clash API PATCH /configs
+	if running {
+		patchBody, _ := json.Marshal(map[string]string{"mode": mode})
+		resp, err := s.clashAPIRequest("PATCH", "/configs", strings.NewReader(string(patchBody)))
+		if err != nil {
+			c.JSON(http.StatusOK, gin.H{
+				"data": gin.H{
+					"mode":            mode,
+					"running":         true,
+					"runtime_applied": false,
+				},
+				"warning": "Mode saved but runtime switch failed: " + err.Error(),
+			})
+			return
+		}
+		defer resp.Body.Close()
+
+		if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusNoContent {
+			respBody, _ := io.ReadAll(resp.Body)
+			c.JSON(http.StatusOK, gin.H{
+				"data": gin.H{
+					"mode":            mode,
+					"running":         true,
+					"runtime_applied": false,
+				},
+				"warning": "Mode saved but runtime switch failed: " + string(respBody),
+			})
+			return
+		}
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"data": gin.H{
+			"mode":            mode,
+			"running":         running,
+			"runtime_applied": running,
 		},
 	})
 }

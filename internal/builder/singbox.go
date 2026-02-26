@@ -997,7 +997,7 @@ func (b *ConfigBuilder) buildExperimental() *ExperimentalConfig {
 			ExternalController:    fmt.Sprintf("%s:%d", listenAddr, b.settings.ClashAPIPort),
 			ExternalUI:            b.settings.ClashUIPath,
 			Secret:                secret,
-			DefaultMode:           "rule",
+			DefaultMode:           storage.NormalizeProxyMode(b.settings.ProxyMode),
 		},
 		CacheFile: &CacheFileConfig{
 			Enabled:     true,

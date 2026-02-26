@@ -29,6 +29,7 @@ func (s *SQLiteStore) migrate() error {
 		s.migrateV2,
 		s.migrateV3,
 		s.migrateV4,
+		s.migrateV5,
 	}
 
 	for i, m := range migrations {
@@ -192,7 +193,8 @@ func (s *SQLiteStore) migrateV1() error {
 			auto_apply INTEGER NOT NULL DEFAULT 0,
 			subscription_interval INTEGER NOT NULL DEFAULT 0,
 			github_proxy TEXT NOT NULL DEFAULT '',
-			debug_api_enabled INTEGER NOT NULL DEFAULT 0
+			debug_api_enabled INTEGER NOT NULL DEFAULT 0,
+			proxy_mode TEXT NOT NULL DEFAULT 'rule'
 		)`,
 
 		// Unsupported nodes (PK by server:port)
@@ -457,4 +459,37 @@ func (s *SQLiteStore) migrateV3() error {
 	}
 
 	return tx.Commit()
+}
+
+func (s *SQLiteStore) migrateV5() error {
+	// Check if proxy_mode column already exists
+	rows, err := s.db.Query("PRAGMA table_info(settings)")
+	if err != nil {
+		return fmt.Errorf("pragma table_info: %w", err)
+	}
+	defer rows.Close()
+
+	hasProxyMode := false
+	for rows.Next() {
+		var cid int
+		var name, typ string
+		var notnull int
+		var dfltValue sql.NullString
+		var pk int
+		if err := rows.Scan(&cid, &name, &typ, &notnull, &dfltValue, &pk); err != nil {
+			return fmt.Errorf("scan pragma: %w", err)
+		}
+		if name == "proxy_mode" {
+			hasProxyMode = true
+			break
+		}
+	}
+
+	if !hasProxyMode {
+		if _, err := s.db.Exec(`ALTER TABLE settings ADD COLUMN proxy_mode TEXT NOT NULL DEFAULT 'rule'`); err != nil {
+			return fmt.Errorf("add proxy_mode column: %w", err)
+		}
+	}
+
+	return nil
 }
