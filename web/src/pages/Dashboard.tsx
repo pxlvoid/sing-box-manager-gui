@@ -17,6 +17,7 @@ export default function Dashboard() {
 
   const [copiedLink, setCopiedLink] = useState<string | null>(null);
   const [qrLink, setQrLink] = useState<string | null>(null);
+  const [proxyLinksOpen, setProxyLinksOpen] = useState(false);
   const [proxySearch, setProxySearch] = useState('');
   const [activeProxyDelay, setActiveProxyDelay] = useState<number | null>(null);
   const [checkingActiveProxyDelay, setCheckingActiveProxyDelay] = useState(false);
@@ -234,6 +235,11 @@ export default function Dashboard() {
               <Button size="sm" color="success" startContent={<Play className="w-4 h-4" />} onPress={handleStart}>Start</Button>
             )}
             <Button size="sm" color="primary" onPress={handleApplyConfig}>Apply Config</Button>
+            {proxyLinks.length > 0 && (
+              <Button size="sm" variant="flat" startContent={<Link className="w-4 h-4" />} onPress={() => setProxyLinksOpen(true)}>
+                Proxy Links
+              </Button>
+            )}
           </div>
         </CardHeader>
         <CardBody>
@@ -459,24 +465,14 @@ export default function Dashboard() {
         </Card>
       )}
 
-      {/* Proxy Links */}
-      {proxyLinks.length === 0 ? (
-        <Card>
-          <CardBody className="flex flex-row items-center gap-2 py-3">
-            <Link className="w-5 h-5 text-gray-400" />
-            <span className="font-semibold">Proxy Links</span>
-            <span className="text-gray-500 text-sm">— Set proxy addresses in Settings to generate links.</span>
-          </CardBody>
-        </Card>
-      ) : (
-        <Card>
-          <CardHeader>
-            <div className="flex items-center gap-2">
-              <Link className="w-5 h-5" />
-              <h2 className="text-lg font-semibold">Proxy Links</h2>
-            </div>
-          </CardHeader>
-          <CardBody>
+      {/* Proxy Links Modal */}
+      <Modal isOpen={proxyLinksOpen} onClose={() => setProxyLinksOpen(false)} size="lg">
+        <ModalContent>
+          <ModalHeader className="flex items-center gap-2">
+            <Link className="w-5 h-5" />
+            Proxy Links
+          </ModalHeader>
+          <ModalBody>
             <div className="space-y-2">
               {proxyLinks.map((item) => (
                 <div key={item.key} className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 p-3 bg-gray-50 dark:bg-gray-800 rounded-lg">
@@ -497,9 +493,12 @@ export default function Dashboard() {
                 </div>
               ))}
             </div>
-          </CardBody>
-        </Card>
-      )}
+          </ModalBody>
+          <ModalFooter>
+            <Button color="primary" variant="flat" onPress={() => setProxyLinksOpen(false)}>Close</Button>
+          </ModalFooter>
+        </ModalContent>
+      </Modal>
 
       {/* Statistics cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
