@@ -72,8 +72,10 @@ type Store interface {
 	GetHealthMeasurements(server string, port int, limit int) ([]HealthMeasurement, error)
 	GetHealthStats(server string, port int) (*HealthStats, error)
 	GetBulkHealthStats(days int) ([]NodeStabilityStats, error)
+	GetLatestHealthMeasurements() ([]HealthMeasurement, error)
 	AddSiteMeasurements(measurements []SiteMeasurement) error
 	GetSiteMeasurements(server string, port int, limit int) ([]SiteMeasurement, error)
+	GetLatestSiteMeasurements() ([]SiteMeasurement, error)
 
 	// Lifecycle
 	Close() error

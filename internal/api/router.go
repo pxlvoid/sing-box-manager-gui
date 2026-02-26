@@ -18,6 +18,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/gin-contrib/cors"
@@ -284,6 +285,7 @@ func (s *Server) setupRoutes() {
 		api.GET("/events/stream", s.handleEventStream)
 
 		// Measurements API
+		api.GET("/measurements/latest", s.getLatestMeasurements)
 		api.GET("/measurements/health", s.getHealthMeasurements)
 		api.GET("/measurements/health/stats", s.getHealthStats)
 		api.GET("/measurements/health/stats/bulk", s.getBulkHealthStats)
@@ -1973,6 +1975,8 @@ func (s *Server) performHealthCheck(nodes []storage.Node) (map[string]*NodeHealt
 	var mu sync.Mutex
 	sem := make(chan struct{}, 50)
 	var wg sync.WaitGroup
+	var completed atomic.Int32
+	total := int32(len(uniqueNodes))
 
 	for _, node := range uniqueNodes {
 		wg.Add(1)
@@ -2004,6 +2008,12 @@ func (s *Server) performHealthCheck(nodes []storage.Node) (map[string]*NodeHealt
 			mu.Lock()
 			results[key] = result
 			mu.Unlock()
+
+			cur := completed.Add(1)
+			s.eventBus.Publish("verify:health_progress", map[string]interface{}{
+				"current": cur,
+				"total":   total,
+			})
 		}(node)
 	}
 
@@ -2134,6 +2144,8 @@ func (s *Server) performSiteCheck(nodes []storage.Node, targets []string) (map[s
 	var mu sync.Mutex
 	sem := make(chan struct{}, 80)
 	var wg sync.WaitGroup
+	var completed atomic.Int32
+	total := int32(len(uniqueNodes))
 
 	for _, node := range uniqueNodes {
 		wg.Add(1)
@@ -2160,6 +2172,12 @@ func (s *Server) performSiteCheck(nodes []storage.Node, targets []string) (map[s
 			mu.Lock()
 			results[key] = result
 			mu.Unlock()
+
+			cur := completed.Add(1)
+			s.eventBus.Publish("verify:site_progress", map[string]interface{}{
+				"current": cur,
+				"total":   total,
+			})
 		}(node)
 	}
 
@@ -2996,6 +3014,68 @@ func (s *Server) handleEventStream(c *gin.Context) {
 }
 
 // ==================== Measurements API ====================
+
+func (s *Server) getLatestMeasurements(c *gin.Context) {
+	healthMeasurements, err := s.store.GetLatestHealthMeasurements()
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	siteMeasurements, err := s.store.GetLatestSiteMeasurements()
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	// Build health map: "server:port" -> { alive, latency_ms, timestamp, mode }
+	type HealthEntry struct {
+		Alive     bool   `json:"alive"`
+		LatencyMs int    `json:"latency_ms"`
+		Timestamp string `json:"timestamp"`
+		Mode      string `json:"mode"`
+		NodeTag   string `json:"node_tag"`
+	}
+	healthMap := make(map[string]HealthEntry)
+	for _, m := range healthMeasurements {
+		key := fmt.Sprintf("%s:%d", m.Server, m.ServerPort)
+		healthMap[key] = HealthEntry{
+			Alive:     m.Alive,
+			LatencyMs: m.LatencyMs,
+			Timestamp: m.Timestamp.Format(time.RFC3339),
+			Mode:      m.Mode,
+			NodeTag:   m.NodeTag,
+		}
+	}
+
+	// Build site map: "server:port" -> { sites: { site: delay_ms }, timestamp, mode, node_tag }
+	type SiteEntry struct {
+		Sites     map[string]int `json:"sites"`
+		Timestamp string         `json:"timestamp"`
+		Mode      string         `json:"mode"`
+		NodeTag   string         `json:"node_tag"`
+	}
+	siteMap := make(map[string]SiteEntry)
+	for _, m := range siteMeasurements {
+		key := fmt.Sprintf("%s:%d", m.Server, m.ServerPort)
+		entry, ok := siteMap[key]
+		if !ok {
+			entry = SiteEntry{
+				Sites:     make(map[string]int),
+				Timestamp: m.Timestamp.Format(time.RFC3339),
+				Mode:      m.Mode,
+				NodeTag:   m.NodeTag,
+			}
+		}
+		entry.Sites[m.Site] = m.DelayMs
+		siteMap[key] = entry
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"health": healthMap,
+		"sites":  siteMap,
+	})
+}
 
 func (s *Server) getHealthMeasurements(c *gin.Context) {
 	server := c.Query("server")

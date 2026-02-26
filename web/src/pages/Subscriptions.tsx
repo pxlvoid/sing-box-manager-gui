@@ -72,6 +72,7 @@ export default function Subscriptions() {
     deleteUnsupportedNodes,
     fetchProbeStatus,
     fetchVerificationStatus,
+    fetchLatestMeasurements,
   } = useStore();
 
   // Form hooks
@@ -91,6 +92,7 @@ export default function Subscriptions() {
     fetchUnsupportedNodes();
     fetchProbeStatus();
     fetchVerificationStatus();
+    fetchLatestMeasurements();
   }, []);
 
   const handleDeleteSubscription = async (id: string) => {

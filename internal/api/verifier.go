@@ -115,6 +115,9 @@ func (s *Server) RunVerification() {
 
 	// 2. Site check via probe (mandatory sites)
 	siteTargets := []string{"chatgpt.com", "youtube.com", "instagram.com", "2ip.ru"}
+	s.eventBus.Publish("verify:site_start", map[string]interface{}{
+		"total_nodes": len(allCheckNodes),
+	})
 	siteResults, _, err := s.performSiteCheck(allCheckNodes, siteTargets)
 	if err != nil {
 		logger.Printf("[verifier] Site check failed (continuing with health only): %v", err)

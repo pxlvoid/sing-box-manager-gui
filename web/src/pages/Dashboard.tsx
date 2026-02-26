@@ -2,6 +2,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Card, CardBody, CardHeader, Button, Chip, Input, Modal, ModalContent, ModalHeader, ModalBody, ModalFooter, Tooltip, Select, SelectItem, Spinner, Progress } from '@nextui-org/react';
 import { Play, Square, RefreshCw, Cpu, HardDrive, Wifi, Info, Activity, Copy, ClipboardCheck, Link, Globe, QrCode, Search, Stethoscope, ShieldCheck, Clock, CheckCircle, Archive } from 'lucide-react';
 import { useStore } from '../store';
+import type { NodeSiteCheckResult } from '../store';
+import { shortSiteLabel } from '../features/nodes/types';
 import { serviceApi, configApi, proxyApi } from '../api';
 import { toast } from '../components/Toast';
 
@@ -9,11 +11,13 @@ export default function Dashboard() {
   const {
     serviceStatus, probeStatus, subscriptions, nodeCounts, systemInfo, settings, proxyGroups,
     verificationStatus, verificationRunning,
+    healthResults, healthMode, siteCheckResults,
     pipelineEvents, verificationProgress, runCounters,
     fetchServiceStatus, fetchProbeStatus, stopProbe, fetchSubscriptions,
     fetchNodeCounts, fetchSystemInfo, fetchSettings, fetchUnsupportedNodes,
     fetchProxyGroups, switchProxy, runVerification, fetchVerificationStatus,
     startVerificationScheduler, stopVerificationScheduler,
+    fetchLatestMeasurements,
   } = useStore();
 
   const activityFeedRef = useRef<HTMLDivElement>(null);
@@ -57,6 +61,7 @@ export default function Dashboard() {
     fetchSettings();
     fetchProxyGroups();
     fetchVerificationStatus();
+    fetchLatestMeasurements();
 
     const interval = setInterval(() => {
       fetchServiceStatus();
@@ -350,21 +355,27 @@ export default function Dashboard() {
               <div className="flex justify-between text-sm">
                 <span className="text-gray-600 dark:text-gray-400">
                   {verificationProgress.phase === 'health_check'
-                    ? `Health checking ${verificationProgress.total} nodes...`
+                    ? `Health check: ${verificationProgress.current}/${verificationProgress.total}`
+                    : verificationProgress.phase === 'site_check'
+                    ? `Site check: ${verificationProgress.current}/${verificationProgress.total}`
                     : `Checking ${verificationProgress.phase} nodes`}
                 </span>
                 <span className="font-medium">
-                  {verificationProgress.phase === 'health_check'
-                    ? ''
+                  {verificationProgress.phase === 'health_check' || verificationProgress.phase === 'site_check'
+                    ? `${verificationProgress.current}/${verificationProgress.total}`
                     : `${verificationProgress.current}/${verificationProgress.total}`}
                 </span>
               </div>
               <Progress
                 size="md"
-                value={verificationProgress.phase === 'health_check' ? undefined : verificationProgress.current}
-                maxValue={verificationProgress.phase === 'health_check' ? undefined : verificationProgress.total}
-                isIndeterminate={verificationProgress.phase === 'health_check'}
-                color={verificationProgress.phase === 'pending' ? 'warning' : verificationProgress.phase === 'health_check' ? 'primary' : 'success'}
+                value={verificationProgress.current}
+                maxValue={verificationProgress.total || 1}
+                color={
+                  verificationProgress.phase === 'pending' ? 'warning'
+                  : verificationProgress.phase === 'health_check' ? 'primary'
+                  : verificationProgress.phase === 'site_check' ? 'secondary'
+                  : 'success'
+                }
                 className="w-full"
               />
             </div>
@@ -482,6 +493,33 @@ export default function Dashboard() {
                   </Button>
                 </div>
               </div>
+
+              {/* Health & Site check results for active proxy */}
+              {(() => {
+                const activeTag = mainProxyGroup.now;
+                const health = healthResults[activeTag];
+                const siteResult: NodeSiteCheckResult | undefined = siteCheckResults[activeTag];
+                if (!health && !siteResult) return null;
+                return (
+                  <div className="flex flex-wrap gap-1">
+                    {health && (
+                      <Chip size="sm" variant="flat" color={health.alive ? 'success' : 'danger'}>
+                        {health.alive ? (health.tcp_latency_ms > 0 ? `Health: ${health.tcp_latency_ms}ms` : 'Health: OK') : 'Health: Fail'}
+                      </Chip>
+                    )}
+                    {siteResult && Object.entries(siteResult.sites).map(([site, delay]) => (
+                      <Chip
+                        key={site}
+                        size="sm"
+                        variant="flat"
+                        color={delay > 0 ? (delay < 800 ? 'success' : 'warning') : 'danger'}
+                      >
+                        {shortSiteLabel(site)}: {delay > 0 ? `${delay}ms` : 'Fail'}
+                      </Chip>
+                    ))}
+                  </div>
+                );
+              })()}
 
               <Input
                 size="lg"

@@ -171,6 +171,7 @@ export const debugApi = {
 
 // Measurement API
 export const measurementApi = {
+  getLatest: () => api.get('/measurements/latest'),
   getHealth: (server: string, port: number, limit?: number) =>
     api.get('/measurements/health', { params: { server, port, limit } }),
   getHealthStats: (server: string, port: number) =>

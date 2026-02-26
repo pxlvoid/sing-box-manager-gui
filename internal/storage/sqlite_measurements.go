@@ -170,6 +170,62 @@ func (s *SQLiteStore) AddSiteMeasurements(measurements []SiteMeasurement) error 
 	return tx.Commit()
 }
 
+func (s *SQLiteStore) GetLatestHealthMeasurements() ([]HealthMeasurement, error) {
+	rows, err := s.db.Query(`SELECT h.id, h.server, h.server_port, h.node_tag, h.timestamp, h.alive, h.latency_ms, h.mode
+		FROM health_measurements h
+		INNER JOIN (
+			SELECT server, server_port, MAX(timestamp) as max_ts
+			FROM health_measurements
+			GROUP BY server, server_port
+		) latest ON h.server = latest.server AND h.server_port = latest.server_port AND h.timestamp = latest.max_ts`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var measurements []HealthMeasurement
+	for rows.Next() {
+		var m HealthMeasurement
+		var alive int
+		if err := rows.Scan(&m.ID, &m.Server, &m.ServerPort, &m.NodeTag, &m.Timestamp, &alive, &m.LatencyMs, &m.Mode); err != nil {
+			return nil, fmt.Errorf("scanning latest health measurement row: %w", err)
+		}
+		m.Alive = alive != 0
+		measurements = append(measurements, m)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterating latest health measurement rows: %w", err)
+	}
+	return measurements, nil
+}
+
+func (s *SQLiteStore) GetLatestSiteMeasurements() ([]SiteMeasurement, error) {
+	rows, err := s.db.Query(`SELECT sm.id, sm.server, sm.server_port, sm.node_tag, sm.timestamp, sm.site, sm.delay_ms, sm.mode
+		FROM site_measurements sm
+		INNER JOIN (
+			SELECT server, server_port, MAX(timestamp) as max_ts
+			FROM site_measurements
+			GROUP BY server, server_port
+		) latest ON sm.server = latest.server AND sm.server_port = latest.server_port AND sm.timestamp = latest.max_ts`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var measurements []SiteMeasurement
+	for rows.Next() {
+		var m SiteMeasurement
+		if err := rows.Scan(&m.ID, &m.Server, &m.ServerPort, &m.NodeTag, &m.Timestamp, &m.Site, &m.DelayMs, &m.Mode); err != nil {
+			return nil, fmt.Errorf("scanning latest site measurement row: %w", err)
+		}
+		measurements = append(measurements, m)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterating latest site measurement rows: %w", err)
+	}
+	return measurements, nil
+}
+
 func (s *SQLiteStore) GetSiteMeasurements(server string, port int, limit int) ([]SiteMeasurement, error) {
 	if limit <= 0 {
 		limit = 50

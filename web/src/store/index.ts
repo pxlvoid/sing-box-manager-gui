@@ -345,7 +345,7 @@ export interface PipelineEvent {
 }
 
 export interface VerificationProgress {
-  phase: 'pending' | 'verified' | 'health_check';
+  phase: 'pending' | 'verified' | 'health_check' | 'site_check';
   current: number;
   total: number;
 }
@@ -471,6 +471,9 @@ interface AppState {
   checkSingleNodeHealth: (tag: string, options?: { skipStatsRefresh?: boolean }) => Promise<void>;
   checkNodesSites: (tags?: string[], sites?: string[]) => Promise<void>;
   checkSingleNodeSites: (tag: string, sites?: string[]) => Promise<void>;
+
+  // Latest measurements from backend
+  fetchLatestMeasurements: () => Promise<void>;
 
   // Stability stats
   fetchStabilityStats: (days?: number) => Promise<void>;
@@ -1252,6 +1255,66 @@ export const useStore = create<AppState>((set, get) => ({
       toast.error(error.response?.data?.error || 'Site check failed');
     } finally {
       set({ siteCheckingNodes: get().siteCheckingNodes.filter(t => t !== tag) });
+    }
+  },
+
+  fetchLatestMeasurements: async () => {
+    try {
+      const res = await measurementApi.getLatest();
+      const { health, sites } = res.data as {
+        health: Record<string, { alive: boolean; latency_ms: number; timestamp: string; mode: string; node_tag: string }>;
+        sites: Record<string, { sites: Record<string, number>; timestamp: string; mode: string; node_tag: string }>;
+      };
+
+      const state = get();
+      const newHealthResults: Record<string, NodeHealthResult> = {};
+      let healthMode: HealthCheckMode | null = state.healthMode;
+
+      for (const [_key, entry] of Object.entries(health)) {
+        const tag = entry.node_tag;
+        if (!tag) continue;
+        newHealthResults[tag] = {
+          alive: entry.alive,
+          tcp_latency_ms: entry.latency_ms,
+          groups: {},
+        };
+        if (entry.mode && !healthMode) {
+          healthMode = entry.mode as HealthCheckMode;
+        }
+      }
+
+      const newSiteResults: Record<string, NodeSiteCheckResult> = {};
+      let siteMode: SiteCheckMode | null = state.siteCheckMode;
+
+      for (const [_key, entry] of Object.entries(sites)) {
+        const tag = entry.node_tag;
+        if (!tag) continue;
+        newSiteResults[tag] = { sites: entry.sites };
+        if (entry.mode && !siteMode) {
+          siteMode = entry.mode as SiteCheckMode;
+        }
+      }
+
+      // Merge: don't overwrite existing (manual) results that are more recent
+      const mergedHealth = { ...newHealthResults, ...state.healthResults };
+      const mergedSites = { ...newSiteResults, ...state.siteCheckResults };
+
+      set({
+        healthResults: mergedHealth,
+        healthMode: healthMode,
+        siteCheckResults: mergedSites,
+        siteCheckMode: siteMode,
+      });
+      saveMeasurementCache({
+        healthResults: mergedHealth,
+        siteCheckResults: mergedSites,
+        healthMode: healthMode,
+        siteCheckMode: siteMode,
+        healthHistory: state.healthHistory,
+        siteCheckHistory: state.siteCheckHistory,
+      });
+    } catch (error) {
+      console.error('Failed to fetch latest measurements:', error);
     }
   },
 

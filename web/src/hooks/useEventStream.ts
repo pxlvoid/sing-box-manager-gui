@@ -29,6 +29,23 @@ export function useEventStream() {
         s.setVerificationProgress({ phase: 'health_check', current: 0, total: data.total_nodes });
       });
 
+      es.addEventListener('verify:site_start', (e) => {
+        const data = JSON.parse(e.data);
+        const s = useStore.getState();
+        s.addPipelineEvent('verify:site_start', `Site check: ${data.total_nodes} nodes`);
+        s.setVerificationProgress({ phase: 'site_check', current: 0, total: data.total_nodes });
+      });
+
+      es.addEventListener('verify:health_progress', (e) => {
+        const data = JSON.parse(e.data);
+        useStore.getState().setVerificationProgress({ phase: 'health_check', current: data.current, total: data.total });
+      });
+
+      es.addEventListener('verify:site_progress', (e) => {
+        const data = JSON.parse(e.data);
+        useStore.getState().setVerificationProgress({ phase: 'site_check', current: data.current, total: data.total });
+      });
+
       es.addEventListener('verify:progress', (e) => {
         const data = JSON.parse(e.data);
         useStore.getState().setVerificationProgress({ phase: data.phase, current: data.current, total: data.total });
@@ -65,6 +82,7 @@ export function useEventStream() {
         s.fetchNodeCounts();
         s.fetchVerificationStatus();
         s.fetchVerificationLogs();
+        s.fetchLatestMeasurements();
         // Reset verificationRunning flag
         useStore.setState({ verificationRunning: false });
       });
