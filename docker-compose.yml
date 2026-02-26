@@ -1,0 +1,14 @@
+services:
+  sing-box-manager:
+    build: .
+    container_name: sing-box-manager
+    restart: unless-stopped
+    volumes:
+      - ./data/sing-box-manager:/data
+    ports:
+      - "9090:9090"   # Web UI
+      - "2080:2080"   # SOCKS5 proxy
+      - "2081:2081"   # HTTP proxy
+      - "2388:2388"   # Shadowsocks (опционально)
+    environment:
+      - TZ=Europe/Moscow

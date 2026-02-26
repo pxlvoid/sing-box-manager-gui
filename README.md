@@ -130,80 +130,10 @@ After starting, open `http://localhost:9090` in your browser.
 
 ### 🐳 Docker Deployment
 
-#### Dockerfile
+Проект содержит готовые `Dockerfile` и `docker-compose.yml`.
 
-```dockerfile
-# Multi-stage build for sing-box-manager-gui
-
-# Stage 1: Build frontend
-FROM node:20-alpine AS frontend-builder
-
-WORKDIR /build
-
-RUN apk add --no-cache git
-
-# Clone repository
-RUN git clone https://github.com/pxlvoid/sing-box-manager-gui.git .
-
-# Build frontend
-WORKDIR /build/web
-RUN npm install && npm run build
-
-# Stage 2: Build Go backend with embedded frontend
-FROM golang:1.23-alpine AS backend-builder
-
-WORKDIR /build
-
-RUN apk add --no-cache git make bash
-
-# Copy entire project
-COPY --from=frontend-builder /build /build
-
-# Build binary for current platform
-RUN chmod +x build.sh && ./build.sh current
-
-# Stage 3: Final image
-FROM alpine:latest
-
-RUN apk add --no-cache ca-certificates tzdata
-
-WORKDIR /app
-
-# Copy binary from dist directory
-COPY --from=backend-builder /build/dist/sbm-linux-amd64 /app/sbm
-
-# Create data directory
-RUN mkdir -p /data
-
-# Expose port
-EXPOSE 9090
-
-# Run
-CMD ["/app/sbm", "-data", "/data", "-port", "9090"]
-```
-
-#### Docker Compose Example
-
-```yaml
-services:
-  sing-box-manager:
-    build:
-      context: ./dockerfiles
-      dockerfile: sing-box-manager-gui
-    container_name: sing-box-manager
-    restart: unless-stopped
-    volumes:
-      - ./data/sing-box-manager:/data
-    expose:
-      - 9090  # Web UI (access via reverse proxy)
-    ports:
-      - "2080:2080"  # SOCKS5 proxy
-      - "2081:2081"  # HTTP proxy
-      - "2388:2388"  # Shadowsocks proxy (optional)
-    environment:
-      - TZ=Europe/Moscow
-    networks:
-      - default
+```bash
+docker compose up -d
 ```
 
 #### ⚠️ Important: Port Configuration
@@ -250,7 +180,7 @@ ports:
 
 1. Start the container:
    ```bash
-   docker compose up -d sing-box-manager
+   docker compose up -d
    ```
 2. Open web UI: `http://localhost:9090`
 3. Download sing-box kernel (Settings → Kernel Management → Download)
@@ -269,19 +199,7 @@ ports:
 #### Rebuilding After Updates
 
 ```bash
-docker compose build --no-cache sing-box-manager && \
-docker compose up -d sing-box-manager && \
-docker compose logs sing-box-manager --tail 20
-```
-
-Or add this alias to `~/.bashrc`:
-```bash
-alias update-sbm='docker compose build --no-cache sing-box-manager && docker compose up -d sing-box-manager && docker compose logs sing-box-manager --tail 20'
-```
-
-Then simply run:
-```bash
-update-sbm
+docker compose build --no-cache && docker compose up -d
 ```
 
 ### Tech Stack
