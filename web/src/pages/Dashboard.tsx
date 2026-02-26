@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Card, CardBody, CardHeader, Button, Chip, Input, Modal, ModalContent, ModalHeader, ModalBody, ModalFooter, Tooltip, Select, SelectItem, Spinner, Progress } from '@nextui-org/react';
-import { Play, Square, RefreshCw, Cpu, HardDrive, Wifi, Info, Activity, Copy, ClipboardCheck, Link, Globe, QrCode, Search, Stethoscope, ShieldCheck, Clock, CheckCircle, Archive, Network } from 'lucide-react';
+import { Play, Square, RefreshCw, Cpu, HardDrive, Wifi, Info, Activity, Copy, ClipboardCheck, Link, Globe, QrCode, Search, Stethoscope, ShieldCheck, Clock, CheckCircle, Archive, Network, ArrowUp, ArrowDown, Users, Cable } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useStore } from '../store';
 import type { NodeSiteCheckResult } from '../store';
@@ -505,16 +505,113 @@ export default function Dashboard() {
     return `${v.toFixed(v >= 10 || idx === 0 ? 0 : 1)} ${units[idx]}`;
   };
 
-  const formatDateTime = (value?: string): string => {
-    if (!value) return '-';
-    const ts = Date.parse(value);
-    if (Number.isNaN(ts)) return '-';
-    return new Date(ts).toLocaleString();
-  };
-
   return (
     <div className="space-y-6">
-      <h1 className="text-2xl font-bold text-gray-800 dark:text-white">Dashboard</h1>
+      <div className="flex items-center justify-between">
+        <h1 className="text-2xl font-bold text-gray-800 dark:text-white">Dashboard</h1>
+        <Button size="sm" color="primary" variant="flat" startContent={<Network className="w-4 h-4" />} onPress={() => navigate('/monitoring')}>
+          Monitoring Details
+        </Button>
+      </div>
+
+      {/* Traffic monitoring cards */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-3 sm:gap-4">
+        <Card>
+          <CardBody className="flex flex-row items-center gap-3 p-3 sm:p-4">
+            <div className="p-2 bg-emerald-100 dark:bg-emerald-900 rounded-lg">
+              <ArrowUp className="w-5 h-5 text-emerald-600 dark:text-emerald-300" />
+            </div>
+            <div className="min-w-0">
+              <p className="text-xs text-gray-500">Upload</p>
+              <p className="text-lg font-bold">{formatRate(trafficOverview.up_bps)}</p>
+            </div>
+          </CardBody>
+        </Card>
+
+        <Card>
+          <CardBody className="flex flex-row items-center gap-3 p-3 sm:p-4">
+            <div className="p-2 bg-sky-100 dark:bg-sky-900 rounded-lg">
+              <ArrowDown className="w-5 h-5 text-sky-600 dark:text-sky-300" />
+            </div>
+            <div className="min-w-0">
+              <p className="text-xs text-gray-500">Download</p>
+              <p className="text-lg font-bold">{formatRate(trafficOverview.down_bps)}</p>
+            </div>
+          </CardBody>
+        </Card>
+
+        <Card>
+          <CardBody className="flex flex-row items-center gap-3 p-3 sm:p-4">
+            <div className="p-2 bg-violet-100 dark:bg-violet-900 rounded-lg">
+              <Cable className="w-5 h-5 text-violet-600 dark:text-violet-300" />
+            </div>
+            <div className="min-w-0">
+              <p className="text-xs text-gray-500">Connections</p>
+              <p className="text-lg font-bold">{trafficOverview.active_connections}</p>
+            </div>
+          </CardBody>
+        </Card>
+
+        <Card>
+          <CardBody className="flex flex-row items-center gap-3 p-3 sm:p-4">
+            <div className="p-2 bg-amber-100 dark:bg-amber-900 rounded-lg">
+              <Users className="w-5 h-5 text-amber-600 dark:text-amber-300" />
+            </div>
+            <div className="min-w-0">
+              <p className="text-xs text-gray-500">Clients</p>
+              <p className="text-lg font-bold">{trafficOverview.client_count}</p>
+            </div>
+          </CardBody>
+        </Card>
+
+        <Card>
+          <CardBody className="flex flex-row items-center gap-3 p-3 sm:p-4">
+            <div className="p-2 bg-rose-100 dark:bg-rose-900 rounded-lg">
+              <Users className="w-5 h-5 text-rose-600 dark:text-rose-300" />
+            </div>
+            <div className="min-w-0">
+              <p className="text-xs text-gray-500">Seen Total</p>
+              <p className="text-lg font-bold">{trafficLifetime.total_clients}</p>
+            </div>
+          </CardBody>
+        </Card>
+
+        <Card>
+          <CardBody className="flex flex-row items-center gap-3 p-3 sm:p-4">
+            <div className="p-2 bg-emerald-100 dark:bg-emerald-900 rounded-lg">
+              <ArrowUp className="w-5 h-5 text-emerald-600 dark:text-emerald-300" />
+            </div>
+            <div className="min-w-0">
+              <p className="text-xs text-gray-500">Total Up</p>
+              <p className="text-lg font-bold">{formatBytes(trafficLifetime.total_upload_bytes)}</p>
+            </div>
+          </CardBody>
+        </Card>
+
+        <Card>
+          <CardBody className="flex flex-row items-center gap-3 p-3 sm:p-4">
+            <div className="p-2 bg-sky-100 dark:bg-sky-900 rounded-lg">
+              <ArrowDown className="w-5 h-5 text-sky-600 dark:text-sky-300" />
+            </div>
+            <div className="min-w-0">
+              <p className="text-xs text-gray-500">Total Down</p>
+              <p className="text-lg font-bold">{formatBytes(trafficLifetime.total_download_bytes)}</p>
+            </div>
+          </CardBody>
+        </Card>
+
+        <Card>
+          <CardBody className="flex flex-row items-center gap-3 p-3 sm:p-4">
+            <div className="p-2 bg-indigo-100 dark:bg-indigo-900 rounded-lg">
+              <Network className="w-5 h-5 text-indigo-600 dark:text-indigo-300" />
+            </div>
+            <div className="min-w-0">
+              <p className="text-xs text-gray-500">Total Traffic</p>
+              <p className="text-lg font-bold">{formatBytes(trafficLifetime.total_traffic_bytes)}</p>
+            </div>
+          </CardBody>
+        </Card>
+      </div>
 
       {/* Statistics cards */}
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3 sm:gap-4">
@@ -1051,62 +1148,6 @@ export default function Dashboard() {
           </CardBody>
         </Card>
 
-      {/* Traffic overview */}
-      <Card>
-        <CardHeader className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <Network className="w-5 h-5" />
-            <h2 className="text-lg font-semibold">Traffic Monitoring</h2>
-          </div>
-          <Button size="sm" color="primary" variant="flat" onPress={() => navigate('/monitoring')}>
-            Open Details
-          </Button>
-        </CardHeader>
-        <CardBody>
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-            <div>
-              <p className="text-xs text-gray-500">Upload</p>
-              <p className="font-semibold">{formatRate(trafficOverview.up_bps)}</p>
-            </div>
-            <div>
-              <p className="text-xs text-gray-500">Download</p>
-              <p className="font-semibold">{formatRate(trafficOverview.down_bps)}</p>
-            </div>
-            <div>
-              <p className="text-xs text-gray-500">Active Connections</p>
-              <p className="font-semibold">{trafficOverview.active_connections}</p>
-            </div>
-            <div>
-              <p className="text-xs text-gray-500">Active Clients</p>
-              <p className="font-semibold">{trafficOverview.client_count}</p>
-            </div>
-          </div>
-          <div className="mt-4 pt-4 border-t border-gray-200 dark:border-gray-700">
-            <p className="text-xs text-gray-500 mb-2">All-time totals</p>
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-              <div>
-                <p className="text-xs text-gray-500">Clients Seen</p>
-                <p className="font-semibold">{trafficLifetime.total_clients}</p>
-              </div>
-              <div>
-                <p className="text-xs text-gray-500">Total Upload</p>
-                <p className="font-semibold">{formatBytes(trafficLifetime.total_upload_bytes)}</p>
-              </div>
-              <div>
-                <p className="text-xs text-gray-500">Total Download</p>
-                <p className="font-semibold">{formatBytes(trafficLifetime.total_download_bytes)}</p>
-              </div>
-              <div>
-                <p className="text-xs text-gray-500">Total Traffic</p>
-                <p className="font-semibold">{formatBytes(trafficLifetime.total_traffic_bytes)}</p>
-              </div>
-            </div>
-            <p className="text-xs text-gray-500 mt-2">
-              Window: {formatDateTime(trafficLifetime.first_sample_at)} → {formatDateTime(trafficLifetime.last_sample_at)} · samples: {trafficLifetime.sample_count}
-            </p>
-          </div>
-        </CardBody>
-      </Card>
 
       {/* Proxy Links Modal */}
       <Modal isOpen={proxyLinksOpen} onClose={() => setProxyLinksOpen(false)} size="lg">
