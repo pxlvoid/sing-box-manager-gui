@@ -1,6 +1,10 @@
 package storage
 
-import "fmt"
+import (
+	"database/sql"
+	"fmt"
+	"time"
+)
 
 // migrate runs all pending schema migrations.
 func (s *SQLiteStore) migrate() error {
@@ -23,6 +27,7 @@ func (s *SQLiteStore) migrate() error {
 	migrations := []func() error{
 		s.migrateV1,
 		s.migrateV2,
+		s.migrateV3,
 	}
 
 	for i, m := range migrations {
@@ -222,7 +227,7 @@ func (s *SQLiteStore) migrateV1() error {
 	return tx.Commit()
 }
 
-// migrateV2 adds auto-pipeline columns to subscriptions and pipeline_logs table.
+// migrateV2 adds auto-pipeline columns to subscriptions and pipeline_logs table (legacy).
 func (s *SQLiteStore) migrateV2() error {
 	stmts := []string{
 		// Pipeline settings on subscription
@@ -259,6 +264,169 @@ func (s *SQLiteStore) migrateV2() error {
 	for _, stmt := range stmts {
 		if _, err := tx.Exec(stmt); err != nil {
 			return fmt.Errorf("exec %q: %w", stmt[:60], err)
+		}
+	}
+
+	return tx.Commit()
+}
+
+// migrateV3 creates unified nodes table, verification_logs, migrates data, adds verification settings.
+func (s *SQLiteStore) migrateV3() error {
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	// 1. Create unified nodes table
+	createStmts := []string{
+		`CREATE TABLE IF NOT EXISTS nodes (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			tag TEXT NOT NULL DEFAULT '',
+			type TEXT NOT NULL DEFAULT '',
+			server TEXT NOT NULL DEFAULT '',
+			server_port INTEGER NOT NULL DEFAULT 0,
+			country TEXT NOT NULL DEFAULT '',
+			country_emoji TEXT NOT NULL DEFAULT '',
+			extra_json TEXT,
+			status TEXT NOT NULL DEFAULT 'pending',
+			source TEXT NOT NULL DEFAULT 'manual',
+			group_tag TEXT NOT NULL DEFAULT '',
+			consecutive_failures INTEGER NOT NULL DEFAULT 0,
+			last_checked_at TIMESTAMP,
+			created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+			promoted_at TIMESTAMP,
+			archived_at TIMESTAMP
+		)`,
+		`CREATE INDEX IF NOT EXISTS idx_nodes_status ON nodes(status)`,
+		`CREATE INDEX IF NOT EXISTS idx_nodes_server ON nodes(server, server_port)`,
+		`CREATE INDEX IF NOT EXISTS idx_nodes_source ON nodes(source)`,
+		`CREATE INDEX IF NOT EXISTS idx_nodes_group ON nodes(group_tag)`,
+		`CREATE UNIQUE INDEX IF NOT EXISTS idx_nodes_server_port_uniq ON nodes(server, server_port)`,
+
+		// 2. Create verification_logs table
+		`CREATE TABLE IF NOT EXISTS verification_logs (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			timestamp TIMESTAMP NOT NULL,
+			pending_checked INTEGER NOT NULL DEFAULT 0,
+			pending_promoted INTEGER NOT NULL DEFAULT 0,
+			pending_archived INTEGER NOT NULL DEFAULT 0,
+			verified_checked INTEGER NOT NULL DEFAULT 0,
+			verified_demoted INTEGER NOT NULL DEFAULT 0,
+			duration_ms INTEGER NOT NULL DEFAULT 0,
+			error TEXT NOT NULL DEFAULT ''
+		)`,
+		`CREATE INDEX IF NOT EXISTS idx_verification_logs_ts ON verification_logs(timestamp)`,
+
+		// 3. Add verification settings columns
+		`ALTER TABLE settings ADD COLUMN verification_interval INTEGER NOT NULL DEFAULT 30`,
+		`ALTER TABLE settings ADD COLUMN archive_threshold INTEGER NOT NULL DEFAULT 10`,
+	}
+
+	for _, stmt := range createStmts {
+		if _, err := tx.Exec(stmt); err != nil {
+			return fmt.Errorf("exec %q: %w", stmt[:60], err)
+		}
+	}
+
+	// 4. Migrate data from manual_nodes -> nodes
+	now := time.Now()
+	rows, err := tx.Query(`SELECT id, tag, type, server, server_port, country, country_emoji, extra_json,
+		enabled, group_tag, source_subscription_id FROM manual_nodes`)
+	if err != nil {
+		return fmt.Errorf("read manual_nodes: %w", err)
+	}
+
+	seen := make(map[string]bool)
+	for rows.Next() {
+		var id, tag, typ, server, country, countryEmoji, groupTag, sourceSubID string
+		var serverPort, enabled int
+		var extraJSON sql.NullString
+		if err := rows.Scan(&id, &tag, &typ, &server, &serverPort, &country, &countryEmoji, &extraJSON,
+			&enabled, &groupTag, &sourceSubID); err != nil {
+			rows.Close()
+			return fmt.Errorf("scan manual_node: %w", err)
+		}
+
+		key := fmt.Sprintf("%s:%d", server, serverPort)
+		if seen[key] {
+			continue
+		}
+		seen[key] = true
+
+		status := "pending"
+		var promotedAt *time.Time
+		if enabled != 0 {
+			status = "verified"
+			promotedAt = &now
+		}
+
+		source := "manual"
+		if sourceSubID != "" {
+			source = sourceSubID
+		}
+
+		extra := ""
+		if extraJSON.Valid {
+			extra = extraJSON.String
+		}
+
+		_, err = tx.Exec(`INSERT INTO nodes (tag, type, server, server_port, country, country_emoji, extra_json,
+			status, source, group_tag, created_at, promoted_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			tag, typ, server, serverPort, country, countryEmoji, extra,
+			status, source, groupTag, now, promotedAt)
+		if err != nil {
+			rows.Close()
+			return fmt.Errorf("insert node from manual: %w", err)
+		}
+	}
+	rows.Close()
+
+	// 5. Migrate subscription_nodes -> nodes (as pending, dedup by server:port)
+	rows2, err := tx.Query(`SELECT sn.tag, sn.type, sn.server, sn.server_port, sn.country, sn.country_emoji, sn.extra_json, sn.subscription_id
+		FROM subscription_nodes sn`)
+	if err != nil {
+		return fmt.Errorf("read subscription_nodes: %w", err)
+	}
+
+	for rows2.Next() {
+		var tag, typ, server, country, countryEmoji, subID string
+		var serverPort int
+		var extraJSON sql.NullString
+		if err := rows2.Scan(&tag, &typ, &server, &serverPort, &country, &countryEmoji, &extraJSON, &subID); err != nil {
+			rows2.Close()
+			return fmt.Errorf("scan subscription_node: %w", err)
+		}
+
+		key := fmt.Sprintf("%s:%d", server, serverPort)
+		if seen[key] {
+			continue
+		}
+		seen[key] = true
+
+		extra := ""
+		if extraJSON.Valid {
+			extra = extraJSON.String
+		}
+
+		_, err = tx.Exec(`INSERT INTO nodes (tag, type, server, server_port, country, country_emoji, extra_json,
+			status, source, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?)`,
+			tag, typ, server, serverPort, country, countryEmoji, extra, subID, now)
+		if err != nil {
+			rows2.Close()
+			return fmt.Errorf("insert node from subscription: %w", err)
+		}
+	}
+	rows2.Close()
+
+	// 6. Rename old tables to _legacy_*
+	legacyStmts := []string{
+		`ALTER TABLE manual_nodes RENAME TO _legacy_manual_nodes`,
+		`ALTER TABLE pipeline_logs RENAME TO _legacy_pipeline_logs`,
+	}
+	for _, stmt := range legacyStmts {
+		if _, err := tx.Exec(stmt); err != nil {
+			return fmt.Errorf("rename legacy: %w", err)
 		}
 	}
 

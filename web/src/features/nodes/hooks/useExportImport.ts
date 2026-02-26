@@ -1,24 +1,22 @@
 import { useState } from 'react';
 import { useDisclosure } from '@nextui-org/react';
 import { useStore } from '../../../store';
-import { subscriptionApi, nodeApi, manualNodeApi } from '../../../api';
+import { subscriptionApi, nodeApi } from '../../../api';
 import { toast } from '../../../components/Toast';
 
 export function useExportImport() {
-  const { subscriptions, addManualNodesBulk, fetchSubscriptions, fetchManualNodes, fetchManualNodeTags } = useStore();
+  const { subscriptions, addNodesBulk, fetchSubscriptions, fetchNodes, fetchNodeCounts } = useStore();
 
   const { isOpen: isExportOpen, onOpen: onExportOpen, onClose: onExportClose } = useDisclosure();
   const { isOpen: isImportOpen, onOpen: onImportOpen, onClose: onImportClose } = useDisclosure();
-  const [exportData, setExportData] = useState<{ subscriptions: { name: string; url: string }[]; manual_nodes: string[] } | null>(null);
+  const [exportData, setExportData] = useState<{ subscriptions: { name: string; url: string }[] } | null>(null);
   const [importData, setImportData] = useState<{ subscriptions: { name: string; url: string }[]; manual_nodes: string[] } | null>(null);
   const [importing, setImporting] = useState(false);
 
   const handlePrepareExport = async () => {
     try {
       const subs = subscriptions.map(s => ({ name: s.name, url: s.url }));
-      const response = await manualNodeApi.export();
-      const nodeUrls: string[] = response.data.data || [];
-      setExportData({ subscriptions: subs, manual_nodes: nodeUrls });
+      setExportData({ subscriptions: subs });
       onExportOpen();
     } catch (error) {
       console.error('Failed to prepare export:', error);
@@ -79,11 +77,8 @@ export function useExportImport() {
         const parsed = parseResponse.data.data;
         const successNodes = parsed.filter((r: any) => r.node);
         if (successNodes.length > 0) {
-          const nodes = successNodes.map((r: any) => ({
-            node: r.node,
-            enabled: true,
-          }));
-          await addManualNodesBulk(nodes);
+          const nodes = successNodes.map((r: any) => r.node);
+          await addNodesBulk(nodes, undefined, 'manual');
           addedNodes = successNodes.length;
         }
       }
@@ -91,8 +86,8 @@ export function useExportImport() {
       toast.success(`Imported: ${addedSubs} subscriptions, ${addedNodes} nodes`);
       onImportClose();
       fetchSubscriptions();
-      fetchManualNodes();
-      fetchManualNodeTags();
+      fetchNodes();
+      fetchNodeCounts();
     } catch (error) {
       console.error('Import failed:', error);
       toast.error('Import failed');

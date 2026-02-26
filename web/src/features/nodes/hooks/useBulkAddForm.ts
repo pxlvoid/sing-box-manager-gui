@@ -5,7 +5,7 @@ import { nodeApi } from '../../../api';
 import type { Node } from '../../../store';
 
 export function useBulkAddForm() {
-  const { addManualNodesBulk } = useStore();
+  const { addNodesBulk } = useStore();
 
   const { isOpen, onOpen, onClose } = useDisclosure();
   const [bulkUrls, setBulkUrls] = useState('');
@@ -44,11 +44,8 @@ export function useBulkAddForm() {
 
     setBulkAdding(true);
     try {
-      const nodes = successNodes.map(r => ({
-        node: r.node!,
-        enabled: true,
-      }));
-      await addManualNodesBulk(nodes, bulkGroupTag.trim() || undefined);
+      const nodes = successNodes.map(r => r.node!);
+      await addNodesBulk(nodes, bulkGroupTag.trim() || undefined, 'manual');
       onClose();
     } catch (error: any) {
       console.error('Failed to add nodes:', error);

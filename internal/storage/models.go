@@ -2,6 +2,68 @@ package storage
 
 import "time"
 
+// NodeStatus represents the lifecycle status of a unified node
+type NodeStatus string
+
+const (
+	NodeStatusPending  NodeStatus = "pending"
+	NodeStatusVerified NodeStatus = "verified"
+	NodeStatusArchived NodeStatus = "archived"
+)
+
+// UnifiedNode represents a node in the unified lifecycle
+type UnifiedNode struct {
+	ID                  int64      `json:"id"`
+	Tag                 string     `json:"tag"`
+	Type                string     `json:"type"`
+	Server              string     `json:"server"`
+	ServerPort          int        `json:"server_port"`
+	Country             string     `json:"country,omitempty"`
+	CountryEmoji        string     `json:"country_emoji,omitempty"`
+	Extra               map[string]interface{} `json:"extra,omitempty"`
+	Status              NodeStatus `json:"status"`
+	Source              string     `json:"source"`
+	GroupTag            string     `json:"group_tag,omitempty"`
+	ConsecutiveFailures int        `json:"consecutive_failures"`
+	LastCheckedAt       *time.Time `json:"last_checked_at,omitempty"`
+	CreatedAt           time.Time  `json:"created_at"`
+	PromotedAt          *time.Time `json:"promoted_at,omitempty"`
+	ArchivedAt          *time.Time `json:"archived_at,omitempty"`
+}
+
+// ToNode converts UnifiedNode to the basic Node type used by config builder
+func (u *UnifiedNode) ToNode() Node {
+	return Node{
+		Tag:          u.Tag,
+		Type:         u.Type,
+		Server:       u.Server,
+		ServerPort:   u.ServerPort,
+		Extra:        u.Extra,
+		Country:      u.Country,
+		CountryEmoji: u.CountryEmoji,
+	}
+}
+
+// VerificationLog represents a verification run log entry
+type VerificationLog struct {
+	ID              int64     `json:"id"`
+	Timestamp       time.Time `json:"timestamp"`
+	PendingChecked  int       `json:"pending_checked"`
+	PendingPromoted int       `json:"pending_promoted"`
+	PendingArchived int       `json:"pending_archived"`
+	VerifiedChecked int       `json:"verified_checked"`
+	VerifiedDemoted int       `json:"verified_demoted"`
+	DurationMs      int64     `json:"duration_ms"`
+	Error           string    `json:"error,omitempty"`
+}
+
+// NodeCounts represents counts of nodes by status
+type NodeCounts struct {
+	Pending  int `json:"pending"`
+	Verified int `json:"verified"`
+	Archived int `json:"archived"`
+}
+
 // Subscription represents a proxy subscription
 type Subscription struct {
 	ID        string     `json:"id"`
@@ -13,34 +75,6 @@ type Subscription struct {
 	Traffic   *Traffic   `json:"traffic,omitempty"`
 	Nodes     []Node     `json:"nodes"`
 	Enabled   bool       `json:"enabled"`
-
-	// Pipeline settings
-	AutoPipeline         bool            `json:"auto_pipeline"`
-	PipelineGroupTag     string          `json:"pipeline_group_tag"`
-	PipelineMinStability float64         `json:"pipeline_min_stability"` // 0-100
-	PipelineRemoveDead   bool            `json:"pipeline_remove_dead"`
-	PipelineLastRun      *time.Time      `json:"pipeline_last_run,omitempty"`
-	PipelineLastResult   *PipelineResult `json:"pipeline_last_result,omitempty"`
-}
-
-// PipelineResult represents the result of a pipeline execution
-type PipelineResult struct {
-	TotalNodes   int    `json:"total_nodes"`
-	CheckedNodes int    `json:"checked_nodes"`
-	AliveNodes   int    `json:"alive_nodes"`
-	CopiedNodes  int    `json:"copied_nodes"`
-	SkippedNodes int    `json:"skipped_nodes"`
-	RemovedStale int    `json:"removed_stale"`
-	Error        string `json:"error,omitempty"`
-	DurationMs   int64  `json:"duration_ms"`
-}
-
-// PipelineLog represents a pipeline execution log entry
-type PipelineLog struct {
-	ID             int64     `json:"id"`
-	SubscriptionID string    `json:"subscription_id"`
-	Timestamp      time.Time `json:"timestamp"`
-	PipelineResult
 }
 
 // Traffic represents traffic information
@@ -61,7 +95,7 @@ type Node struct {
 	CountryEmoji string                 `json:"country_emoji,omitempty"` // country emoji
 }
 
-// ManualNode represents a manually added node
+// ManualNode represents a manually added node (legacy, kept for migration compatibility)
 type ManualNode struct {
 	ID                   string `json:"id"`
 	Node                 Node   `json:"node"`
@@ -245,6 +279,10 @@ type Settings struct {
 
 	// Debug API
 	DebugAPIEnabled bool `json:"debug_api_enabled"` // enable debug API for remote diagnostics
+
+	// Verification settings
+	VerificationInterval int `json:"verification_interval"` // verification interval in minutes, 0 to disable
+	ArchiveThreshold     int `json:"archive_threshold"`     // consecutive failures before archiving
 }
 
 // DefaultSettings returns default settings
@@ -270,10 +308,12 @@ func DefaultSettings() *Settings {
 		AutoApply:            true, // auto-apply enabled by default
 		SubscriptionInterval: 60,   // default 60 minutes update interval
 		GithubProxy:          "",   // no proxy by default
+		VerificationInterval: 30,  // default 30 minutes
+		ArchiveThreshold:     10,  // default 10 consecutive failures
 	}
 }
 
-// AppData represents application data
+// AppData represents application data (legacy, used for JSON import)
 type AppData struct {
 	Subscriptions []Subscription `json:"subscriptions"`
 	ManualNodes   []ManualNode   `json:"manual_nodes"`

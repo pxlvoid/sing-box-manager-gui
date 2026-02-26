@@ -1,55 +1,25 @@
-import { Card, CardBody } from '@nextui-org/react';
-import { Globe } from 'lucide-react';
-import type { Subscription, ManualNode, NodeHealthResult, HealthCheckMode, NodeSiteCheckResult, UnsupportedNodeInfo, PipelineSettings } from '../../../store';
-import { SITE_CHECK_TARGETS } from '../types';
-import SubscriptionCard from '../components/SubscriptionCard';
+import { Card, CardBody, CardHeader, Button, Chip, Spinner } from '@nextui-org/react';
+import { Globe, RefreshCw, Pencil, Trash2, ToggleLeft, ToggleRight } from 'lucide-react';
+import type { Subscription, NodeCounts } from '../../../store';
 
 interface SubscriptionsTabProps {
   subscriptions: Subscription[];
-  manualNodes: ManualNode[];
+  nodeCounts: NodeCounts;
   loading: boolean;
-  healthResults: Record<string, NodeHealthResult>;
-  healthMode: HealthCheckMode | null;
-  healthCheckingNodes: string[];
-  checkSingleNodeHealth: (tag: string) => void;
-  siteCheckResults: Record<string, NodeSiteCheckResult>;
-  siteCheckingNodes: string[];
-  checkSingleNodeSites: (tag: string, targets: string[]) => void;
-  unsupportedNodes: UnsupportedNodeInfo[];
   onRefresh: (id: string) => void;
   onEdit: (sub: Subscription) => void;
   onDelete: (id: string) => void;
   onToggle: (sub: Subscription) => void;
-  onHealthCheckAndCopy: (sub: Subscription) => void;
-  healthCheckAndCopySubId: string | null;
-  manualNodeTags: string[];
-  onUpdatePipeline: (id: string, settings: PipelineSettings) => Promise<void>;
-  onRunPipeline: (id: string) => Promise<any>;
-  pipelineRunningSubId: string | null;
 }
 
 export default function SubscriptionsTab({
   subscriptions,
-  manualNodes,
+  nodeCounts,
   loading,
-  healthResults,
-  healthMode,
-  healthCheckingNodes,
-  checkSingleNodeHealth,
-  siteCheckResults,
-  siteCheckingNodes,
-  checkSingleNodeSites,
-  unsupportedNodes,
   onRefresh,
   onEdit,
   onDelete,
   onToggle,
-  onHealthCheckAndCopy,
-  healthCheckAndCopySubId,
-  manualNodeTags,
-  onUpdatePipeline,
-  onRunPipeline,
-  pipelineRunningSubId,
 }: SubscriptionsTabProps) {
   if (subscriptions.length === 0) {
     return (
@@ -64,33 +34,93 @@ export default function SubscriptionsTab({
 
   return (
     <div className="space-y-4 mt-4">
+      {/* Node counts summary */}
+      <Card>
+        <CardBody className="py-3">
+          <div className="flex items-center gap-4 flex-wrap">
+            <span className="text-sm font-medium text-gray-500">Node Status:</span>
+            <Chip size="sm" variant="flat" color="warning">Pending: {nodeCounts.pending}</Chip>
+            <Chip size="sm" variant="flat" color="success">Verified: {nodeCounts.verified}</Chip>
+            <Chip size="sm" variant="flat" color="default">Archived: {nodeCounts.archived}</Chip>
+          </div>
+        </CardBody>
+      </Card>
+
       {subscriptions.map((sub) => (
-        <SubscriptionCard
-          key={sub.id}
-          subscription={sub}
-          onRefresh={() => onRefresh(sub.id)}
-          onEdit={() => onEdit(sub)}
-          onDelete={() => onDelete(sub.id)}
-          onToggle={() => onToggle(sub)}
-          loading={loading}
-          healthResults={healthResults}
-          healthMode={healthMode}
-          healthCheckingNodes={healthCheckingNodes}
-          onHealthCheck={checkSingleNodeHealth}
-          siteCheckResults={siteCheckResults}
-          siteCheckingNodes={siteCheckingNodes}
-          onSiteCheck={(tag) => checkSingleNodeSites(tag, SITE_CHECK_TARGETS)}
-          siteTargets={SITE_CHECK_TARGETS}
-          unsupportedNodes={unsupportedNodes}
-          manualNodes={manualNodes}
-          onHealthCheckAndCopy={() => onHealthCheckAndCopy(sub)}
-          healthCheckAndCopying={healthCheckAndCopySubId === sub.id}
-          manualNodeTags={manualNodeTags}
-          onUpdatePipeline={onUpdatePipeline}
-          onRunPipeline={onRunPipeline}
-          pipelineRunningSubId={pipelineRunningSubId}
-        />
+        <Card key={sub.id}>
+          <CardHeader className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
+            <div className="flex items-center gap-3">
+              <Chip
+                size="sm"
+                color={sub.enabled ? 'success' : 'default'}
+                variant="dot"
+              >
+                {sub.name}
+              </Chip>
+              <span className="text-sm text-gray-500">
+                {sub.node_count} nodes
+              </span>
+              {sub.traffic && (
+                <span className="text-xs text-gray-400">
+                  {formatTraffic(sub.traffic.used)} / {formatTraffic(sub.traffic.total)}
+                </span>
+              )}
+            </div>
+            <div className="flex items-center gap-1">
+              <Button
+                size="sm"
+                variant="light"
+                isIconOnly
+                onPress={() => onToggle(sub)}
+              >
+                {sub.enabled ? <ToggleRight className="w-4 h-4 text-success" /> : <ToggleLeft className="w-4 h-4" />}
+              </Button>
+              <Button
+                size="sm"
+                variant="light"
+                isIconOnly
+                isDisabled={loading}
+                onPress={() => onRefresh(sub.id)}
+              >
+                {loading ? <Spinner size="sm" /> : <RefreshCw className="w-4 h-4" />}
+              </Button>
+              <Button
+                size="sm"
+                variant="light"
+                isIconOnly
+                onPress={() => onEdit(sub)}
+              >
+                <Pencil className="w-4 h-4" />
+              </Button>
+              <Button
+                size="sm"
+                variant="light"
+                isIconOnly
+                color="danger"
+                onPress={() => onDelete(sub.id)}
+              >
+                <Trash2 className="w-4 h-4" />
+              </Button>
+            </div>
+          </CardHeader>
+          <CardBody className="pt-0">
+            <div className="flex items-center gap-4 text-sm text-gray-500">
+              <span>Updated: {new Date(sub.updated_at).toLocaleString()}</span>
+              {sub.expire_at && (
+                <span>Expires: {new Date(sub.expire_at).toLocaleDateString()}</span>
+              )}
+            </div>
+          </CardBody>
+        </Card>
       ))}
     </div>
   );
+}
+
+function formatTraffic(bytes: number): string {
+  if (bytes === 0) return '0 B';
+  const k = 1024;
+  const sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
+  const i = Math.floor(Math.log(bytes) / Math.log(k));
+  return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
 }

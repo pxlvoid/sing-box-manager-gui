@@ -1,12 +1,18 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Card, CardBody, CardHeader, Button, Chip, Input, Modal, ModalContent, ModalHeader, ModalBody, ModalFooter, Tooltip, Select, SelectItem } from '@nextui-org/react';
-import { Play, Square, RefreshCw, Cpu, HardDrive, Wifi, Info, Activity, Copy, ClipboardCheck, Link, Globe, QrCode, Search, Stethoscope } from 'lucide-react';
+import { Card, CardBody, CardHeader, Button, Chip, Input, Modal, ModalContent, ModalHeader, ModalBody, ModalFooter, Tooltip, Select, SelectItem, Spinner } from '@nextui-org/react';
+import { Play, Square, RefreshCw, Cpu, HardDrive, Wifi, Info, Activity, Copy, ClipboardCheck, Link, Globe, QrCode, Search, Stethoscope, ShieldCheck, Clock, CheckCircle, Archive } from 'lucide-react';
 import { useStore } from '../store';
 import { serviceApi, configApi, proxyApi } from '../api';
 import { toast } from '../components/Toast';
 
 export default function Dashboard() {
-  const { serviceStatus, probeStatus, subscriptions, manualNodes, systemInfo, settings, proxyGroups, fetchServiceStatus, fetchProbeStatus, stopProbe, fetchSubscriptions, fetchManualNodes, fetchSystemInfo, fetchSettings, fetchUnsupportedNodes, fetchProxyGroups, switchProxy } = useStore();
+  const {
+    serviceStatus, probeStatus, subscriptions, nodeCounts, systemInfo, settings, proxyGroups,
+    verificationStatus, verificationRunning,
+    fetchServiceStatus, fetchProbeStatus, stopProbe, fetchSubscriptions,
+    fetchNodeCounts, fetchSystemInfo, fetchSettings, fetchUnsupportedNodes,
+    fetchProxyGroups, switchProxy, runVerification, fetchVerificationStatus,
+  } = useStore();
 
   const [copiedLink, setCopiedLink] = useState<string | null>(null);
   const [qrLink, setQrLink] = useState<string | null>(null);
@@ -15,7 +21,6 @@ export default function Dashboard() {
   const [checkingActiveProxyDelay, setCheckingActiveProxyDelay] = useState(false);
   const activeProxyDelayRequestRef = useRef(0);
 
-  // Error modal state
   const [errorModal, setErrorModal] = useState<{
     isOpen: boolean;
     title: string;
@@ -26,26 +31,21 @@ export default function Dashboard() {
     message: ''
   });
 
-  // Helper function to display errors
   const showError = (title: string, error: any) => {
     const message = error.response?.data?.error || error.message || 'Operation failed';
-    setErrorModal({
-      isOpen: true,
-      title,
-      message
-    });
+    setErrorModal({ isOpen: true, title, message });
   };
 
   useEffect(() => {
     fetchServiceStatus();
     fetchProbeStatus();
     fetchSubscriptions();
-    fetchManualNodes();
+    fetchNodeCounts();
     fetchSystemInfo();
     fetchSettings();
     fetchProxyGroups();
+    fetchVerificationStatus();
 
-    // Refresh status, system info, proxy groups, and probe status every 5 seconds
     const interval = setInterval(() => {
       fetchServiceStatus();
       fetchProbeStatus();
@@ -154,9 +154,8 @@ export default function Dashboard() {
     }
   }
 
-  const totalNodes = subscriptions.reduce((sum, sub) => sum + sub.node_count, 0) + manualNodes.length;
+  const totalNodes = nodeCounts.pending + nodeCounts.verified + nodeCounts.archived;
   const enabledSubs = subscriptions.filter(sub => sub.enabled).length;
-  const enabledManualNodes = manualNodes.filter(mn => mn.enabled).length;
   const mainProxyGroup = proxyGroups.find((group) => group.name.toLowerCase() === 'proxy');
   const qrImageUrl = qrLink ? `https://quickchart.io/qr?text=${encodeURIComponent(qrLink)}&size=260` : '';
 
@@ -227,42 +226,13 @@ export default function Dashboard() {
           <div className="flex flex-wrap gap-2">
             {serviceStatus?.running ? (
               <>
-                <Button
-                  size="sm"
-                  color="danger"
-                  variant="flat"
-                  startContent={<Square className="w-4 h-4" />}
-                  onPress={handleStop}
-                >
-                  Stop
-                </Button>
-                <Button
-                  size="sm"
-                  color="primary"
-                  variant="flat"
-                  startContent={<RefreshCw className="w-4 h-4" />}
-                  onPress={handleRestart}
-                >
-                  Restart
-                </Button>
+                <Button size="sm" color="danger" variant="flat" startContent={<Square className="w-4 h-4" />} onPress={handleStop}>Stop</Button>
+                <Button size="sm" color="primary" variant="flat" startContent={<RefreshCw className="w-4 h-4" />} onPress={handleRestart}>Restart</Button>
               </>
             ) : (
-              <Button
-                size="sm"
-                color="success"
-                startContent={<Play className="w-4 h-4" />}
-                onPress={handleStart}
-              >
-                Start
-              </Button>
+              <Button size="sm" color="success" startContent={<Play className="w-4 h-4" />} onPress={handleStart}>Start</Button>
             )}
-            <Button
-              size="sm"
-              color="primary"
-              onPress={handleApplyConfig}
-            >
-              Apply Config
-            </Button>
+            <Button size="sm" color="primary" onPress={handleApplyConfig}>Apply Config</Button>
           </div>
         </CardHeader>
         <CardBody>
@@ -274,14 +244,7 @@ export default function Dashboard() {
                   {serviceStatus?.version?.match(/version\s+([\d.]+)/)?.[1] || serviceStatus?.version || '-'}
                 </p>
                 {serviceStatus?.version && (
-                  <Tooltip
-                    content={
-                      <div className="max-w-xs whitespace-pre-wrap text-xs p-1">
-                        {serviceStatus.version}
-                      </div>
-                    }
-                    placement="bottom"
-                  >
+                  <Tooltip content={<div className="max-w-xs whitespace-pre-wrap text-xs p-1">{serviceStatus.version}</div>} placement="bottom">
                     <Info className="w-3.5 h-3.5 text-gray-400 cursor-help" />
                   </Tooltip>
                 )}
@@ -293,9 +256,7 @@ export default function Dashboard() {
             </div>
             <div>
               <p className="text-sm text-gray-500">Status</p>
-              <p className="font-medium">
-                {serviceStatus?.running ? 'Running normally' : 'Not running'}
-              </p>
+              <p className="font-medium">{serviceStatus?.running ? 'Running normally' : 'Not running'}</p>
             </div>
           </div>
         </CardBody>
@@ -307,24 +268,12 @@ export default function Dashboard() {
           <div className="flex items-center gap-3">
             <Stethoscope className="w-5 h-5" />
             <h2 className="text-lg font-semibold">Probe sing-box</h2>
-            <Chip
-              color={probeStatus?.running ? 'success' : 'default'}
-              variant="flat"
-              size="sm"
-            >
+            <Chip color={probeStatus?.running ? 'success' : 'default'} variant="flat" size="sm">
               {probeStatus?.running ? 'Running' : 'Stopped'}
             </Chip>
           </div>
           {probeStatus?.running && (
-            <Button
-              size="sm"
-              color="danger"
-              variant="flat"
-              startContent={<Square className="w-4 h-4" />}
-              onPress={stopProbe}
-            >
-              Stop
-            </Button>
+            <Button size="sm" color="danger" variant="flat" startContent={<Square className="w-4 h-4" />} onPress={stopProbe}>Stop</Button>
           )}
         </CardHeader>
         {probeStatus?.running && (
@@ -382,24 +331,11 @@ export default function Dashboard() {
                   <Chip
                     size="sm"
                     variant="flat"
-                    color={
-                      activeProxyDelay === null
-                        ? 'default'
-                        : activeProxyDelay > 0
-                          ? (activeProxyDelay < 300 ? 'success' : 'warning')
-                          : 'danger'
-                    }
+                    color={activeProxyDelay === null ? 'default' : activeProxyDelay > 0 ? (activeProxyDelay < 300 ? 'success' : 'warning') : 'danger'}
                   >
                     {activeProxyDelay === null ? 'Ping: N/A' : activeProxyDelay > 0 ? `Ping: ${activeProxyDelay}ms` : 'Ping: Timeout'}
                   </Chip>
-                  <Button
-                    size="sm"
-                    variant="flat"
-                    isIconOnly
-                    isLoading={checkingActiveProxyDelay}
-                    onPress={() => checkActiveProxyDelay(mainProxyGroup.now)}
-                    aria-label="Recheck active proxy ping"
-                  >
+                  <Button size="sm" variant="flat" isIconOnly isLoading={checkingActiveProxyDelay} onPress={() => checkActiveProxyDelay(mainProxyGroup.now)} aria-label="Recheck active proxy ping">
                     <Activity className="w-4 h-4" />
                   </Button>
                 </div>
@@ -426,10 +362,7 @@ export default function Dashboard() {
                 }}
                 className="w-full max-w-2xl"
                 aria-label="Select main proxy"
-                classNames={{
-                  trigger: 'min-h-14',
-                  value: 'text-base',
-                }}
+                classNames={{ trigger: 'min-h-14', value: 'text-base' }}
               >
                 {filteredMainProxyOptions.map((item) => (
                   <SelectItem key={item}>{item}</SelectItem>
@@ -464,37 +397,19 @@ export default function Dashboard() {
           <CardBody>
             <div className="space-y-2">
               {proxyLinks.map((item) => (
-                <div
-                  key={item.key}
-                  className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 p-3 bg-gray-50 dark:bg-gray-800 rounded-lg"
-                >
+                <div key={item.key} className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 p-3 bg-gray-50 dark:bg-gray-800 rounded-lg">
                   <div className="flex items-center gap-3 min-w-0 w-full sm:w-auto">
                     <Chip size="sm" variant="flat" color="primary">{item.label}</Chip>
                     <code className="text-sm text-gray-600 dark:text-gray-300 truncate">{item.link}</code>
                   </div>
                   <div className="flex items-center gap-1 self-end sm:self-auto">
                     {item.key === 'ss' && (
-                      <Button
-                        size="sm"
-                        variant="light"
-                        isIconOnly
-                        onPress={() => setQrLink(item.link)}
-                        aria-label="Show Shadowsocks QR code"
-                      >
+                      <Button size="sm" variant="light" isIconOnly onPress={() => setQrLink(item.link)} aria-label="Show Shadowsocks QR code">
                         <QrCode className="w-4 h-4" />
                       </Button>
                     )}
-                    <Button
-                      size="sm"
-                      variant="light"
-                      isIconOnly
-                      onPress={() => handleCopyLink(item.key, item.link)}
-                    >
-                      {copiedLink === item.key ? (
-                        <ClipboardCheck className="w-4 h-4 text-success" />
-                      ) : (
-                        <Copy className="w-4 h-4" />
-                      )}
+                    <Button size="sm" variant="light" isIconOnly onPress={() => handleCopyLink(item.key, item.link)}>
+                      {copiedLink === item.key ? <ClipboardCheck className="w-4 h-4 text-success" /> : <Copy className="w-4 h-4" />}
                     </Button>
                   </div>
                 </div>
@@ -520,12 +435,36 @@ export default function Dashboard() {
 
         <Card>
           <CardBody className="flex flex-row items-center gap-4">
-            <div className="p-3 bg-cyan-100 dark:bg-cyan-900 rounded-lg">
-              <HardDrive className="w-6 h-6 text-cyan-600 dark:text-cyan-300" />
+            <div className="p-3 bg-yellow-100 dark:bg-yellow-900 rounded-lg">
+              <Clock className="w-6 h-6 text-yellow-600 dark:text-yellow-300" />
             </div>
             <div>
-              <p className="text-sm text-gray-500">Manual Nodes</p>
-              <p className="text-2xl font-bold">{enabledManualNodes} / {manualNodes.length}</p>
+              <p className="text-sm text-gray-500">Pending</p>
+              <p className="text-2xl font-bold">{nodeCounts.pending}</p>
+            </div>
+          </CardBody>
+        </Card>
+
+        <Card>
+          <CardBody className="flex flex-row items-center gap-4">
+            <div className="p-3 bg-green-100 dark:bg-green-900 rounded-lg">
+              <CheckCircle className="w-6 h-6 text-green-600 dark:text-green-300" />
+            </div>
+            <div>
+              <p className="text-sm text-gray-500">Verified</p>
+              <p className="text-2xl font-bold">{nodeCounts.verified}</p>
+            </div>
+          </CardBody>
+        </Card>
+
+        <Card>
+          <CardBody className="flex flex-row items-center gap-4">
+            <div className="p-3 bg-gray-100 dark:bg-gray-700 rounded-lg">
+              <Archive className="w-6 h-6 text-gray-600 dark:text-gray-300" />
+            </div>
+            <div>
+              <p className="text-sm text-gray-500">Archived</p>
+              <p className="text-2xl font-bold">{nodeCounts.archived}</p>
             </div>
           </CardBody>
         </Card>
@@ -541,7 +480,69 @@ export default function Dashboard() {
             </div>
           </CardBody>
         </Card>
+      </div>
 
+      {/* Verification Status */}
+      <Card>
+        <CardHeader className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
+          <div className="flex items-center gap-3">
+            <ShieldCheck className="w-5 h-5" />
+            <h2 className="text-lg font-semibold">Verification</h2>
+            <Chip
+              color={verificationStatus?.enabled ? 'success' : 'default'}
+              variant="flat"
+              size="sm"
+            >
+              {verificationStatus?.enabled ? `Every ${verificationStatus.interval_min}min` : 'Disabled'}
+            </Chip>
+          </div>
+          <Button
+            size="sm"
+            color="success"
+            variant="flat"
+            startContent={verificationRunning ? <Spinner size="sm" /> : <ShieldCheck className="w-4 h-4" />}
+            onPress={() => runVerification()}
+            isDisabled={verificationRunning}
+          >
+            Run Now
+          </Button>
+        </CardHeader>
+        <CardBody>
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+            <div>
+              <p className="text-sm text-gray-500">Last Run</p>
+              <p className="font-medium">
+                {verificationStatus?.last_run_at
+                  ? new Date(verificationStatus.last_run_at).toLocaleString()
+                  : 'Never'}
+              </p>
+            </div>
+            <div>
+              <p className="text-sm text-gray-500">Next Run</p>
+              <p className="font-medium">
+                {verificationStatus?.next_run_at
+                  ? new Date(verificationStatus.next_run_at).toLocaleString()
+                  : '-'}
+              </p>
+            </div>
+            <div>
+              <p className="text-sm text-gray-500">Interval</p>
+              <p className="font-medium">
+                {verificationStatus?.enabled ? `${verificationStatus.interval_min} min` : 'Disabled'}
+              </p>
+            </div>
+            <div>
+              <p className="text-sm text-gray-500">Threshold</p>
+              <p className="font-medium">
+                {settings?.archive_threshold || 10} failures
+              </p>
+            </div>
+          </div>
+        </CardBody>
+      </Card>
+
+      {/* System Resources */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <Card>
           <CardBody className="flex flex-row items-center gap-4">
             <div className="p-3 bg-purple-100 dark:bg-purple-900 rounded-lg">
@@ -587,7 +588,7 @@ export default function Dashboard() {
         </Card>
       </div>
 
-      {/* Subscription list preview */}
+      {/* Subscription overview */}
       <Card>
         <CardHeader>
           <h2 className="text-lg font-semibold">Subscription Overview</h2>
@@ -598,62 +599,12 @@ export default function Dashboard() {
           ) : (
             <div className="space-y-3">
               {subscriptions.map((sub) => (
-                <div
-                  key={sub.id}
-                  className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 p-3 bg-gray-50 dark:bg-gray-800 rounded-lg"
-                >
+                <div key={sub.id} className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 p-3 bg-gray-50 dark:bg-gray-800 rounded-lg">
                   <div className="flex items-center gap-3">
-                    <Chip
-                      size="sm"
-                      color={sub.enabled ? 'success' : 'default'}
-                      variant="dot"
-                    >
-                      {sub.name}
-                    </Chip>
-                    <span className="text-sm text-gray-500">
-                      {sub.node_count} nodes
-                    </span>
+                    <Chip size="sm" color={sub.enabled ? 'success' : 'default'} variant="dot">{sub.name}</Chip>
+                    <span className="text-sm text-gray-500">{sub.node_count} nodes</span>
                   </div>
-                  <span className="text-sm text-gray-400">
-                    Updated {new Date(sub.updated_at).toLocaleString()}
-                  </span>
-                </div>
-              ))}
-            </div>
-          )}
-        </CardBody>
-      </Card>
-
-      {/* Manual nodes list preview */}
-      <Card>
-        <CardHeader>
-          <h2 className="text-lg font-semibold">Manual Nodes Overview</h2>
-        </CardHeader>
-        <CardBody>
-          {manualNodes.length === 0 ? (
-            <p className="text-gray-500 text-center py-4">No manual nodes yet. Go to the Nodes page to add one.</p>
-          ) : (
-            <div className="space-y-3">
-              {manualNodes.map((mn) => (
-                <div
-                  key={mn.id}
-                  className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 p-3 bg-gray-50 dark:bg-gray-800 rounded-lg"
-                >
-                  <div className="flex items-center gap-3">
-                    <Chip
-                      size="sm"
-                      color={mn.enabled ? 'success' : 'default'}
-                      variant="dot"
-                    >
-                      {mn.node.country_emoji && `${mn.node.country_emoji} `}{mn.node.tag}
-                    </Chip>
-                    <span className="text-sm text-gray-500">
-                      {mn.node.type}
-                    </span>
-                  </div>
-                  <span className="text-sm text-gray-400 truncate max-w-full">
-                    {mn.node.server}:{mn.node.server_port}
-                  </span>
+                  <span className="text-sm text-gray-400">Updated {new Date(sub.updated_at).toLocaleString()}</span>
                 </div>
               ))}
             </div>
@@ -669,9 +620,7 @@ export default function Dashboard() {
             <p className="whitespace-pre-wrap text-sm">{errorModal.message}</p>
           </ModalBody>
           <ModalFooter>
-            <Button color="primary" onPress={() => setErrorModal({ ...errorModal, isOpen: false })}>
-              OK
-            </Button>
+            <Button color="primary" onPress={() => setErrorModal({ ...errorModal, isOpen: false })}>OK</Button>
           </ModalFooter>
         </ModalContent>
       </Modal>
@@ -683,12 +632,7 @@ export default function Dashboard() {
           <ModalBody>
             {qrLink && (
               <div className="flex flex-col items-center gap-3">
-                <img
-                  src={qrImageUrl}
-                  alt="Shadowsocks QR code"
-                  className="w-64 h-64 rounded-md border border-gray-200 dark:border-gray-700"
-                  loading="lazy"
-                />
+                <img src={qrImageUrl} alt="Shadowsocks QR code" className="w-64 h-64 rounded-md border border-gray-200 dark:border-gray-700" loading="lazy" />
                 <code className="text-xs text-gray-600 dark:text-gray-300 break-all">{qrLink}</code>
               </div>
             )}
@@ -699,9 +643,7 @@ export default function Dashboard() {
                 {copiedLink === 'ss-qr' ? 'Copied' : 'Copy Link'}
               </Button>
             )}
-            <Button color="primary" onPress={() => setQrLink(null)}>
-              Close
-            </Button>
+            <Button color="primary" onPress={() => setQrLink(null)}>Close</Button>
           </ModalFooter>
         </ModalContent>
       </Modal>

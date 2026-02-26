@@ -1,6 +1,9 @@
 {
   "permissions": {
-    "allow": [],
+    "allow": [
+      "Bash(go build ./... 2>&1 | head -60)",
+      "Bash(grep -r \"manualNodeApi\" /Users/bbthgrt/Documents/GitHub/sing-box-manager-gui/web/src --include=\"*.ts\" --include=\"*.tsx\" 2>/dev/null | head -5)"
+    ],
     "deny": [],
     "ask": []
   }

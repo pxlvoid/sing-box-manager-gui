@@ -13,11 +13,6 @@ export const subscriptionApi = {
   delete: (id: string) => api.delete(`/subscriptions/${id}`),
   refresh: (id: string) => api.post(`/subscriptions/${id}/refresh`),
   refreshAll: () => api.post('/subscriptions/refresh-all'),
-  updatePipeline: (id: string, settings: any) => api.put(`/subscriptions/${id}/pipeline`, settings),
-  runPipeline: (id: string) => api.post(`/subscriptions/${id}/pipeline/run`, {}, { timeout: 120000 }),
-  getPipelineLogs: (id: string, limit?: number) => api.get(`/subscriptions/${id}/pipeline/logs`, { params: { limit: limit || 20 } }),
-  getStaleNodes: (id: string, failThreshold?: number) => api.get(`/subscriptions/${id}/stale-nodes`, { params: { fail_threshold: failThreshold || 5 } }),
-  deleteStaleNodes: (id: string, nodeIds: string[]) => api.post(`/subscriptions/${id}/stale-nodes/delete`, { node_ids: nodeIds }),
 };
 
 // Filter API
@@ -118,20 +113,28 @@ export const nodeApi = {
   deleteUnsupported: (tags?: string[]) => api.post('/nodes/unsupported/delete', { tags }),
 };
 
-// Manual node API
-export const manualNodeApi = {
-  getAll: () => api.get('/manual-nodes'),
-  getAllStale: (failThreshold?: number) => api.get('/manual-nodes/stale', { params: { fail_threshold: failThreshold || 5 } }),
-  add: (data: any) => api.post('/manual-nodes', data),
-  addBulk: (nodes: any[], groupTag?: string) => api.post('/manual-nodes/bulk', { nodes, group_tag: groupTag }),
-  getTags: () => api.get('/manual-nodes/tags'),
-  update: (id: string, data: any) => api.put(`/manual-nodes/${id}`, data),
-  delete: (id: string) => api.delete(`/manual-nodes/${id}`),
-  export: (ids?: string[]) => api.post('/manual-nodes/export', ids ? { ids } : {}),
-  renameTag: (tag: string, newTag: string) =>
-    api.put(`/manual-nodes/tags/${encodeURIComponent(tag)}`, { new_tag: newTag }),
-  deleteTag: (tag: string) =>
-    api.delete(`/manual-nodes/tags/${encodeURIComponent(tag)}`),
+// Unified node API
+export const unifiedNodeApi = {
+  getAll: (status?: string) => api.get('/nodes/unified', { params: status ? { status } : {} }),
+  add: (data: any) => api.post('/nodes/unified', data),
+  addBulk: (nodes: any[], groupTag?: string, source?: string) =>
+    api.post('/nodes/unified/bulk', { nodes, group_tag: groupTag, source }),
+  update: (id: number, data: any) => api.put(`/nodes/unified/${id}`, data),
+  delete: (id: number) => api.delete(`/nodes/unified/${id}`),
+  promote: (id: number) => api.post(`/nodes/unified/${id}/promote`),
+  demote: (id: number) => api.post(`/nodes/unified/${id}/demote`),
+  archive: (id: number) => api.post(`/nodes/unified/${id}/archive`),
+  unarchive: (id: number) => api.post(`/nodes/unified/${id}/unarchive`),
+  bulkPromote: (ids: number[]) => api.post('/nodes/unified/bulk-promote', { ids }),
+  bulkArchive: (ids: number[]) => api.post('/nodes/unified/bulk-archive', { ids }),
+  getCounts: () => api.get('/nodes/unified/counts'),
+};
+
+// Verification API
+export const verificationApi = {
+  run: () => api.post('/verification/run'),
+  getLogs: (limit?: number) => api.get('/verification/logs', { params: { limit: limit || 20 } }),
+  getStatus: () => api.get('/verification/status'),
 };
 
 // Kernel management API

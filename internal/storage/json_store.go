@@ -335,51 +335,7 @@ func (s *JSONStore) UpdateSettings(settings *Settings) error {
 	return s.saveInternal()
 }
 
-// ==================== Manual Node Operations ====================
-
-// GetManualNodes returns all manual nodes
-func (s *JSONStore) GetManualNodes() []ManualNode {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	return s.data.ManualNodes
-}
-
-// AddManualNode adds a manual node
-func (s *JSONStore) AddManualNode(node ManualNode) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	s.data.ManualNodes = append(s.data.ManualNodes, node)
-	return s.saveInternal()
-}
-
-// UpdateManualNode updates a manual node
-func (s *JSONStore) UpdateManualNode(node ManualNode) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	for i := range s.data.ManualNodes {
-		if s.data.ManualNodes[i].ID == node.ID {
-			s.data.ManualNodes[i] = node
-			return s.saveInternal()
-		}
-	}
-	return fmt.Errorf("manual node not found: %s", node.ID)
-}
-
-// DeleteManualNode deletes a manual node
-func (s *JSONStore) DeleteManualNode(id string) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	for i := range s.data.ManualNodes {
-		if s.data.ManualNodes[i].ID == id {
-			s.data.ManualNodes = append(s.data.ManualNodes[:i], s.data.ManualNodes[i+1:]...)
-			return s.saveInternal()
-		}
-	}
-	return fmt.Errorf("manual node not found: %s", id)
-}
+// ==================== Manual Node Operations (legacy, kept for JSON import) ====================
 
 // RemoveNodesByTags removes nodes with matching tags from all subscriptions and manual nodes.
 // Returns the number of nodes removed.
@@ -534,52 +490,6 @@ func (s *JSONStore) GetDataDir() string {
 	return s.dataDir
 }
 
-// FindManualNodeByServerPort finds a manual node by server:port
-func (s *JSONStore) FindManualNodeByServerPort(server string, port int) *ManualNode {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-
-	for i := range s.data.ManualNodes {
-		if s.data.ManualNodes[i].Node.Server == server && s.data.ManualNodes[i].Node.ServerPort == port {
-			return &s.data.ManualNodes[i]
-		}
-	}
-	return nil
-}
-
-func (s *JSONStore) RenameGroupTag(oldTag, newTag string) (int, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	count := 0
-	for i := range s.data.ManualNodes {
-		if s.data.ManualNodes[i].GroupTag == oldTag {
-			s.data.ManualNodes[i].GroupTag = newTag
-			count++
-		}
-	}
-	if count > 0 {
-		return count, s.saveInternal()
-	}
-	return 0, nil
-}
-
-func (s *JSONStore) ClearGroupTag(tag string) (int, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	count := 0
-	for i := range s.data.ManualNodes {
-		if s.data.ManualNodes[i].GroupTag == tag {
-			s.data.ManualNodes[i].GroupTag = ""
-			count++
-		}
-	}
-	if count > 0 {
-		return count, s.saveInternal()
-	}
-	return 0, nil
-}
 
 // Close is a no-op for JSONStore
 func (s *JSONStore) Close() error { return nil }
@@ -591,12 +501,25 @@ func (s *JSONStore) AddUnsupportedNode(_ UnsupportedNode) error    { return nil 
 func (s *JSONStore) ClearUnsupportedNodes() error                  { return nil }
 func (s *JSONStore) DeleteUnsupportedNodesByTags(_ []string) error { return nil }
 
-// ==================== Pipeline (stubs) ====================
+// ==================== Unified Nodes (stubs) ====================
 
-func (s *JSONStore) GetManualNodesBySourceSubscription(_ string) ([]ManualNode, error) { return nil, nil }
-func (s *JSONStore) GetPipelineLogs(_ string, _ int) ([]PipelineLog, error)            { return nil, nil }
-func (s *JSONStore) AddPipelineLog(_ PipelineLog) error                                { return nil }
-func (s *JSONStore) GetConsecutiveFailures(_ string, _ int, _ int) (int, error)        { return 0, nil }
+func (s *JSONStore) GetNodes(_ NodeStatus) []UnifiedNode                      { return []UnifiedNode{} }
+func (s *JSONStore) GetNodeByID(_ int64) *UnifiedNode                        { return nil }
+func (s *JSONStore) GetNodeByServerPort(_ string, _ int) *UnifiedNode        { return nil }
+func (s *JSONStore) GetNodesBySource(_ string) []UnifiedNode                 { return []UnifiedNode{} }
+func (s *JSONStore) AddNode(_ UnifiedNode) (int64, error)                    { return 0, nil }
+func (s *JSONStore) AddNodesBulk(_ []UnifiedNode) (int, error)               { return 0, nil }
+func (s *JSONStore) UpdateNode(_ UnifiedNode) error                          { return nil }
+func (s *JSONStore) DeleteNode(_ int64) error                                { return nil }
+func (s *JSONStore) PromoteNode(_ int64) error                               { return nil }
+func (s *JSONStore) DemoteNode(_ int64) error                                { return nil }
+func (s *JSONStore) ArchiveNode(_ int64) error                               { return nil }
+func (s *JSONStore) UnarchiveNode(_ int64) error                             { return nil }
+func (s *JSONStore) IncrementConsecutiveFailures(_ int64) (int, error)       { return 0, nil }
+func (s *JSONStore) ResetConsecutiveFailures(_ int64) error                  { return nil }
+func (s *JSONStore) GetNodeCounts() NodeCounts                               { return NodeCounts{} }
+func (s *JSONStore) AddVerificationLog(_ VerificationLog) error              { return nil }
+func (s *JSONStore) GetVerificationLogs(_ int) []VerificationLog             { return []VerificationLog{} }
 
 // ==================== Measurements (stubs) ====================
 

@@ -109,7 +109,7 @@ func NewServer(store storage.Store, processManager *daemon.ProcessManager, probe
 
 	// Set scheduler callbacks
 	s.scheduler.SetUpdateCallback(s.autoApplyConfig)
-	s.scheduler.SetPipelineCallback(s.RunAllPipelines)
+	s.scheduler.SetVerificationCallback(s.RunVerification)
 
 	s.setupRoutes()
 	return s
@@ -228,24 +228,24 @@ func (s *Server) setupRoutes() {
 		api.DELETE("/nodes/unsupported", s.clearUnsupportedNodes)
 		api.POST("/nodes/unsupported/delete", s.deleteUnsupportedNodes)
 
-		// Pipeline
-		api.PUT("/subscriptions/:id/pipeline", s.updateSubscriptionPipeline)
-		api.POST("/subscriptions/:id/pipeline/run", s.runSubscriptionPipeline)
-		api.GET("/subscriptions/:id/pipeline/logs", s.getSubscriptionPipelineLogs)
-		api.GET("/subscriptions/:id/stale-nodes", s.getStaleNodesHandler)
-		api.POST("/subscriptions/:id/stale-nodes/delete", s.deleteStaleNodesHandler)
-		api.GET("/manual-nodes/stale", s.getAllStaleNodes)
+		// Unified nodes
+		api.GET("/nodes/unified", s.getUnifiedNodes)
+		api.POST("/nodes/unified", s.addUnifiedNode)
+		api.POST("/nodes/unified/bulk", s.addUnifiedNodesBulk)
+		api.PUT("/nodes/unified/:id", s.updateUnifiedNode)
+		api.DELETE("/nodes/unified/:id", s.deleteUnifiedNode)
+		api.POST("/nodes/unified/:id/promote", s.promoteUnifiedNode)
+		api.POST("/nodes/unified/:id/demote", s.demoteUnifiedNode)
+		api.POST("/nodes/unified/:id/archive", s.archiveUnifiedNode)
+		api.POST("/nodes/unified/:id/unarchive", s.unarchiveUnifiedNode)
+		api.POST("/nodes/unified/bulk-promote", s.bulkPromoteNodes)
+		api.POST("/nodes/unified/bulk-archive", s.bulkArchiveNodes)
+		api.GET("/nodes/unified/counts", s.getNodeCounts)
 
-		// Manual nodes
-		api.GET("/manual-nodes", s.getManualNodes)
-		api.GET("/manual-nodes/tags", s.getManualNodeTags)
-		api.POST("/manual-nodes", s.addManualNode)
-		api.POST("/manual-nodes/bulk", s.addManualNodesBulk)
-		api.PUT("/manual-nodes/:id", s.updateManualNode)
-		api.DELETE("/manual-nodes/:id", s.deleteManualNode)
-		api.POST("/manual-nodes/export", s.exportManualNodes)
-		api.PUT("/manual-nodes/tags/:tag", s.renameGroupTag)
-		api.DELETE("/manual-nodes/tags/:tag", s.deleteGroupTag)
+		// Verification
+		api.POST("/verification/run", s.runVerification)
+		api.GET("/verification/logs", s.getVerificationLogs)
+		api.GET("/verification/status", s.getVerificationStatus)
 
 		// Kernel management
 		api.GET("/kernel/info", s.getKernelInfo)
@@ -2192,51 +2192,57 @@ func (s *Server) siteCheckNodes(c *gin.Context) {
 	})
 }
 
-// ==================== Manual Node API ====================
+// ==================== Unified Node API ====================
 
-func (s *Server) getManualNodes(c *gin.Context) {
-	nodes := s.store.GetManualNodes()
+func (s *Server) getUnifiedNodes(c *gin.Context) {
+	statusStr := c.DefaultQuery("status", "")
+	if statusStr == "" {
+		// Return all
+		pending := s.store.GetNodes(storage.NodeStatusPending)
+		verified := s.store.GetNodes(storage.NodeStatusVerified)
+		archived := s.store.GetNodes(storage.NodeStatusArchived)
+		c.JSON(http.StatusOK, gin.H{
+			"pending":  pending,
+			"verified": verified,
+			"archived": archived,
+		})
+		return
+	}
+	nodes := s.store.GetNodes(storage.NodeStatus(statusStr))
 	c.JSON(http.StatusOK, gin.H{"data": nodes})
 }
 
-func (s *Server) addManualNode(c *gin.Context) {
-	var node storage.ManualNode
+func (s *Server) addUnifiedNode(c *gin.Context) {
+	var node storage.UnifiedNode
 	if err := c.ShouldBindJSON(&node); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
 
 	// Deduplication check
-	if existing := s.store.FindManualNodeByServerPort(node.Node.Server, node.Node.ServerPort); existing != nil {
+	if existing := s.store.GetNodeByServerPort(node.Server, node.ServerPort); existing != nil {
 		c.JSON(http.StatusConflict, gin.H{
-			"error":    fmt.Sprintf("Node %s:%d already exists as '%s'", node.Node.Server, node.Node.ServerPort, existing.Node.Tag),
+			"error":    fmt.Sprintf("Node %s:%d already exists as '%s'", node.Server, node.ServerPort, existing.Tag),
 			"existing": existing,
 		})
 		return
 	}
 
-	// Generate ID
-	node.ID = uuid.New().String()
-
-	if err := s.store.AddManualNode(node); err != nil {
+	id, err := s.store.AddNode(node)
+	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-
-	// Auto-apply config
-	if err := s.autoApplyConfig(); err != nil {
-		c.JSON(http.StatusOK, gin.H{"data": node, "warning": "Added successfully, but auto-apply config failed: " + err.Error()})
-		return
-	}
+	node.ID = id
 
 	c.JSON(http.StatusOK, gin.H{"data": node})
 }
 
-func (s *Server) addManualNodesBulk(c *gin.Context) {
+func (s *Server) addUnifiedNodesBulk(c *gin.Context) {
 	var req struct {
-		Nodes                []storage.ManualNode `json:"nodes" binding:"required"`
-		GroupTag             string               `json:"group_tag"`
-		SourceSubscriptionID string               `json:"source_subscription_id"`
+		Nodes    []storage.UnifiedNode `json:"nodes" binding:"required"`
+		GroupTag string                `json:"group_tag"`
+		Source   string                `json:"source"`
 	}
 
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -2244,176 +2250,202 @@ func (s *Server) addManualNodesBulk(c *gin.Context) {
 		return
 	}
 
-	var added []storage.ManualNode
-	skipped := 0
-
 	for i := range req.Nodes {
-		// Deduplication check
-		if existing := s.store.FindManualNodeByServerPort(req.Nodes[i].Node.Server, req.Nodes[i].Node.ServerPort); existing != nil {
-			skipped++
-			continue
-		}
-
-		req.Nodes[i].ID = uuid.New().String()
 		if req.GroupTag != "" && req.Nodes[i].GroupTag == "" {
 			req.Nodes[i].GroupTag = req.GroupTag
 		}
-		if req.SourceSubscriptionID != "" && req.Nodes[i].SourceSubscriptionID == "" {
-			req.Nodes[i].SourceSubscriptionID = req.SourceSubscriptionID
+		if req.Source != "" && req.Nodes[i].Source == "" {
+			req.Nodes[i].Source = req.Source
 		}
-		if err := s.store.AddManualNode(req.Nodes[i]); err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-			return
-		}
-		added = append(added, req.Nodes[i])
 	}
 
-	// Auto-apply config
-	msg := fmt.Sprintf("Added %d nodes", len(added))
+	added, err := s.store.AddNodesBulk(req.Nodes)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	skipped := len(req.Nodes) - added
+	msg := fmt.Sprintf("Added %d nodes", added)
 	if skipped > 0 {
 		msg += fmt.Sprintf(", skipped %d duplicates", skipped)
 	}
 
-	if err := s.autoApplyConfig(); err != nil {
-		c.JSON(http.StatusOK, gin.H{"data": added, "added": len(added), "skipped": skipped, "message": msg, "warning": "auto-apply config failed: " + err.Error()})
+	c.JSON(http.StatusOK, gin.H{"added": added, "skipped": skipped, "message": msg})
+}
+
+func (s *Server) updateUnifiedNode(c *gin.Context) {
+	idStr := c.Param("id")
+	id, err := strconv.ParseInt(idStr, 10, 64)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid id"})
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{"data": added, "added": len(added), "skipped": skipped, "message": msg})
-}
-
-func (s *Server) getManualNodeTags(c *gin.Context) {
-	nodes := s.store.GetManualNodes()
-	tagSet := make(map[string]bool)
-	for _, mn := range nodes {
-		if mn.GroupTag != "" {
-			tagSet[mn.GroupTag] = true
-		}
-	}
-	tags := make([]string, 0, len(tagSet))
-	for t := range tagSet {
-		tags = append(tags, t)
-	}
-	sort.Strings(tags)
-	c.JSON(http.StatusOK, gin.H{"data": tags})
-}
-
-func (s *Server) updateManualNode(c *gin.Context) {
-	id := c.Param("id")
-
-	var node storage.ManualNode
+	var node storage.UnifiedNode
 	if err := c.ShouldBindJSON(&node); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
 
 	node.ID = id
-	if err := s.store.UpdateManualNode(node); err != nil {
+	if err := s.store.UpdateNode(node); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
 
-	// Auto-apply config
 	if err := s.autoApplyConfig(); err != nil {
-		c.JSON(http.StatusOK, gin.H{"message": "Updated successfully, but auto-apply config failed: " + err.Error()})
+		c.JSON(http.StatusOK, gin.H{"message": "Updated, but auto-apply failed: " + err.Error()})
 		return
 	}
-
 	c.JSON(http.StatusOK, gin.H{"message": "Updated successfully"})
 }
 
-func (s *Server) deleteManualNode(c *gin.Context) {
-	id := c.Param("id")
+func (s *Server) deleteUnifiedNode(c *gin.Context) {
+	idStr := c.Param("id")
+	id, err := strconv.ParseInt(idStr, 10, 64)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid id"})
+		return
+	}
 
-	if err := s.store.DeleteManualNode(id); err != nil {
+	if err := s.store.DeleteNode(id); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
 
-	// Auto-apply config
 	if err := s.autoApplyConfig(); err != nil {
-		c.JSON(http.StatusOK, gin.H{"message": "Deleted successfully, but auto-apply config failed: " + err.Error()})
+		c.JSON(http.StatusOK, gin.H{"message": "Deleted, but auto-apply failed: " + err.Error()})
 		return
 	}
-
 	c.JSON(http.StatusOK, gin.H{"message": "Deleted successfully"})
 }
 
-func (s *Server) exportManualNodes(c *gin.Context) {
-	var req struct {
-		IDs []string `json:"ids"`
+func (s *Server) promoteUnifiedNode(c *gin.Context) {
+	idStr := c.Param("id")
+	id, err := strconv.ParseInt(idStr, 10, 64)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid id"})
+		return
 	}
-	_ = c.ShouldBindJSON(&req)
-
-	nodes := s.store.GetManualNodes()
-
-	// If specific IDs provided, filter
-	if len(req.IDs) > 0 {
-		idSet := make(map[string]bool, len(req.IDs))
-		for _, id := range req.IDs {
-			idSet[id] = true
-		}
-		filtered := make([]storage.ManualNode, 0, len(req.IDs))
-		for _, mn := range nodes {
-			if idSet[mn.ID] {
-				filtered = append(filtered, mn)
-			}
-		}
-		nodes = filtered
+	if err := s.store.PromoteNode(id); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
 	}
-
-	urls := make([]string, 0, len(nodes))
-	for _, mn := range nodes {
-		u, err := parser.SerializeNode(&mn.Node)
-		if err != nil {
-			continue
-		}
-		urls = append(urls, u)
-	}
-
-	c.JSON(http.StatusOK, gin.H{"data": urls})
+	s.autoApplyConfig()
+	c.JSON(http.StatusOK, gin.H{"message": "Promoted to verified"})
 }
 
-// ==================== Group Tag Management API ====================
+func (s *Server) demoteUnifiedNode(c *gin.Context) {
+	idStr := c.Param("id")
+	id, err := strconv.ParseInt(idStr, 10, 64)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid id"})
+		return
+	}
+	if err := s.store.DemoteNode(id); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	s.autoApplyConfig()
+	c.JSON(http.StatusOK, gin.H{"message": "Demoted to pending"})
+}
 
-func (s *Server) renameGroupTag(c *gin.Context) {
-	oldTag := c.Param("tag")
+func (s *Server) archiveUnifiedNode(c *gin.Context) {
+	idStr := c.Param("id")
+	id, err := strconv.ParseInt(idStr, 10, 64)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid id"})
+		return
+	}
+	if err := s.store.ArchiveNode(id); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"message": "Archived"})
+}
+
+func (s *Server) unarchiveUnifiedNode(c *gin.Context) {
+	idStr := c.Param("id")
+	id, err := strconv.ParseInt(idStr, 10, 64)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid id"})
+		return
+	}
+	if err := s.store.UnarchiveNode(id); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"message": "Unarchived to pending"})
+}
+
+func (s *Server) bulkPromoteNodes(c *gin.Context) {
 	var req struct {
-		NewTag string `json:"new_tag" binding:"required"`
+		IDs []int64 `json:"ids" binding:"required"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-
-	affected, err := s.store.RenameGroupTag(oldTag, req.NewTag)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
+	promoted := 0
+	for _, id := range req.IDs {
+		if err := s.store.PromoteNode(id); err == nil {
+			promoted++
+		}
 	}
-
-	resp := gin.H{
-		"affected": affected,
-		"message":  fmt.Sprintf("Renamed tag '%s' to '%s' (%d nodes)", oldTag, req.NewTag, affected),
-	}
-	if err := s.autoApplyConfig(); err != nil {
-		resp["warning"] = "auto-apply config failed: " + err.Error()
-	}
-	c.JSON(http.StatusOK, resp)
+	s.autoApplyConfig()
+	c.JSON(http.StatusOK, gin.H{"promoted": promoted, "message": fmt.Sprintf("Promoted %d nodes", promoted)})
 }
 
-func (s *Server) deleteGroupTag(c *gin.Context) {
-	tag := c.Param("tag")
-	affected, err := s.store.ClearGroupTag(tag)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+func (s *Server) bulkArchiveNodes(c *gin.Context) {
+	var req struct {
+		IDs []int64 `json:"ids" binding:"required"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
+	archived := 0
+	for _, id := range req.IDs {
+		if err := s.store.ArchiveNode(id); err == nil {
+			archived++
+		}
+	}
+	c.JSON(http.StatusOK, gin.H{"archived": archived, "message": fmt.Sprintf("Archived %d nodes", archived)})
+}
 
-	c.JSON(http.StatusOK, gin.H{
-		"affected": affected,
-		"message":  fmt.Sprintf("Cleared tag '%s' from %d nodes", tag, affected),
-	})
+func (s *Server) getNodeCounts(c *gin.Context) {
+	counts := s.store.GetNodeCounts()
+	c.JSON(http.StatusOK, gin.H{"data": counts})
+}
+
+// ==================== Verification API ====================
+
+func (s *Server) runVerification(c *gin.Context) {
+	go s.RunVerification()
+	c.JSON(http.StatusOK, gin.H{"message": "Verification started"})
+}
+
+func (s *Server) getVerificationStatus(c *gin.Context) {
+	settings := s.store.GetSettings()
+	result := gin.H{
+		"enabled":       settings.VerificationInterval > 0,
+		"interval_min":  settings.VerificationInterval,
+		"last_run_at":   s.scheduler.GetLastVerifyTime(),
+		"next_run_at":   s.scheduler.GetNextVerifyTime(),
+		"node_counts":   s.store.GetNodeCounts(),
+	}
+	c.JSON(http.StatusOK, gin.H{"data": result})
+}
+
+func (s *Server) getVerificationLogs(c *gin.Context) {
+	limitStr := c.DefaultQuery("limit", "20")
+	limit, err := strconv.Atoi(limitStr)
+	if err != nil || limit <= 0 {
+		limit = 20
+	}
+	logs := s.store.GetVerificationLogs(limit)
+	c.JSON(http.StatusOK, gin.H{"data": logs})
 }
 
 // ==================== Kernel Management API ====================
@@ -2643,7 +2675,7 @@ func (s *Server) debugDump(c *gin.Context) {
 	}
 
 	subscriptions := s.store.GetSubscriptions()
-	manualNodes := s.store.GetManualNodes()
+	nodeCounts := s.store.GetNodeCounts()
 	filters := s.store.GetFilters()
 	rules := s.store.GetRules()
 	ruleGroups := s.store.GetRuleGroups()
@@ -2690,7 +2722,7 @@ func (s *Server) debugDump(c *gin.Context) {
 		Settings         interface{}              `json:"settings"`
 		// Data
 		Subscriptions    interface{}              `json:"subscriptions"`
-		ManualNodes      interface{}              `json:"manual_nodes"`
+		NodeCounts       interface{}              `json:"node_counts"`
 		Filters          interface{}              `json:"filters"`
 		Rules            interface{}              `json:"rules"`
 		RuleGroups       interface{}              `json:"rule_groups"`
@@ -2717,7 +2749,7 @@ func (s *Server) debugDump(c *gin.Context) {
 			Probe:            s.probeManager.Status(),
 			Settings:         settings,
 			Subscriptions:    subscriptions,
-			ManualNodes:      manualNodes,
+			NodeCounts:       nodeCounts,
 			Filters:          filters,
 			Rules:            rules,
 			RuleGroups:       ruleGroups,

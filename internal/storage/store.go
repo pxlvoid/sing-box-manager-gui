@@ -31,15 +31,26 @@ type Store interface {
 	GetSettings() *Settings
 	UpdateSettings(settings *Settings) error
 
-	// Manual Nodes
-	GetManualNodes() []ManualNode
-	AddManualNode(node ManualNode) error
-	UpdateManualNode(node ManualNode) error
-	DeleteManualNode(id string) error
-	RemoveNodesByTags(tags []string) (int, error)
-	FindManualNodeByServerPort(server string, port int) *ManualNode
-	RenameGroupTag(oldTag, newTag string) (int, error)
-	ClearGroupTag(tag string) (int, error)
+	// Unified Nodes
+	GetNodes(status NodeStatus) []UnifiedNode
+	GetNodeByID(id int64) *UnifiedNode
+	GetNodeByServerPort(server string, port int) *UnifiedNode
+	GetNodesBySource(source string) []UnifiedNode
+	AddNode(node UnifiedNode) (int64, error)
+	AddNodesBulk(nodes []UnifiedNode) (int, error)
+	UpdateNode(node UnifiedNode) error
+	DeleteNode(id int64) error
+	PromoteNode(id int64) error
+	DemoteNode(id int64) error
+	ArchiveNode(id int64) error
+	UnarchiveNode(id int64) error
+	IncrementConsecutiveFailures(id int64) (int, error)
+	ResetConsecutiveFailures(id int64) error
+	GetNodeCounts() NodeCounts
+
+	// Verification Logs
+	AddVerificationLog(log VerificationLog) error
+	GetVerificationLogs(limit int) []VerificationLog
 
 	// Helpers
 	GetAllNodes() []Node
@@ -48,18 +59,13 @@ type Store interface {
 	GetCountryGroups() []CountryGroup
 	GetDataDir() string
 	Save() error
+	RemoveNodesByTags(tags []string) (int, error)
 
 	// Unsupported Nodes
 	GetUnsupportedNodes() []UnsupportedNode
 	AddUnsupportedNode(node UnsupportedNode) error
 	ClearUnsupportedNodes() error
 	DeleteUnsupportedNodesByTags(tags []string) error
-
-	// Pipeline
-	GetManualNodesBySourceSubscription(subscriptionID string) ([]ManualNode, error)
-	GetPipelineLogs(subscriptionID string, limit int) ([]PipelineLog, error)
-	AddPipelineLog(log PipelineLog) error
-	GetConsecutiveFailures(server string, port int, maxCount int) (int, error)
 
 	// Measurements
 	AddHealthMeasurements(measurements []HealthMeasurement) error
@@ -74,4 +80,4 @@ type Store interface {
 }
 
 // Compile-time interface checks
-var _ Store = (*JSONStore)(nil)
+var _ Store = (*SQLiteStore)(nil)

@@ -13,12 +13,17 @@ type Scheduler struct {
 	store      storage.Store
 	subService *SubscriptionService
 	onUpdate   func() error // Callback after subscription update
-	onPipeline func() bool  // Callback to run pipelines; returns true if config was already applied
+	onVerify   func()       // Callback to run verification cycle
 
-	stopCh   chan struct{}
-	running  bool
-	interval time.Duration
-	mu       sync.Mutex
+	stopCh             chan struct{}
+	running            bool
+	interval           time.Duration
+	verifyInterval     time.Duration
+	verifyRunning      bool
+	lastVerifyTime     *time.Time
+	nextSubUpdateTime  *time.Time
+	nextVerifyTime     *time.Time
+	mu                 sync.Mutex
 }
 
 // NewScheduler creates a scheduler
@@ -35,10 +40,9 @@ func (s *Scheduler) SetUpdateCallback(callback func() error) {
 	s.onUpdate = callback
 }
 
-// SetPipelineCallback sets the pipeline callback (runs after subscription update, before auto-apply).
-// The callback should return true if it already applied the config.
-func (s *Scheduler) SetPipelineCallback(callback func() bool) {
-	s.onPipeline = callback
+// SetVerificationCallback sets the verification callback that runs periodically
+func (s *Scheduler) SetVerificationCallback(callback func()) {
+	s.onVerify = callback
 }
 
 // Start starts the scheduler
@@ -51,17 +55,29 @@ func (s *Scheduler) Start() {
 	}
 
 	settings := s.store.GetSettings()
-	if settings.SubscriptionInterval <= 0 {
-		log.Println("[Scheduler] Scheduled updates disabled")
+
+	subEnabled := settings.SubscriptionInterval > 0
+	verifyEnabled := settings.VerificationInterval > 0
+
+	if !subEnabled && !verifyEnabled {
+		log.Println("[Scheduler] All scheduled tasks disabled")
 		return
 	}
 
-	s.interval = time.Duration(settings.SubscriptionInterval) * time.Minute
 	s.running = true
 	s.stopCh = make(chan struct{})
 
-	go s.run()
-	log.Printf("[Scheduler] Started, update interval: %v\n", s.interval)
+	if subEnabled {
+		s.interval = time.Duration(settings.SubscriptionInterval) * time.Minute
+		go s.runSubscriptionTicker()
+		log.Printf("[Scheduler] Subscription updates started, interval: %v", s.interval)
+	}
+
+	if verifyEnabled && s.onVerify != nil {
+		s.verifyInterval = time.Duration(settings.VerificationInterval) * time.Minute
+		go s.runVerificationTicker()
+		log.Printf("[Scheduler] Verification started, interval: %v", s.verifyInterval)
+	}
 }
 
 // Stop stops the scheduler
@@ -75,6 +91,9 @@ func (s *Scheduler) Stop() {
 
 	close(s.stopCh)
 	s.running = false
+	s.verifyRunning = false
+	s.nextSubUpdateTime = nil
+	s.nextVerifyTime = nil
 	log.Println("[Scheduler] Stopped")
 }
 
@@ -91,10 +110,16 @@ func (s *Scheduler) IsRunning() bool {
 	return s.running
 }
 
-// run runs the scheduled task
-func (s *Scheduler) run() {
+// runSubscriptionTicker runs the subscription update ticker
+func (s *Scheduler) runSubscriptionTicker() {
 	ticker := time.NewTicker(s.interval)
 	defer ticker.Stop()
+
+	s.mu.Lock()
+	now := time.Now()
+	next := now.Add(s.interval)
+	s.nextSubUpdateTime = &next
+	s.mu.Unlock()
 
 	for {
 		select {
@@ -102,8 +127,54 @@ func (s *Scheduler) run() {
 			return
 		case <-ticker.C:
 			s.updateSubscriptions()
+			s.mu.Lock()
+			next := time.Now().Add(s.interval)
+			s.nextSubUpdateTime = &next
+			s.mu.Unlock()
 		}
 	}
+}
+
+// runVerificationTicker runs the verification ticker
+func (s *Scheduler) runVerificationTicker() {
+	ticker := time.NewTicker(s.verifyInterval)
+	defer ticker.Stop()
+
+	s.mu.Lock()
+	s.verifyRunning = true
+	now := time.Now()
+	next := now.Add(s.verifyInterval)
+	s.nextVerifyTime = &next
+	s.mu.Unlock()
+
+	for {
+		select {
+		case <-s.stopCh:
+			return
+		case <-ticker.C:
+			s.runVerification()
+			s.mu.Lock()
+			next := time.Now().Add(s.verifyInterval)
+			s.nextVerifyTime = &next
+			s.mu.Unlock()
+		}
+	}
+}
+
+// runVerification executes a single verification cycle
+func (s *Scheduler) runVerification() {
+	log.Println("[Scheduler] Starting automatic verification...")
+
+	if s.onVerify != nil {
+		s.onVerify()
+	}
+
+	s.mu.Lock()
+	now := time.Now()
+	s.lastVerifyTime = &now
+	s.mu.Unlock()
+
+	log.Println("[Scheduler] Verification completed")
 }
 
 // updateSubscriptions updates all subscriptions
@@ -117,16 +188,8 @@ func (s *Scheduler) updateSubscriptions() {
 
 	log.Println("[Scheduler] Subscription update completed")
 
-	// Run pipelines (may add/remove manual nodes)
-	alreadyApplied := false
-	if s.onPipeline != nil {
-		log.Println("[Scheduler] Running auto-pipelines...")
-		alreadyApplied = s.onPipeline()
-		log.Println("[Scheduler] Auto-pipelines completed")
-	}
-
-	// Call update callback (auto-apply config) — skip if pipelines already applied
-	if s.onUpdate != nil && !alreadyApplied {
+	// Call update callback (auto-apply config)
+	if s.onUpdate != nil {
 		if err := s.onUpdate(); err != nil {
 			log.Printf("[Scheduler] Failed to auto-apply config: %v\n", err)
 		} else {
@@ -135,22 +198,37 @@ func (s *Scheduler) updateSubscriptions() {
 	}
 }
 
-// GetNextUpdateTime gets the next update time
+// GetNextUpdateTime gets the next subscription update time
 func (s *Scheduler) GetNextUpdateTime() *time.Time {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-
-	if !s.running {
-		return nil
-	}
-
-	next := time.Now().Add(s.interval)
-	return &next
+	return s.nextSubUpdateTime
 }
 
-// GetInterval gets the update interval
+// GetNextVerifyTime gets the next verification time
+func (s *Scheduler) GetNextVerifyTime() *time.Time {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.nextVerifyTime
+}
+
+// GetLastVerifyTime gets the last verification time
+func (s *Scheduler) GetLastVerifyTime() *time.Time {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.lastVerifyTime
+}
+
+// GetInterval gets the subscription update interval
 func (s *Scheduler) GetInterval() time.Duration {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return s.interval
+}
+
+// GetVerifyInterval gets the verification interval
+func (s *Scheduler) GetVerifyInterval() time.Duration {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.verifyInterval
 }

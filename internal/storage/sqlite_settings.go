@@ -15,7 +15,8 @@ func (s *SQLiteStore) GetSettings() *Settings {
 		web_port, clash_api_port, clash_ui_path, clash_api_secret,
 		final_outbound, ruleset_base_url,
 		auto_apply, subscription_interval,
-		github_proxy, debug_api_enabled
+		github_proxy, debug_api_enabled,
+		verification_interval, archive_threshold
 		FROM settings WHERE id = 1`)
 
 	settings := &Settings{}
@@ -31,6 +32,7 @@ func (s *SQLiteStore) GetSettings() *Settings {
 		&settings.FinalOutbound, &settings.RuleSetBaseURL,
 		&autoApply, &settings.SubscriptionInterval,
 		&settings.GithubProxy, &debugAPI,
+		&settings.VerificationInterval, &settings.ArchiveThreshold,
 	)
 	if err != nil {
 		return DefaultSettings()
@@ -66,8 +68,9 @@ func (s *SQLiteStore) UpdateSettings(settings *Settings) error {
 		web_port, clash_api_port, clash_ui_path, clash_api_secret,
 		final_outbound, ruleset_base_url,
 		auto_apply, subscription_interval,
-		github_proxy, debug_api_enabled)
-		VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		github_proxy, debug_api_enabled,
+		verification_interval, archive_threshold)
+		VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		settings.SingBoxPath, settings.ConfigPath,
 		settings.MixedPort, settings.MixedAddress, boolToInt(settings.TunEnabled), boolToInt(settings.AllowLAN),
 		settings.SocksPort, settings.SocksAddress, boolToInt(settings.SocksAuth), settings.SocksUsername, settings.SocksPassword,
@@ -77,7 +80,8 @@ func (s *SQLiteStore) UpdateSettings(settings *Settings) error {
 		settings.WebPort, settings.ClashAPIPort, settings.ClashUIPath, settings.ClashAPISecret,
 		settings.FinalOutbound, settings.RuleSetBaseURL,
 		boolToInt(settings.AutoApply), settings.SubscriptionInterval,
-		settings.GithubProxy, boolToInt(settings.DebugAPIEnabled))
+		settings.GithubProxy, boolToInt(settings.DebugAPIEnabled),
+		settings.VerificationInterval, settings.ArchiveThreshold)
 	if err != nil {
 		return err
 	}

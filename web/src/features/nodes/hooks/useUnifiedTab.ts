@@ -1,32 +1,38 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useStore } from '../../../store';
-import type { UnifiedNode, HealthFilter, SortColumn, SortConfig } from '../types';
-import { spKey, getNodeLatency, UNIFIED_PAGE_SIZE, SITE_CHECK_TARGETS } from '../types';
+import type { UnifiedNode as StoreUnifiedNode } from '../../../store';
+import type { HealthFilter, SortColumn, SortConfig } from '../types';
+import { spKey, getNodeLatency, UNIFIED_PAGE_SIZE } from '../types';
 
-export function useUnifiedTab() {
+export function useUnifiedTab(status: 'pending' | 'verified' | 'archived') {
   const {
-    subscriptions,
-    manualNodes,
-    unsupportedNodes,
+    pendingNodes,
+    verifiedNodes,
+    archivedNodes,
     healthResults,
     healthMode,
     checkSingleNodeHealth,
     checkNodesSites,
     stabilityStats,
     fetchStabilityStats,
-    staleNodes,
-    fetchStaleNodes,
+    deleteNode,
+    promoteNode,
+    demoteNode,
+    archiveNode,
+    unarchiveNode,
+    bulkPromoteNodes,
+    bulkArchiveNodes,
   } = useStore();
 
   const [healthFilter, setHealthFilter] = useState<HealthFilter>('all');
   const [sortConfig, setSortConfig] = useState<SortConfig>({ column: null, direction: 'asc' });
   const [searchQuery, setSearchQuery] = useState('');
   const [sourceFilter, setSourceFilter] = useState<string>('all');
-  const [unifiedPage, setUnifiedPage] = useState(1);
-  const [selectedNodes, setSelectedNodes] = useState<Set<string>>(new Set());
+  const [page, setPage] = useState(1);
+  const [selectedNodes, setSelectedNodes] = useState<Set<number>>(new Set());
   const [minStability, setMinStability] = useState(0);
 
-  useEffect(() => { fetchStabilityStats(); fetchStaleNodes(); }, []);
+  useEffect(() => { fetchStabilityStats(); }, []);
 
   const handleColumnSort = (column: SortColumn) => {
     setSortConfig(prev => {
@@ -38,102 +44,63 @@ export function useUnifiedTab() {
     });
   };
 
-  const unifiedNodes = useMemo(() => {
-    const result: UnifiedNode[] = [];
-    for (const mn of manualNodes) {
-      result.push({
-        key: `manual::${mn.id}`,
-        node: mn.node,
-        source: 'manual',
-        sourceName: 'Manual',
-        sourceId: mn.id,
-        enabled: mn.enabled,
-        groupTag: mn.group_tag,
-        manualNodeId: mn.id,
-        isUnsupported: unsupportedNodes.some(u => u.tag === mn.node.tag),
-      });
-    }
-    for (const sub of subscriptions) {
-      if (!sub.enabled) continue;
-      for (const node of (sub.nodes || [])) {
-        result.push({
-          key: `sub::${sub.id}::${node.tag}`,
-          node,
-          source: 'subscription',
-          sourceName: sub.name,
-          sourceId: sub.id,
-          enabled: true,
-          isUnsupported: unsupportedNodes.some(u => u.tag === node.tag),
-        });
-      }
-    }
-    return result;
-  }, [manualNodes, subscriptions, unsupportedNodes]);
-
-  const staleNodeKeys = useMemo(() => {
-    const keys = new Set<string>();
-    for (const mn of staleNodes) {
-      keys.add(spKey(mn.node));
-    }
-    return keys;
-  }, [staleNodes]);
-
-  const aliveSubNodes = useMemo(() =>
-    unifiedNodes.filter(n =>
-      n.source === 'subscription' && healthResults[spKey(n.node)]?.alive === true
-    ), [unifiedNodes, healthResults]);
-
-  const hasAliveNodes = aliveSubNodes.length > 0;
+  const nodes: StoreUnifiedNode[] = useMemo(() => {
+    if (status === 'pending') return pendingNodes;
+    if (status === 'verified') return verifiedNodes;
+    return archivedNodes;
+  }, [status, pendingNodes, verifiedNodes, archivedNodes]);
 
   const filteredAndSortedNodes = useMemo(() => {
-    let nodes = [...unifiedNodes];
+    let result = [...nodes];
 
     if (sourceFilter === 'manual') {
-      nodes = nodes.filter(n => n.source === 'manual');
+      result = result.filter(n => n.source === 'manual');
+    } else if (sourceFilter === 'subscription') {
+      result = result.filter(n => n.source === 'subscription');
     } else if (sourceFilter !== 'all') {
-      nodes = nodes.filter(n => n.source === 'subscription' && n.sourceId === sourceFilter);
+      result = result.filter(n => n.group_tag === sourceFilter);
     }
 
     if (searchQuery) {
       const q = searchQuery.toLowerCase();
-      nodes = nodes.filter(n =>
-        n.node.tag.toLowerCase().includes(q) ||
-        n.node.server.toLowerCase().includes(q) ||
-        n.sourceName.toLowerCase().includes(q)
+      result = result.filter(n =>
+        n.tag.toLowerCase().includes(q) ||
+        n.server.toLowerCase().includes(q) ||
+        (n.country || '').toLowerCase().includes(q)
       );
     }
 
     if (healthFilter !== 'all') {
-      nodes = nodes.filter(n => {
-        const result = healthResults[spKey(n.node)];
-        if (healthFilter === 'unchecked') return !result;
-        if (healthFilter === 'alive') return result?.alive === true;
-        if (healthFilter === 'timeout') return result && !result.alive;
-        if (healthFilter === 'stale') return staleNodeKeys.has(spKey(n.node));
+      result = result.filter(n => {
+        const key = spKey(n);
+        const hr = healthResults[key];
+        if (healthFilter === 'unchecked') return !hr;
+        if (healthFilter === 'alive') return hr?.alive === true;
+        if (healthFilter === 'timeout') return hr && !hr.alive;
         return true;
       });
     }
 
     if (minStability > 0) {
-      nodes = nodes.filter(n => {
-        const stats = stabilityStats[spKey(n.node)];
+      result = result.filter(n => {
+        const stats = stabilityStats[spKey(n)];
         return stats && stats.uptime_percent >= minStability;
       });
     }
 
     if (sortConfig.column) {
       const dir = sortConfig.direction === 'asc' ? 1 : -1;
-      nodes.sort((a, b) => {
+      result.sort((a, b) => {
         switch (sortConfig.column) {
           case 'name':
-            return dir * a.node.tag.localeCompare(b.node.tag);
+            return dir * a.tag.localeCompare(b.tag);
           case 'type':
-            return dir * a.node.type.localeCompare(b.node.type);
+            return dir * a.type.localeCompare(b.type);
           case 'source':
-            return dir * a.sourceName.localeCompare(b.sourceName);
+            return dir * a.source.localeCompare(b.source);
           case 'latency': {
-            const la = getNodeLatency(spKey(a.node), healthResults, healthMode);
-            const lb = getNodeLatency(spKey(b.node), healthResults, healthMode);
+            const la = getNodeLatency(spKey(a), healthResults, healthMode);
+            const lb = getNodeLatency(spKey(b), healthResults, healthMode);
             if (la === null && lb === null) return 0;
             if (la === null) return 1;
             if (lb === null) return -1;
@@ -143,16 +110,16 @@ export function useUnifiedTab() {
             return dir * (la - lb);
           }
           case 'stability': {
-            const sa = stabilityStats[spKey(a.node)];
-            const sb = stabilityStats[spKey(b.node)];
+            const sa = stabilityStats[spKey(a)];
+            const sb = stabilityStats[spKey(b)];
             if (!sa && !sb) return 0;
             if (!sa) return 1;
             if (!sb) return -1;
             return dir * (sa.uptime_percent - sb.uptime_percent);
           }
           case 'avgLatency': {
-            const sa = stabilityStats[spKey(a.node)];
-            const sb = stabilityStats[spKey(b.node)];
+            const sa = stabilityStats[spKey(a)];
+            const sb = stabilityStats[spKey(b)];
             if (!sa && !sb) return 0;
             if (!sa) return 1;
             if (!sb) return -1;
@@ -164,109 +131,93 @@ export function useUnifiedTab() {
       });
     }
 
-    return nodes;
-  }, [unifiedNodes, sourceFilter, searchQuery, healthFilter, sortConfig, healthResults, healthMode, stabilityStats, minStability, staleNodeKeys]);
+    return result;
+  }, [nodes, sourceFilter, searchQuery, healthFilter, sortConfig, healthResults, healthMode, stabilityStats, minStability]);
 
-  const unifiedTotalPages = Math.max(1, Math.ceil(filteredAndSortedNodes.length / UNIFIED_PAGE_SIZE));
-  const safePage = Math.min(unifiedPage, unifiedTotalPages);
+  const totalPages = Math.max(1, Math.ceil(filteredAndSortedNodes.length / UNIFIED_PAGE_SIZE));
+  const safePage = Math.min(page, totalPages);
   const paginatedNodes = filteredAndSortedNodes.slice(
     (safePage - 1) * UNIFIED_PAGE_SIZE,
     safePage * UNIFIED_PAGE_SIZE
   );
 
-  const selectedUnified = useMemo(() =>
-    filteredAndSortedNodes.filter(n => selectedNodes.has(n.key)),
-    [filteredAndSortedNodes, selectedNodes]
-  );
-  const selectedManualNodes = useMemo(() =>
-    selectedUnified.filter(n => n.source === 'manual'),
-    [selectedUnified]
-  );
-  const selectedSubNodes = useMemo(() =>
-    selectedUnified.filter(n => n.source === 'subscription'),
-    [selectedUnified]
-  );
-
-  const allPageSelected = paginatedNodes.length > 0 && paginatedNodes.every(n => selectedNodes.has(n.key));
-  const somePageSelected = paginatedNodes.some(n => selectedNodes.has(n.key));
+  const allPageSelected = paginatedNodes.length > 0 && paginatedNodes.every(n => selectedNodes.has(n.id));
+  const somePageSelected = paginatedNodes.some(n => selectedNodes.has(n.id));
 
   const handleToggleSelectAll = () => {
     setSelectedNodes(prev => {
       const next = new Set(prev);
       if (allPageSelected) {
-        paginatedNodes.forEach(n => next.delete(n.key));
+        paginatedNodes.forEach(n => next.delete(n.id));
       } else {
-        paginatedNodes.forEach(n => next.add(n.key));
+        paginatedNodes.forEach(n => next.add(n.id));
       }
       return next;
     });
   };
 
-  const handleToggleSelect = (key: string) => {
+  const handleToggleSelect = (id: number) => {
     setSelectedNodes(prev => {
       const next = new Set(prev);
-      if (next.has(key)) next.delete(key);
-      else next.add(key);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
       return next;
     });
   };
 
   const handleBulkHealthCheck = async () => {
+    const selected = nodes.filter(n => selectedNodes.has(n.id));
     await Promise.all(
-      selectedUnified.map(un => checkSingleNodeHealth(un.node.tag, { skipStatsRefresh: true }))
+      selected.map(n => checkSingleNodeHealth(n.tag, { skipStatsRefresh: true }))
     );
     useStore.getState().fetchStabilityStats();
   };
 
   const handleBulkSiteCheck = async () => {
-    const tags = [...new Set(selectedUnified.map(un => un.node.tag))];
+    const tags = [...new Set(nodes.filter(n => selectedNodes.has(n.id)).map(n => n.tag))];
     if (tags.length === 0) return;
-    await checkNodesSites(tags, SITE_CHECK_TARGETS);
+    await checkNodesSites(tags);
   };
 
   const handleBulkDelete = async () => {
-    const { deleteManualNode } = useStore.getState();
-    if (selectedManualNodes.length === 0) return;
-    if (!confirm(`Delete ${selectedManualNodes.length} manual node(s)?`)) return;
-    for (const un of selectedManualNodes) {
-      if (un.manualNodeId) await deleteManualNode(un.manualNodeId);
+    const ids = [...selectedNodes];
+    if (ids.length === 0) return;
+    if (!confirm(`Delete ${ids.length} node(s)?`)) return;
+    for (const id of ids) {
+      await deleteNode(id);
     }
     setSelectedNodes(new Set());
   };
 
-  const handleBulkToggle = async (enabled: boolean) => {
-    const { updateManualNode } = useStore.getState();
-    for (const un of selectedManualNodes) {
-      const mn = manualNodes.find(m => m.id === un.manualNodeId);
-      if (mn) await updateManualNode(mn.id, { ...mn, enabled });
-    }
+  const handleBulkPromote = async () => {
+    const ids = [...selectedNodes];
+    if (ids.length === 0) return;
+    await bulkPromoteNodes(ids);
+    setSelectedNodes(new Set());
   };
 
-  const handleBulkCopyToManual = async () => {
-    const { addManualNode } = useStore.getState();
-    for (const un of selectedSubNodes) {
-      try {
-        await addManualNode({
-          node: un.node,
-          enabled: true,
-          source_subscription_id: un.source === 'subscription' ? un.sourceId : undefined,
-        });
-      } catch (error) {
-        console.error('Failed to copy node:', error);
-      }
-    }
+  const handleBulkArchive = async () => {
+    const ids = [...selectedNodes];
+    if (ids.length === 0) return;
+    await bulkArchiveNodes(ids);
     setSelectedNodes(new Set());
   };
 
   const clearSelection = () => setSelectedNodes(new Set());
 
-  // Reset selection and page when filters change
   useEffect(() => {
-    setUnifiedPage(1);
+    setPage(1);
     setSelectedNodes(new Set());
   }, [sourceFilter, searchQuery, healthFilter, sortConfig, minStability]);
 
   return {
+    nodes,
+    filteredAndSortedNodes,
+    paginatedNodes,
+    page,
+    setPage,
+    totalPages,
+    safePage,
     healthFilter,
     setHealthFilter,
     sortConfig,
@@ -275,17 +226,7 @@ export function useUnifiedTab() {
     setSearchQuery,
     sourceFilter,
     setSourceFilter,
-    unifiedPage,
-    setUnifiedPage,
-    unifiedNodes,
-    filteredAndSortedNodes,
-    unifiedTotalPages,
-    safePage,
-    paginatedNodes,
     selectedNodes,
-    selectedUnified,
-    selectedManualNodes,
-    selectedSubNodes,
     allPageSelected,
     somePageSelected,
     handleToggleSelectAll,
@@ -293,14 +234,17 @@ export function useUnifiedTab() {
     handleBulkHealthCheck,
     handleBulkSiteCheck,
     handleBulkDelete,
-    handleBulkToggle,
-    handleBulkCopyToManual,
+    handleBulkPromote,
+    handleBulkArchive,
     clearSelection,
-    aliveSubNodes,
-    hasAliveNodes,
     stabilityStats,
     minStability,
     setMinStability,
-    staleNodeKeys,
+    // Single node actions
+    deleteNode,
+    promoteNode,
+    demoteNode,
+    archiveNode,
+    unarchiveNode,
   };
 }

@@ -17,7 +17,7 @@ import {
   AccordionItem,
 } from '@nextui-org/react';
 import { Link } from 'lucide-react';
-import type { Node, ManualNode } from '../../../store';
+import type { Node, UnifiedNode } from '../../../store';
 import {
   nodeTypeOptions,
   countryOptions,
@@ -35,11 +35,9 @@ import {
 interface NodeModalProps {
   isOpen: boolean;
   onClose: () => void;
-  editingNode: ManualNode | null;
+  editingNode: UnifiedNode | null;
   nodeForm: Node;
   setNodeForm: (form: Node) => void;
-  nodeEnabled: boolean;
-  setNodeEnabled: (v: boolean) => void;
   nodeUrl: string;
   setNodeUrl: (v: string) => void;
   isParsing: boolean;
@@ -57,8 +55,6 @@ export default function NodeModal({
   editingNode,
   nodeForm,
   setNodeForm,
-  nodeEnabled,
-  setNodeEnabled,
   nodeUrl,
   setNodeUrl,
   isParsing,
@@ -667,13 +663,6 @@ export default function NodeModal({
               );
             })()}
 
-            <div className="flex items-center justify-between">
-              <span>Enable Node</span>
-              <Switch
-                isSelected={nodeEnabled}
-                onValueChange={setNodeEnabled}
-              />
-            </div>
           </div>
         </ModalBody>
         <ModalFooter>

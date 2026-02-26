@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { subscriptionApi, filterApi, ruleApi, ruleGroupApi, settingsApi, serviceApi, nodeApi, manualNodeApi, monitorApi, proxyApi, probeApi, measurementApi } from '../api';
+import { subscriptionApi, filterApi, ruleApi, ruleGroupApi, settingsApi, serviceApi, nodeApi, unifiedNodeApi, verificationApi, monitorApi, proxyApi, probeApi, measurementApi } from '../api';
 import { toast } from '../components/Toast';
 
 export interface NodeHealthResult {
@@ -128,36 +128,51 @@ function appendSiteHistory(
 }
 
 // Type definitions
-export interface PipelineResult {
-  total_nodes: number;
-  checked_nodes: number;
-  alive_nodes: number;
-  copied_nodes: number;
-  skipped_nodes: number;
-  removed_stale: number;
-  error?: string;
-  duration_ms: number;
-}
+export type NodeStatus = 'pending' | 'verified' | 'archived';
 
-export interface PipelineLog {
+export interface UnifiedNode {
   id: number;
-  subscription_id: string;
-  timestamp: string;
-  total_nodes: number;
-  checked_nodes: number;
-  alive_nodes: number;
-  copied_nodes: number;
-  skipped_nodes: number;
-  removed_stale: number;
-  error?: string;
-  duration_ms: number;
+  tag: string;
+  type: string;
+  server: string;
+  server_port: number;
+  country?: string;
+  country_emoji?: string;
+  extra?: Record<string, any>;
+  status: NodeStatus;
+  source: string;
+  group_tag?: string;
+  consecutive_failures: number;
+  last_checked_at?: string;
+  created_at: string;
+  promoted_at?: string;
+  archived_at?: string;
 }
 
-export interface PipelineSettings {
-  auto_pipeline?: boolean;
-  pipeline_group_tag?: string;
-  pipeline_min_stability?: number;
-  pipeline_remove_dead?: boolean;
+export interface NodeCounts {
+  pending: number;
+  verified: number;
+  archived: number;
+}
+
+export interface VerificationLog {
+  id: number;
+  timestamp: string;
+  pending_checked: number;
+  pending_promoted: number;
+  pending_archived: number;
+  verified_checked: number;
+  verified_demoted: number;
+  duration_ms: number;
+  error?: string;
+}
+
+export interface VerificationStatus {
+  enabled: boolean;
+  interval_min: number;
+  last_run_at?: string;
+  next_run_at?: string;
+  node_counts: NodeCounts;
 }
 
 export interface Subscription {
@@ -174,14 +189,6 @@ export interface Subscription {
   };
   nodes: Node[];
   enabled: boolean;
-
-  // Pipeline
-  auto_pipeline: boolean;
-  pipeline_group_tag: string;
-  pipeline_min_stability: number;
-  pipeline_remove_dead: boolean;
-  pipeline_last_run?: string;
-  pipeline_last_result?: PipelineResult;
 }
 
 export interface Node {
@@ -194,13 +201,6 @@ export interface Node {
   extra?: Record<string, any>;
 }
 
-export interface ManualNode {
-  id: string;
-  node: Node;
-  enabled: boolean;
-  group_tag?: string;
-  source_subscription_id?: string;
-}
 
 export interface CountryGroup {
   code: string;
@@ -290,6 +290,8 @@ export interface Settings {
   ruleset_base_url: string;
   auto_apply: boolean;           // Auto-apply after config changes
   subscription_interval: number; // Subscription auto-update interval (minutes)
+  verification_interval: number; // Verification interval (minutes), 0 to disable
+  archive_threshold: number;     // Consecutive failures before archiving
   github_proxy: string;          // GitHub proxy address
   debug_api_enabled: boolean;    // Enable debug API for remote diagnostics
 }
@@ -330,7 +332,10 @@ export interface SystemInfo {
 interface AppState {
   // Data
   subscriptions: Subscription[];
-  manualNodes: ManualNode[];
+  pendingNodes: UnifiedNode[];
+  verifiedNodes: UnifiedNode[];
+  archivedNodes: UnifiedNode[];
+  nodeCounts: NodeCounts;
   countryGroups: CountryGroup[];
   filters: Filter[];
   rules: Rule[];
@@ -341,9 +346,10 @@ interface AppState {
   probeStatus: ProbeStatus | null;
   systemInfo: SystemInfo | null;
 
-  // Group tags
-  manualNodeTags: string[];
-  selectedGroupTag: string | null;
+  // Verification
+  verificationStatus: VerificationStatus | null;
+  verificationLogs: VerificationLog[];
+  verificationRunning: boolean;
 
   // Health check state
   healthResults: Record<string, NodeHealthResult>;
@@ -366,16 +372,13 @@ interface AppState {
   // Unsupported nodes
   unsupportedNodes: UnsupportedNodeInfo[];
 
-  // Pipeline
-  staleNodes: ManualNode[];
-  pipelineRunningSubId: string | null;
-
   // Loading state
   loading: boolean;
 
   // Actions
   fetchSubscriptions: () => Promise<void>;
-  fetchManualNodes: () => Promise<void>;
+  fetchNodes: (status?: NodeStatus) => Promise<void>;
+  fetchNodeCounts: () => Promise<void>;
   fetchCountryGroups: () => Promise<void>;
   fetchFilters: () => Promise<void>;
   fetchRules: () => Promise<void>;
@@ -386,8 +389,6 @@ interface AppState {
   fetchProbeStatus: () => Promise<void>;
   stopProbe: () => Promise<void>;
   fetchSystemInfo: () => Promise<void>;
-  fetchManualNodeTags: () => Promise<void>;
-  setSelectedGroupTag: (tag: string | null) => void;
 
   addSubscription: (name: string, url: string) => Promise<void>;
   updateSubscription: (id: string, name: string, url: string) => Promise<void>;
@@ -395,13 +396,22 @@ interface AppState {
   refreshSubscription: (id: string) => Promise<void>;
   toggleSubscription: (id: string, enabled: boolean) => Promise<void>;
 
-  // Manual node operations
-  addManualNodesBulk: (nodes: Omit<ManualNode, 'id'>[], groupTag?: string) => Promise<void>;
-  addManualNode: (node: Omit<ManualNode, 'id'>) => Promise<void>;
-  updateManualNode: (id: string, node: Partial<ManualNode>) => Promise<void>;
-  deleteManualNode: (id: string) => Promise<void>;
-  renameGroupTag: (oldTag: string, newTag: string) => Promise<void>;
-  deleteGroupTag: (tag: string) => Promise<void>;
+  // Unified node operations
+  addNode: (node: Partial<UnifiedNode>) => Promise<void>;
+  addNodesBulk: (nodes: any[], groupTag?: string, source?: string) => Promise<void>;
+  updateNode: (id: number, node: Partial<UnifiedNode>) => Promise<void>;
+  deleteNode: (id: number) => Promise<void>;
+  promoteNode: (id: number) => Promise<void>;
+  demoteNode: (id: number) => Promise<void>;
+  archiveNode: (id: number) => Promise<void>;
+  unarchiveNode: (id: number) => Promise<void>;
+  bulkPromoteNodes: (ids: number[]) => Promise<void>;
+  bulkArchiveNodes: (ids: number[]) => Promise<void>;
+
+  // Verification operations
+  runVerification: () => Promise<void>;
+  fetchVerificationStatus: () => Promise<void>;
+  fetchVerificationLogs: (limit?: number) => Promise<void>;
 
   updateSettings: (settings: Settings) => Promise<void>;
 
@@ -439,12 +449,6 @@ interface AppState {
   // Proxy group operations
   fetchProxyGroups: () => Promise<void>;
   switchProxy: (group: string, selected: string) => Promise<void>;
-
-  // Pipeline operations
-  updateSubscriptionPipeline: (id: string, settings: PipelineSettings) => Promise<void>;
-  runSubscriptionPipeline: (id: string) => Promise<PipelineResult | null>;
-  fetchStaleNodes: () => Promise<void>;
-  deleteStaleNodes: (nodeIds: string[]) => Promise<void>;
 }
 
 const measurementCache = loadMeasurementCache();
@@ -494,7 +498,10 @@ migrateLocalStorageMeasurements();
 
 export const useStore = create<AppState>((set, get) => ({
   subscriptions: [],
-  manualNodes: [],
+  pendingNodes: [],
+  verifiedNodes: [],
+  archivedNodes: [],
+  nodeCounts: { pending: 0, verified: 0, archived: 0 },
   countryGroups: [],
   filters: [],
   rules: [],
@@ -504,8 +511,9 @@ export const useStore = create<AppState>((set, get) => ({
   serviceStatus: null,
   probeStatus: null,
   systemInfo: null,
-  manualNodeTags: [],
-  selectedGroupTag: null,
+  verificationStatus: null,
+  verificationLogs: [],
+  verificationRunning: false,
   healthResults: measurementCache.healthResults,
   healthMode: measurementCache.healthMode,
   healthChecking: false,
@@ -519,8 +527,6 @@ export const useStore = create<AppState>((set, get) => ({
   proxyGroups: [],
   stabilityStats: {},
   unsupportedNodes: [],
-  staleNodes: [],
-  pipelineRunningSubId: null,
   loading: false,
 
   fetchSubscriptions: async () => {
@@ -532,12 +538,34 @@ export const useStore = create<AppState>((set, get) => ({
     }
   },
 
-  fetchManualNodes: async () => {
+  fetchNodes: async (status?: NodeStatus) => {
     try {
-      const res = await manualNodeApi.getAll();
-      set({ manualNodes: res.data.data || [] });
+      if (status) {
+        const res = await unifiedNodeApi.getAll(status);
+        const nodes = res.data.data || [];
+        if (status === 'pending') set({ pendingNodes: nodes });
+        else if (status === 'verified') set({ verifiedNodes: nodes });
+        else if (status === 'archived') set({ archivedNodes: nodes });
+      } else {
+        const res = await unifiedNodeApi.getAll();
+        const data = res.data;
+        set({
+          pendingNodes: data.pending || [],
+          verifiedNodes: data.verified || [],
+          archivedNodes: data.archived || [],
+        });
+      }
     } catch (error) {
-      console.error('Failed to fetch manual nodes:', error);
+      console.error('Failed to fetch nodes:', error);
+    }
+  },
+
+  fetchNodeCounts: async () => {
+    try {
+      const res = await unifiedNodeApi.getCounts();
+      set({ nodeCounts: res.data.data || { pending: 0, verified: 0, archived: 0 } });
+    } catch (error) {
+      console.error('Failed to fetch node counts:', error);
     }
   },
 
@@ -633,19 +661,6 @@ export const useStore = create<AppState>((set, get) => ({
     }
   },
 
-  fetchManualNodeTags: async () => {
-    try {
-      const res = await manualNodeApi.getTags();
-      set({ manualNodeTags: res.data.data || [] });
-    } catch (error) {
-      console.error('Failed to fetch manual node tags:', error);
-    }
-  },
-
-  setSelectedGroupTag: (tag: string | null) => {
-    set({ selectedGroupTag: tag });
-  },
-
   addSubscription: async (name: string, url: string) => {
     set({ loading: true });
     try {
@@ -724,17 +739,26 @@ export const useStore = create<AppState>((set, get) => ({
     }
   },
 
-  addManualNodesBulk: async (nodes: Omit<ManualNode, 'id'>[], groupTag?: string) => {
+  addNode: async (node: Partial<UnifiedNode>) => {
     try {
-      const res = await manualNodeApi.addBulk(nodes, groupTag);
-      await get().fetchManualNodes();
-      await get().fetchCountryGroups();
-      await get().fetchManualNodeTags();
-      if (res.data.warning) {
-        toast.info(res.data.warning);
-      } else {
-        toast.success(`${nodes.length} nodes added successfully`);
-      }
+      await unifiedNodeApi.add(node);
+      await get().fetchNodes();
+      await get().fetchNodeCounts();
+      toast.success('Node added successfully');
+    } catch (error: any) {
+      console.error('Failed to add node:', error);
+      toast.error(error.response?.data?.error || 'Failed to add node');
+      throw error;
+    }
+  },
+
+  addNodesBulk: async (nodes: any[], groupTag?: string, source?: string) => {
+    try {
+      const res = await unifiedNodeApi.addBulk(nodes, groupTag, source);
+      await get().fetchNodes();
+      await get().fetchNodeCounts();
+      const data = res.data;
+      toast.success(`Added ${data.added} nodes (${data.skipped} skipped)`);
     } catch (error: any) {
       console.error('Failed to add nodes in bulk:', error);
       toast.error(error.response?.data?.error || 'Failed to add nodes');
@@ -742,80 +766,131 @@ export const useStore = create<AppState>((set, get) => ({
     }
   },
 
-  addManualNode: async (node: Omit<ManualNode, 'id'>) => {
+  updateNode: async (id: number, node: Partial<UnifiedNode>) => {
     try {
-      const res = await manualNodeApi.add(node);
-      await get().fetchManualNodes();
-      await get().fetchCountryGroups();
-      await get().fetchManualNodeTags();
-      if (res.data.warning) {
-        toast.info(res.data.warning);
-      } else {
-        toast.success('Node added successfully');
-      }
+      await unifiedNodeApi.update(id, node);
+      await get().fetchNodes();
+      toast.success('Node updated successfully');
     } catch (error: any) {
-      console.error('Failed to add manual node:', error);
-      toast.error(error.response?.data?.error || 'Failed to add node');
-      throw error;
-    }
-  },
-
-  updateManualNode: async (id: string, node: Partial<ManualNode>) => {
-    try {
-      const res = await manualNodeApi.update(id, node);
-      await get().fetchManualNodes();
-      await get().fetchCountryGroups();
-      await get().fetchManualNodeTags();
-      if (res.data.warning) {
-        toast.info(res.data.warning);
-      } else {
-        toast.success('Node updated successfully');
-      }
-    } catch (error: any) {
-      console.error('Failed to update manual node:', error);
+      console.error('Failed to update node:', error);
       toast.error(error.response?.data?.error || 'Failed to update node');
       throw error;
     }
   },
 
-  deleteManualNode: async (id: string) => {
+  deleteNode: async (id: number) => {
     try {
-      const res = await manualNodeApi.delete(id);
-      await get().fetchManualNodes();
-      await get().fetchCountryGroups();
-      await get().fetchManualNodeTags();
-      if (res.data.warning) {
-        toast.info(res.data.warning);
-      } else {
-        toast.success('Node deleted');
-      }
+      await unifiedNodeApi.delete(id);
+      await get().fetchNodes();
+      await get().fetchNodeCounts();
+      toast.success('Node deleted');
     } catch (error: any) {
-      console.error('Failed to delete manual node:', error);
+      console.error('Failed to delete node:', error);
       toast.error(error.response?.data?.error || 'Failed to delete node');
     }
   },
 
-  renameGroupTag: async (oldTag: string, newTag: string) => {
+  promoteNode: async (id: number) => {
     try {
-      const res = await manualNodeApi.renameTag(oldTag, newTag);
-      await get().fetchManualNodes();
-      await get().fetchManualNodeTags();
-      toast.success(res.data.message || 'Tag renamed');
+      await unifiedNodeApi.promote(id);
+      await get().fetchNodes();
+      await get().fetchNodeCounts();
+      toast.success('Node promoted to verified');
     } catch (error: any) {
-      toast.error(error.response?.data?.error || 'Failed to rename tag');
-      throw error;
+      toast.error(error.response?.data?.error || 'Failed to promote node');
     }
   },
 
-  deleteGroupTag: async (tag: string) => {
+  demoteNode: async (id: number) => {
     try {
-      const res = await manualNodeApi.deleteTag(tag);
-      await get().fetchManualNodes();
-      await get().fetchManualNodeTags();
-      toast.success(res.data.message || 'Tag cleared');
+      await unifiedNodeApi.demote(id);
+      await get().fetchNodes();
+      await get().fetchNodeCounts();
+      toast.success('Node demoted to pending');
     } catch (error: any) {
-      toast.error(error.response?.data?.error || 'Failed to clear tag');
-      throw error;
+      toast.error(error.response?.data?.error || 'Failed to demote node');
+    }
+  },
+
+  archiveNode: async (id: number) => {
+    try {
+      await unifiedNodeApi.archive(id);
+      await get().fetchNodes();
+      await get().fetchNodeCounts();
+      toast.success('Node archived');
+    } catch (error: any) {
+      toast.error(error.response?.data?.error || 'Failed to archive node');
+    }
+  },
+
+  unarchiveNode: async (id: number) => {
+    try {
+      await unifiedNodeApi.unarchive(id);
+      await get().fetchNodes();
+      await get().fetchNodeCounts();
+      toast.success('Node unarchived');
+    } catch (error: any) {
+      toast.error(error.response?.data?.error || 'Failed to unarchive node');
+    }
+  },
+
+  bulkPromoteNodes: async (ids: number[]) => {
+    try {
+      await unifiedNodeApi.bulkPromote(ids);
+      await get().fetchNodes();
+      await get().fetchNodeCounts();
+      toast.success(`${ids.length} nodes promoted`);
+    } catch (error: any) {
+      toast.error(error.response?.data?.error || 'Failed to promote nodes');
+    }
+  },
+
+  bulkArchiveNodes: async (ids: number[]) => {
+    try {
+      await unifiedNodeApi.bulkArchive(ids);
+      await get().fetchNodes();
+      await get().fetchNodeCounts();
+      toast.success(`${ids.length} nodes archived`);
+    } catch (error: any) {
+      toast.error(error.response?.data?.error || 'Failed to archive nodes');
+    }
+  },
+
+  // Verification operations
+  runVerification: async () => {
+    set({ verificationRunning: true });
+    try {
+      await verificationApi.run();
+      toast.success('Verification started');
+      // Poll for completion after a delay
+      setTimeout(async () => {
+        await get().fetchVerificationStatus();
+        await get().fetchVerificationLogs();
+        await get().fetchNodes();
+        await get().fetchNodeCounts();
+        set({ verificationRunning: false });
+      }, 5000);
+    } catch (error: any) {
+      set({ verificationRunning: false });
+      toast.error(error.response?.data?.error || 'Failed to start verification');
+    }
+  },
+
+  fetchVerificationStatus: async () => {
+    try {
+      const res = await verificationApi.getStatus();
+      set({ verificationStatus: res.data.data });
+    } catch (error) {
+      console.error('Failed to fetch verification status:', error);
+    }
+  },
+
+  fetchVerificationLogs: async (limit?: number) => {
+    try {
+      const res = await verificationApi.getLogs(limit);
+      set({ verificationLogs: res.data.data || [] });
+    } catch (error) {
+      console.error('Failed to fetch verification logs:', error);
     }
   },
 
@@ -1166,7 +1241,8 @@ export const useStore = create<AppState>((set, get) => ({
       await Promise.all([
         get().fetchUnsupportedNodes(),
         get().fetchSubscriptions(),
-        get().fetchManualNodes(),
+        get().fetchNodes(),
+        get().fetchNodeCounts(),
         get().fetchCountryGroups(),
       ]);
     } catch (error: any) {
@@ -1195,89 +1271,4 @@ export const useStore = create<AppState>((set, get) => ({
     }
   },
 
-  // Pipeline operations
-  updateSubscriptionPipeline: async (id: string, settings: import('./index').PipelineSettings) => {
-    try {
-      const res = await subscriptionApi.updatePipeline(id, settings);
-      const updated = res.data.data;
-      set((state) => ({
-        subscriptions: state.subscriptions.map((s) => (s.id === id ? { ...s, ...updated } : s)),
-      }));
-    } catch (error: any) {
-      console.error('Failed to update pipeline settings:', error);
-      toast.error(error.response?.data?.error || 'Failed to update pipeline');
-    }
-  },
-
-  runSubscriptionPipeline: async (id: string) => {
-    set({ pipelineRunningSubId: id });
-    try {
-      const res = await subscriptionApi.runPipeline(id);
-      const result = res.data.data;
-      // Refresh all related data after pipeline run
-      await get().fetchSubscriptions();
-      await get().fetchManualNodes();
-      await get().fetchManualNodeTags();
-      await get().fetchStaleNodes();
-      await get().fetchCountryGroups();
-      if (result.error) {
-        toast.error(`Pipeline error: ${result.error}`);
-      } else {
-        const parts: string[] = [];
-        if (result.copied_nodes > 0) parts.push(`+${result.copied_nodes} copied`);
-        if (result.skipped_nodes > 0) parts.push(`${result.skipped_nodes} skipped`);
-        if (result.removed_stale > 0) parts.push(`-${result.removed_stale} removed`);
-        toast.success(`Pipeline: ${result.alive_nodes}/${result.total_nodes} alive. ${parts.join(', ')}`);
-      }
-      return result;
-    } catch (error: any) {
-      console.error('Failed to run pipeline:', error);
-      toast.error(error.response?.data?.error || 'Failed to run pipeline');
-      return null;
-    } finally {
-      set({ pipelineRunningSubId: null });
-    }
-  },
-
-  fetchStaleNodes: async () => {
-    try {
-      const res = await manualNodeApi.getAllStale();
-      set({ staleNodes: res.data.data || [] });
-    } catch (error) {
-      console.error('Failed to fetch stale nodes:', error);
-    }
-  },
-
-  deleteStaleNodes: async (nodeIds: string[]) => {
-    try {
-      // Group node IDs by source_subscription_id for bulk deletion
-      const { staleNodes } = get();
-      const staleMap = new Map(staleNodes.map(n => [n.id, n]));
-      const bySubscription = new Map<string, string[]>();
-
-      for (const nodeId of nodeIds) {
-        const node = staleMap.get(nodeId);
-        const subId = node?.source_subscription_id;
-        if (subId) {
-          const ids = bySubscription.get(subId) || [];
-          ids.push(nodeId);
-          bySubscription.set(subId, ids);
-        }
-      }
-
-      let totalDeleted = 0;
-      for (const [subId, ids] of bySubscription) {
-        const res = await subscriptionApi.deleteStaleNodes(subId, ids);
-        totalDeleted += res.data.deleted || 0;
-      }
-
-      await get().fetchManualNodes();
-      await get().fetchStaleNodes();
-      await get().fetchCountryGroups();
-      toast.success(`Deleted ${totalDeleted} stale node(s)`);
-    } catch (error: any) {
-      console.error('Failed to delete stale nodes:', error);
-      toast.error(error.response?.data?.error || 'Failed to delete stale nodes');
-    }
-  },
 }));

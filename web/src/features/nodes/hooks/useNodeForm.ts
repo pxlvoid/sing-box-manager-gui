@@ -1,17 +1,16 @@
 import { useState } from 'react';
 import { useDisclosure } from '@nextui-org/react';
 import { useStore } from '../../../store';
-import type { Node, ManualNode } from '../../../store';
+import type { Node, UnifiedNode } from '../../../store';
 import { nodeApi } from '../../../api';
 import { defaultNode, countryOptions } from '../types';
 
 export function useNodeForm() {
-  const { addManualNode, updateManualNode } = useStore();
+  const { addNode, updateNode } = useStore();
 
   const { isOpen, onOpen, onClose } = useDisclosure();
-  const [editingNode, setEditingNode] = useState<ManualNode | null>(null);
+  const [editingNode, setEditingNode] = useState<UnifiedNode | null>(null);
   const [nodeForm, setNodeForm] = useState<Node>({ ...defaultNode });
-  const [nodeEnabled, setNodeEnabled] = useState(true);
   const [nodeUrl, setNodeUrl] = useState('');
   const [isParsing, setIsParsing] = useState(false);
   const [parseError, setParseError] = useState('');
@@ -20,16 +19,22 @@ export function useNodeForm() {
   const handleOpenAdd = () => {
     setEditingNode(null);
     setNodeForm({ ...defaultNode });
-    setNodeEnabled(true);
     setNodeUrl('');
     setParseError('');
     onOpen();
   };
 
-  const handleOpenEdit = (mn: ManualNode) => {
-    setEditingNode(mn);
-    setNodeForm(mn.node);
-    setNodeEnabled(mn.enabled);
+  const handleOpenEdit = (node: UnifiedNode) => {
+    setEditingNode(node);
+    setNodeForm({
+      tag: node.tag,
+      type: node.type,
+      server: node.server,
+      server_port: node.server_port,
+      country: node.country,
+      country_emoji: node.country_emoji,
+      extra: node.extra,
+    });
     setNodeUrl('');
     setParseError('');
     onOpen();
@@ -60,14 +65,19 @@ export function useNodeForm() {
     try {
       const country = countryOptions.find(c => c.code === nodeForm.country);
       const nodeData = {
-        ...nodeForm,
+        tag: nodeForm.tag,
+        type: nodeForm.type,
+        server: nodeForm.server,
+        server_port: nodeForm.server_port,
+        country: nodeForm.country,
         country_emoji: country?.emoji || '🌐',
+        extra: nodeForm.extra,
       };
 
       if (editingNode) {
-        await updateManualNode(editingNode.id, { node: nodeData, enabled: nodeEnabled });
+        await updateNode(editingNode.id, nodeData);
       } else {
-        await addManualNode({ node: nodeData, enabled: nodeEnabled });
+        await addNode(nodeData);
       }
       onClose();
     } catch (error) {
@@ -138,8 +148,6 @@ export function useNodeForm() {
     editingNode,
     nodeForm,
     setNodeForm,
-    nodeEnabled,
-    setNodeEnabled,
     nodeUrl,
     setNodeUrl,
     isParsing,

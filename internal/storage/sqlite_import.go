@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"time"
 )
 
 // importFromJSON reads data.json and imports all data into SQLite in a single transaction.
@@ -49,16 +50,27 @@ func (s *SQLiteStore) importFromJSON(jsonPath string) error {
 		}
 	}
 
-	// Import manual nodes
+	// Import manual nodes into unified nodes table
+	now := time.Now()
 	for _, mn := range appData.ManualNodes {
 		extraJSON := marshalJSON(mn.Node.Extra)
-		_, err := tx.Exec(`INSERT INTO manual_nodes (id, tag, type, server, server_port, country, country_emoji, extra_json, enabled, group_tag, source_subscription_id)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-			mn.ID, mn.Node.Tag, mn.Node.Type, mn.Node.Server, mn.Node.ServerPort,
+		status := "pending"
+		var promotedAt *time.Time
+		if mn.Enabled {
+			status = "verified"
+			promotedAt = &now
+		}
+		source := "manual"
+		if mn.SourceSubscriptionID != "" {
+			source = mn.SourceSubscriptionID
+		}
+		_, err := tx.Exec(`INSERT OR IGNORE INTO nodes (tag, type, server, server_port, country, country_emoji, extra_json,
+			status, source, group_tag, created_at, promoted_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			mn.Node.Tag, mn.Node.Type, mn.Node.Server, mn.Node.ServerPort,
 			mn.Node.Country, mn.Node.CountryEmoji, extraJSON,
-			boolToInt(mn.Enabled), mn.GroupTag, mn.SourceSubscriptionID)
+			status, source, mn.GroupTag, now, promotedAt)
 		if err != nil {
-			return fmt.Errorf("import manual node %s: %w", mn.ID, err)
+			return fmt.Errorf("import node %s: %w", mn.ID, err)
 		}
 	}
 
