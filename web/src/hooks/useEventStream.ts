@@ -51,7 +51,12 @@ export function useEventStream() {
       es.addEventListener('verify:site_start', (e) => {
         const data = JSON.parse(e.data);
         const s = useStore.getState();
-        s.addPipelineEvent('verify:site_start', `Site check: ${data.total_nodes} nodes`);
+        const siteTotal = Number(data.total_nodes) || 0;
+        const healthTotal = Number(data.health_total_nodes) || 0;
+        const suffix = healthTotal > 0
+          ? ` (${((siteTotal / healthTotal) * 100).toFixed(1)}% of health check)`
+          : '';
+        s.addPipelineEvent('verify:site_start', `Site check: ${siteTotal} nodes${suffix}`);
         s.setVerificationProgress({ phase: 'site_check', current: 0, total: data.total_nodes });
       });
 

@@ -134,7 +134,8 @@ func (s *Server) runVerificationWithTagFilter(tagSet map[string]struct{}) {
 	}
 
 	s.eventBus.Publish("verify:site_start", map[string]interface{}{
-		"total_nodes": len(aliveCheckNodes),
+		"total_nodes":        len(aliveCheckNodes),
+		"health_total_nodes": len(allCheckNodes),
 	})
 	siteResults := make(map[string]*NodeSiteCheckResult)
 	if len(aliveCheckNodes) > 0 {

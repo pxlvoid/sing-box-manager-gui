@@ -49,7 +49,9 @@ func pipelineActivityMessage(eventType string, data interface{}) (string, bool) 
 	case "verify:health_start":
 		return fmt.Sprintf("Health check: %d nodes", intFromMap(m, "total_nodes")), true
 	case "verify:site_start":
-		return fmt.Sprintf("Site check: %d nodes", intFromMap(m, "total_nodes")), true
+		total := intFromMap(m, "total_nodes")
+		healthTotal := intFromMap(m, "health_total_nodes")
+		return fmt.Sprintf("Site check: %d nodes%s", total, siteCheckProgressSuffix(total, healthTotal)), true
 	case "verify:node_promoted":
 		return fmt.Sprintf("Node promoted: %s", nodeIdentityFromMap(m)), true
 	case "verify:node_demoted":
@@ -164,4 +166,12 @@ func nodeIdentityFromMap(m map[string]interface{}) string {
 		return tag
 	}
 	return "unknown"
+}
+
+func siteCheckProgressSuffix(siteTotal int, healthTotal int) string {
+	if siteTotal < 0 || healthTotal <= 0 {
+		return ""
+	}
+	percent := (float64(siteTotal) / float64(healthTotal)) * 100
+	return fmt.Sprintf(" (%.1f%% of health check)", percent)
 }
