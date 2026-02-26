@@ -407,44 +407,63 @@ func (s *SQLiteStore) GetTrafficLifetimeStats() (*TrafficLifetimeStats, error) {
 		return nil, err
 	}
 
-	var totalUpload sql.NullInt64
-	var totalDownload sql.NullInt64
-	if err := s.db.QueryRow(`
-		WITH ordered AS (
-			SELECT
-				id,
-				timestamp,
-				upload_total,
-				download_total,
-				LAG(upload_total) OVER (ORDER BY timestamp, id) AS prev_upload_total,
-				LAG(download_total) OVER (ORDER BY timestamp, id) AS prev_download_total
-			FROM traffic_samples
-		)
-		SELECT
-			COALESCE(SUM(
-				CASE
-					WHEN prev_upload_total IS NULL THEN upload_total
-					WHEN upload_total >= prev_upload_total THEN upload_total - prev_upload_total
-					ELSE upload_total
-				END
-			), 0) AS total_upload,
-			COALESCE(SUM(
-				CASE
-					WHEN prev_download_total IS NULL THEN download_total
-					WHEN download_total >= prev_download_total THEN download_total - prev_download_total
-					ELSE download_total
-				END
-			), 0) AS total_download
-		FROM ordered;
-	`).Scan(&totalUpload, &totalDownload); err != nil {
+	rows, err := s.db.Query(`
+		SELECT upload_total, download_total
+		FROM traffic_samples
+		ORDER BY timestamp ASC, id ASC`)
+	if err != nil {
 		return nil, err
 	}
+	defer rows.Close()
 
-	if totalUpload.Valid {
-		stats.TotalUploadBytes = totalUpload.Int64
+	var prevUpload int64
+	var prevDownload int64
+	hasPrev := false
+
+	for rows.Next() {
+		var uploadTotal sql.NullInt64
+		var downloadTotal sql.NullInt64
+		if err := rows.Scan(&uploadTotal, &downloadTotal); err != nil {
+			return nil, fmt.Errorf("scan lifetime traffic row: %w", err)
+		}
+
+		currentUpload := int64(0)
+		currentDownload := int64(0)
+		if uploadTotal.Valid && uploadTotal.Int64 > 0 {
+			currentUpload = uploadTotal.Int64
+		}
+		if downloadTotal.Valid && downloadTotal.Int64 > 0 {
+			currentDownload = downloadTotal.Int64
+		}
+
+		if !hasPrev {
+			stats.TotalUploadBytes += currentUpload
+			stats.TotalDownloadBytes += currentDownload
+			prevUpload = currentUpload
+			prevDownload = currentDownload
+			hasPrev = true
+			continue
+		}
+
+		if currentUpload >= prevUpload {
+			stats.TotalUploadBytes += currentUpload - prevUpload
+		} else {
+			// Counter reset (e.g. sing-box restart): start new segment from current total.
+			stats.TotalUploadBytes += currentUpload
+		}
+
+		if currentDownload >= prevDownload {
+			stats.TotalDownloadBytes += currentDownload - prevDownload
+		} else {
+			// Counter reset (e.g. sing-box restart): start new segment from current total.
+			stats.TotalDownloadBytes += currentDownload
+		}
+
+		prevUpload = currentUpload
+		prevDownload = currentDownload
 	}
-	if totalDownload.Valid {
-		stats.TotalDownloadBytes = totalDownload.Int64
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate lifetime traffic rows: %w", err)
 	}
 
 	return stats, nil
