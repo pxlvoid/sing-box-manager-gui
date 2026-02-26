@@ -51,16 +51,20 @@ func pipelineActivityMessage(eventType string, data interface{}) (string, bool) 
 	case "verify:site_start":
 		return fmt.Sprintf("Site check: %d nodes", intFromMap(m, "total_nodes")), true
 	case "verify:node_promoted":
-		return fmt.Sprintf("Node promoted: %s", stringFromMap(m, "tag")), true
+		return fmt.Sprintf("Node promoted: %s", nodeIdentityFromMap(m)), true
 	case "verify:node_demoted":
-		return fmt.Sprintf("Node demoted: %s", stringFromMap(m, "tag")), true
+		return fmt.Sprintf("Node demoted: %s", nodeIdentityFromMap(m)), true
 	case "verify:node_archived":
-		tag := stringFromMap(m, "tag")
+		node := nodeIdentityFromMap(m)
 		failures := intFromMap(m, "failures")
 		if failures > 0 {
-			return fmt.Sprintf("Node archived: %s (%d failures)", tag, failures), true
+			return fmt.Sprintf("Node archived: %s (%d failures)", node, failures), true
 		}
-		return fmt.Sprintf("Node archived: %s", tag), true
+		reason := stringFromMap(m, "reason")
+		if reason != "" {
+			return fmt.Sprintf("Node archived: %s (%s)", node, reason), true
+		}
+		return fmt.Sprintf("Node archived: %s", node), true
 	case "verify:complete":
 		return fmt.Sprintf("Verification complete in %dms - promoted: %d, demoted: %d, archived: %d",
 			int64FromMap(m, "duration_ms"),
@@ -144,4 +148,20 @@ func int64FromMap(m map[string]interface{}, key string) int64 {
 
 func intFromMap(m map[string]interface{}, key string) int {
 	return int(int64FromMap(m, key))
+}
+
+func nodeIdentityFromMap(m map[string]interface{}) string {
+	tag := stringFromMap(m, "tag")
+	server := stringFromMap(m, "server")
+	port := intFromMap(m, "server_port")
+	if server != "" && port > 0 {
+		if tag != "" {
+			return fmt.Sprintf("%s (%s:%d)", tag, server, port)
+		}
+		return fmt.Sprintf("%s:%d", server, port)
+	}
+	if tag != "" {
+		return tag
+	}
+	return "unknown"
 }

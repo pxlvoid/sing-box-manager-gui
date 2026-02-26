@@ -33,7 +33,6 @@ export interface UnsupportedNodeInfo {
   detected_at: string;
 }
 
-const MEASUREMENT_STORAGE_KEY = 'sbm.measurements.v1';
 const MAX_MEASUREMENTS_PER_NODE = 20;
 
 interface MeasurementCache {
@@ -54,41 +53,12 @@ const EMPTY_MEASUREMENT_CACHE: MeasurementCache = {
   siteCheckHistory: {},
 };
 
-function isObject(value: unknown): value is Record<string, any> {
-  return !!value && typeof value === 'object' && !Array.isArray(value);
-}
-
 function loadMeasurementCache(): MeasurementCache {
-  if (typeof window === 'undefined') return EMPTY_MEASUREMENT_CACHE;
-
-  try {
-    const raw = window.localStorage.getItem(MEASUREMENT_STORAGE_KEY);
-    if (!raw) return EMPTY_MEASUREMENT_CACHE;
-
-    const parsed = JSON.parse(raw);
-    if (!isObject(parsed)) return EMPTY_MEASUREMENT_CACHE;
-
-    return {
-      healthResults: isObject(parsed.healthResults) ? parsed.healthResults : {},
-      siteCheckResults: isObject(parsed.siteCheckResults) ? parsed.siteCheckResults : {},
-      healthMode: ['clash_api', 'clash_api_temp', 'probe'].includes(parsed.healthMode) ? parsed.healthMode : null,
-      siteCheckMode: ['clash_api', 'clash_api_temp', 'probe'].includes(parsed.siteCheckMode) ? parsed.siteCheckMode : null,
-      healthHistory: isObject(parsed.healthHistory) ? parsed.healthHistory : {},
-      siteCheckHistory: isObject(parsed.siteCheckHistory) ? parsed.siteCheckHistory : {},
-    };
-  } catch {
-    return EMPTY_MEASUREMENT_CACHE;
-  }
+  return EMPTY_MEASUREMENT_CACHE;
 }
 
-function saveMeasurementCache(cache: MeasurementCache): void {
-  if (typeof window === 'undefined') return;
-
-  try {
-    window.localStorage.setItem(MEASUREMENT_STORAGE_KEY, JSON.stringify(cache));
-  } catch {
-    // Ignore quota or serialization errors.
-  }
+function saveMeasurementCache(_cache: MeasurementCache): void {
+  // Measurements are sourced from backend only; local cache is intentionally disabled.
 }
 
 function appendHealthHistory(
@@ -443,6 +413,7 @@ interface AppState {
 
   // Verification operations
   runVerification: () => Promise<void>;
+  runVerificationForTags: (tags: string[]) => Promise<void>;
   fetchVerificationStatus: () => Promise<void>;
   fetchVerificationLogs: (limit?: number) => Promise<void>;
   fetchPipelineEvents: (limit?: number) => Promise<void>;
@@ -502,44 +473,6 @@ const measurementCache = loadMeasurementCache();
 export function nodeServerPortKey(node: { server: string; server_port: number }): string {
   return `${node.server}:${node.server_port}`;
 }
-
-// One-time migration of localStorage measurements to backend
-function migrateLocalStorageMeasurements() {
-  if (typeof window === 'undefined') return;
-  const MIGRATION_KEY = 'sbm.measurements.migrated';
-  if (window.localStorage.getItem(MIGRATION_KEY)) return;
-
-  const raw = window.localStorage.getItem(MEASUREMENT_STORAGE_KEY);
-  if (!raw) {
-    window.localStorage.setItem(MIGRATION_KEY, '1');
-    return;
-  }
-
-  try {
-    const parsed = JSON.parse(raw);
-    const data: Record<string, any> = {};
-    if (isObject(parsed.healthHistory)) data.healthHistory = parsed.healthHistory;
-    if (isObject(parsed.siteCheckHistory)) data.siteCheckHistory = parsed.siteCheckHistory;
-
-    if (Object.keys(data).length > 0) {
-      measurementApi.importFromLocalStorage(data)
-        .then(() => {
-          window.localStorage.setItem(MIGRATION_KEY, '1');
-          console.log('[measurements] localStorage data migrated to backend');
-        })
-        .catch((err: any) => {
-          console.warn('[measurements] Failed to migrate localStorage data:', err);
-        });
-    } else {
-      window.localStorage.setItem(MIGRATION_KEY, '1');
-    }
-  } catch {
-    window.localStorage.setItem(MIGRATION_KEY, '1');
-  }
-}
-
-// Trigger migration on load
-migrateLocalStorageMeasurements();
 
 export const useStore = create<AppState>((set, get) => ({
   subscriptions: [],
@@ -960,6 +893,24 @@ export const useStore = create<AppState>((set, get) => ({
     }
   },
 
+  runVerificationForTags: async (tags: string[]) => {
+    const filteredTags = tags.map((t) => t.trim()).filter((t) => t.length > 0);
+    if (filteredTags.length === 0) {
+      toast.error('No proxy tags selected for verification');
+      return;
+    }
+
+    set({ verificationRunning: true });
+    try {
+      await verificationApi.runTags(filteredTags);
+      toast.success(`Verification started for ${filteredTags.length} tag${filteredTags.length > 1 ? 's' : ''}`);
+      // SSE will handle completion — reset verificationRunning via verify:complete event
+    } catch (error: any) {
+      set({ verificationRunning: false });
+      toast.error(error.response?.data?.error || 'Failed to start tag verification');
+    }
+  },
+
   fetchVerificationStatus: async () => {
     try {
       const res = await verificationApi.getStatus();
@@ -1360,19 +1311,20 @@ export const useStore = create<AppState>((set, get) => ({
         }
       }
 
-      // Backend returns latest persisted measurements; prefer them over cached local values.
-      const mergedHealth = { ...state.healthResults, ...newHealthResults };
-      const mergedSites = { ...state.siteCheckResults, ...newSiteResults };
+      // Backend latest measurements are authoritative.
+      // Do not merge with in-memory cache, otherwise stale tag keys may survive indefinitely.
+      const latestHealthResults = newHealthResults;
+      const latestSiteResults = newSiteResults;
 
       set({
-        healthResults: mergedHealth,
+        healthResults: latestHealthResults,
         healthMode: healthMode,
-        siteCheckResults: mergedSites,
+        siteCheckResults: latestSiteResults,
         siteCheckMode: siteMode,
       });
       saveMeasurementCache({
-        healthResults: mergedHealth,
-        siteCheckResults: mergedSites,
+        healthResults: latestHealthResults,
+        siteCheckResults: latestSiteResults,
         healthMode: healthMode,
         siteCheckMode: siteMode,
         healthHistory: state.healthHistory,

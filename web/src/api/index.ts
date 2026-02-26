@@ -133,6 +133,7 @@ export const unifiedNodeApi = {
 // Verification API
 export const verificationApi = {
   run: () => api.post('/verification/run'),
+  runTags: (tags: string[]) => api.post('/verification/run-tags', { tags }),
   getLogs: (limit?: number) => api.get('/verification/logs', { params: { limit: limit || 20 } }),
   getStatus: () => api.get('/verification/status'),
   start: () => api.post('/verification/start'),

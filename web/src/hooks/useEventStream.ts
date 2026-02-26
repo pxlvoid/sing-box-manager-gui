@@ -1,6 +1,25 @@
 import { useEffect, useRef } from 'react';
 import { useStore } from '../store';
 
+function formatNodeIdentity(data: Record<string, unknown>): string {
+  const tag = typeof data.tag === 'string' ? data.tag : '';
+  const server = typeof data.server === 'string' ? data.server : '';
+  const portRaw = data.server_port;
+  const port = typeof portRaw === 'number'
+    ? portRaw
+    : typeof portRaw === 'string'
+      ? Number(portRaw)
+      : 0;
+
+  if (server && Number.isFinite(port) && port > 0) {
+    if (tag) {
+      return `${tag} (${server}:${port})`;
+    }
+    return `${server}:${port}`;
+  }
+  return tag || 'unknown';
+}
+
 export function useEventStream() {
   const esRef = useRef<EventSource | null>(null);
   const reconnectTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -52,23 +71,32 @@ export function useEventStream() {
       });
 
       es.addEventListener('verify:node_promoted', (e) => {
-        const data = JSON.parse(e.data);
+        const data = JSON.parse(e.data) as Record<string, unknown>;
         const s = useStore.getState();
-        s.addPipelineEvent('verify:node_promoted', `Node promoted: ${data.tag}`);
+        s.addPipelineEvent('verify:node_promoted', `Node promoted: ${formatNodeIdentity(data)}`);
         s.incrementRunCounter('promoted');
       });
 
       es.addEventListener('verify:node_demoted', (e) => {
-        const data = JSON.parse(e.data);
+        const data = JSON.parse(e.data) as Record<string, unknown>;
         const s = useStore.getState();
-        s.addPipelineEvent('verify:node_demoted', `Node demoted: ${data.tag}`);
+        s.addPipelineEvent('verify:node_demoted', `Node demoted: ${formatNodeIdentity(data)}`);
         s.incrementRunCounter('demoted');
       });
 
       es.addEventListener('verify:node_archived', (e) => {
-        const data = JSON.parse(e.data);
+        const data = JSON.parse(e.data) as Record<string, unknown>;
         const s = useStore.getState();
-        s.addPipelineEvent('verify:node_archived', `Node archived: ${data.tag} (${data.failures} failures)`);
+        const failures = typeof data.failures === 'number' ? data.failures : Number(data.failures);
+        const reason = typeof data.reason === 'string' ? data.reason : '';
+        const node = formatNodeIdentity(data);
+        if (Number.isFinite(failures) && failures > 0) {
+          s.addPipelineEvent('verify:node_archived', `Node archived: ${node} (${failures} failures)`);
+        } else if (reason) {
+          s.addPipelineEvent('verify:node_archived', `Node archived: ${node} (${reason})`);
+        } else {
+          s.addPipelineEvent('verify:node_archived', `Node archived: ${node}`);
+        }
         s.incrementRunCounter('archived');
       });
 

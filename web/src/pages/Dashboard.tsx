@@ -15,7 +15,7 @@ export default function Dashboard() {
     pipelineEvents, verificationProgress, runCounters,
     fetchServiceStatus, fetchProbeStatus, stopProbe, fetchSubscriptions,
     fetchNodeCounts, fetchSystemInfo, fetchSettings, fetchUnsupportedNodes,
-    fetchProxyGroups, switchProxy, runVerification, fetchVerificationStatus,
+    fetchProxyGroups, switchProxy, runVerification, runVerificationForTags, fetchVerificationStatus,
     startVerificationScheduler, stopVerificationScheduler,
     fetchLatestMeasurements, fetchPipelineEvents,
   } = useStore();
@@ -195,6 +195,7 @@ export default function Dashboard() {
   }, [mainProxyGroup?.now, proxyGroupsByName]);
   const isAutoMode = (selectedMainProxyGroup?.type || '').toLowerCase() === 'urltest'
     || (mainProxyGroup?.now || '').toLowerCase() === 'auto';
+  const activeProxyRefreshing = verificationRunning;
   const qrImageUrl = qrLink ? `https://quickchart.io/qr?text=${encodeURIComponent(qrLink)}&size=260` : '';
 
   const normalizedProxySearch = proxySearch.trim().toLowerCase();
@@ -212,6 +213,17 @@ export default function Dashboard() {
     }
     return matchedOptions;
   }, [mainProxyGroup, normalizedProxySearch]);
+
+  const handleRefreshActiveProxy = async () => {
+    const activeTag = resolvedActiveProxyTag;
+    if (!activeTag) {
+      toast.error('Active proxy is not resolved yet');
+      return;
+    }
+    if (activeProxyRefreshing) return;
+
+    await runVerificationForTags([activeTag]);
+  };
 
   return (
     <div className="space-y-6">
@@ -478,6 +490,17 @@ export default function Dashboard() {
                     </div>
                   )}
                 </div>
+                <Button
+                  size="sm"
+                  color="primary"
+                  variant="flat"
+                  startContent={<RefreshCw className={`w-4 h-4 ${activeProxyRefreshing ? 'animate-spin' : ''}`} />}
+                  isLoading={activeProxyRefreshing}
+                  isDisabled={!resolvedActiveProxyTag || verificationRunning}
+                  onPress={handleRefreshActiveProxy}
+                >
+                  Run Pipeline
+                </Button>
               </div>
 
               {/* Health & Site check results for active proxy */}

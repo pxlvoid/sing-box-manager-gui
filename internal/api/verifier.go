@@ -10,6 +10,25 @@ import (
 
 // RunVerification performs a full verification cycle for all pending and verified nodes.
 func (s *Server) RunVerification() {
+	s.runVerificationWithTagFilter(nil)
+}
+
+// RunVerificationForTags performs a verification cycle only for selected tags.
+func (s *Server) RunVerificationForTags(tags []string) {
+	tagSet := make(map[string]struct{}, len(tags))
+	for _, tag := range tags {
+		if tag == "" {
+			continue
+		}
+		tagSet[tag] = struct{}{}
+	}
+	if len(tagSet) == 0 {
+		return
+	}
+	s.runVerificationWithTagFilter(tagSet)
+}
+
+func (s *Server) runVerificationWithTagFilter(tagSet map[string]struct{}) {
 	start := time.Now()
 	settings := s.store.GetSettings()
 	archiveThreshold := settings.ArchiveThreshold
@@ -39,8 +58,7 @@ func (s *Server) RunVerification() {
 		})
 	}()
 
-	pendingNodes := s.store.GetNodes(storage.NodeStatusPending)
-	verifiedNodes := s.store.GetNodes(storage.NodeStatusVerified)
+	pendingNodes, verifiedNodes := s.collectVerificationNodes(tagSet)
 
 	if len(pendingNodes) == 0 && len(verifiedNodes) == 0 {
 		return
@@ -54,20 +72,15 @@ func (s *Server) RunVerification() {
 
 	// Combine all nodes for health check
 	var allCheckNodes []storage.Node
-	nodeMap := make(map[string]*storage.UnifiedNode) // server:port -> unified node
 	tagToUnified := make(map[string]*storage.UnifiedNode) // tag -> unified node
 
 	for i := range pendingNodes {
 		n := &pendingNodes[i]
-		key := fmt.Sprintf("%s:%d", n.Server, n.ServerPort)
-		nodeMap[key] = n
 		tagToUnified[n.Tag] = n
 		allCheckNodes = append(allCheckNodes, n.ToNode())
 	}
 	for i := range verifiedNodes {
 		n := &verifiedNodes[i]
-		key := fmt.Sprintf("%s:%d", n.Server, n.ServerPort)
-		nodeMap[key] = n
 		tagToUnified[n.Tag] = n
 		allCheckNodes = append(allCheckNodes, n.ToNode())
 	}
@@ -78,22 +91,16 @@ func (s *Server) RunVerification() {
 	s.archiveBrokenNodes(allCheckNodes, tagToUnified, &vlog, &configChanged)
 
 	// Re-fetch nodes after archiving broken ones (they may have changed status)
-	pendingNodes = s.store.GetNodes(storage.NodeStatusPending)
-	verifiedNodes = s.store.GetNodes(storage.NodeStatusVerified)
+	pendingNodes, verifiedNodes = s.collectVerificationNodes(tagSet)
 
 	allCheckNodes = allCheckNodes[:0]
-	nodeMap = make(map[string]*storage.UnifiedNode)
 
 	for i := range pendingNodes {
 		n := &pendingNodes[i]
-		key := fmt.Sprintf("%s:%d", n.Server, n.ServerPort)
-		nodeMap[key] = n
 		allCheckNodes = append(allCheckNodes, n.ToNode())
 	}
 	for i := range verifiedNodes {
 		n := &verifiedNodes[i]
-		key := fmt.Sprintf("%s:%d", n.Server, n.ServerPort)
-		nodeMap[key] = n
 		allCheckNodes = append(allCheckNodes, n.ToNode())
 	}
 
@@ -113,15 +120,27 @@ func (s *Server) RunVerification() {
 		return
 	}
 
-	// 2. Site check via probe (mandatory sites)
+	// 2. Site check via probe (mandatory sites) only for alive nodes
 	siteTargets := []string{"chatgpt.com", "youtube.com", "instagram.com", "2ip.ru"}
+	aliveCheckNodes := make([]storage.Node, 0, len(allCheckNodes))
+	for _, n := range allCheckNodes {
+		key := fmt.Sprintf("%s:%d", n.Server, n.ServerPort)
+		if hr, ok := healthResults[key]; ok && hr.Alive {
+			aliveCheckNodes = append(aliveCheckNodes, n)
+		}
+	}
+
 	s.eventBus.Publish("verify:site_start", map[string]interface{}{
-		"total_nodes": len(allCheckNodes),
+		"total_nodes": len(aliveCheckNodes),
 	})
-	siteResults, _, err := s.performSiteCheck(allCheckNodes, siteTargets)
-	if err != nil {
-		logger.Printf("[verifier] Site check failed (continuing with health only): %v", err)
-		// Continue — don't fail entirely, just use health check results
+	siteResults := make(map[string]*NodeSiteCheckResult)
+	if len(aliveCheckNodes) > 0 {
+		siteResults, _, err = s.performSiteCheck(aliveCheckNodes, siteTargets)
+		if err != nil {
+			logger.Printf("[verifier] Site check failed (continuing with health only): %v", err)
+			siteResults = nil
+			// Continue — don't fail entirely, just use health check results
+		}
 	}
 
 	// 3. Process pending nodes
@@ -135,7 +154,7 @@ func (s *Server) RunVerification() {
 		}
 
 		sitesOk := true
-		if siteResults != nil {
+		if alive && siteResults != nil {
 			if sr, ok := siteResults[key]; ok {
 				for _, delay := range sr.Sites {
 					if delay <= 0 {
@@ -156,7 +175,11 @@ func (s *Server) RunVerification() {
 			}
 			vlog.PendingPromoted++
 			configChanged = true
-			s.eventBus.Publish("verify:node_promoted", map[string]interface{}{"tag": pn.Tag})
+			s.eventBus.Publish("verify:node_promoted", map[string]interface{}{
+				"tag":         pn.Tag,
+				"server":      pn.Server,
+				"server_port": pn.ServerPort,
+			})
 		} else {
 			// Increment failures
 			failures, err := s.store.IncrementConsecutiveFailures(pn.ID)
@@ -171,18 +194,20 @@ func (s *Server) RunVerification() {
 				}
 				vlog.PendingArchived++
 				s.eventBus.Publish("verify:node_archived", map[string]interface{}{
-					"tag":      pn.Tag,
-					"failures": failures,
+					"tag":         pn.Tag,
+					"server":      pn.Server,
+					"server_port": pn.ServerPort,
+					"failures":    failures,
 				})
 			}
 		}
 
 		s.eventBus.Publish("verify:progress", map[string]interface{}{
-			"phase":   "pending",
-			"current": i + 1,
-			"total":   len(pendingNodes),
-			"tag":     pn.Tag,
-			"alive":   alive,
+			"phase":    "pending",
+			"current":  i + 1,
+			"total":    len(pendingNodes),
+			"tag":      pn.Tag,
+			"alive":    alive,
 			"sites_ok": sitesOk,
 		})
 	}
@@ -198,7 +223,7 @@ func (s *Server) RunVerification() {
 		}
 
 		sitesOk := true
-		if siteResults != nil {
+		if alive && siteResults != nil {
 			if sr, ok := siteResults[key]; ok {
 				for _, delay := range sr.Sites {
 					if delay <= 0 {
@@ -219,18 +244,22 @@ func (s *Server) RunVerification() {
 			}
 			vlog.VerifiedDemoted++
 			configChanged = true
-			s.eventBus.Publish("verify:node_demoted", map[string]interface{}{"tag": vn.Tag})
+			s.eventBus.Publish("verify:node_demoted", map[string]interface{}{
+				"tag":         vn.Tag,
+				"server":      vn.Server,
+				"server_port": vn.ServerPort,
+			})
 		} else {
 			// Reset failures counter
 			s.store.ResetConsecutiveFailures(vn.ID)
 		}
 
 		s.eventBus.Publish("verify:progress", map[string]interface{}{
-			"phase":   "verified",
-			"current": i + 1,
-			"total":   len(verifiedNodes),
-			"tag":     vn.Tag,
-			"alive":   alive,
+			"phase":    "verified",
+			"current":  i + 1,
+			"total":    len(verifiedNodes),
+			"tag":      vn.Tag,
+			"alive":    alive,
 			"sites_ok": sitesOk,
 		})
 	}
@@ -243,6 +272,31 @@ func (s *Server) RunVerification() {
 			logger.Printf("[verifier] Config auto-applied")
 		}
 	}
+}
+
+func (s *Server) collectVerificationNodes(tagSet map[string]struct{}) ([]storage.UnifiedNode, []storage.UnifiedNode) {
+	pendingNodes := s.store.GetNodes(storage.NodeStatusPending)
+	verifiedNodes := s.store.GetNodes(storage.NodeStatusVerified)
+
+	if len(tagSet) == 0 {
+		return pendingNodes, verifiedNodes
+	}
+
+	filteredPending := make([]storage.UnifiedNode, 0, len(pendingNodes))
+	for _, n := range pendingNodes {
+		if _, ok := tagSet[n.Tag]; ok {
+			filteredPending = append(filteredPending, n)
+		}
+	}
+
+	filteredVerified := make([]storage.UnifiedNode, 0, len(verifiedNodes))
+	for _, n := range verifiedNodes {
+		if _, ok := tagSet[n.Tag]; ok {
+			filteredVerified = append(filteredVerified, n)
+		}
+	}
+
+	return filteredPending, filteredVerified
 }
 
 // archiveBrokenNodes runs a dry-run probe config validation to detect
@@ -296,8 +350,10 @@ func (s *Server) archiveBrokenNodes(
 		*configChanged = true
 
 		s.eventBus.Publish("verify:node_archived", map[string]interface{}{
-			"tag":    bn.Tag,
-			"reason": fmt.Sprintf("broken config: %s", bn.Error),
+			"tag":         bn.Tag,
+			"server":      un.Server,
+			"server_port": un.ServerPort,
+			"reason":      fmt.Sprintf("broken config: %s", bn.Error),
 		})
 		logger.Printf("[verifier] Archived broken node: %s — %s", bn.Tag, bn.Error)
 

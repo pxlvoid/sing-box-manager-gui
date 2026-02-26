@@ -256,6 +256,7 @@ func (s *Server) setupRoutes() {
 
 		// Verification
 		api.POST("/verification/run", s.runVerification)
+		api.POST("/verification/run-tags", s.runVerificationByTags)
 		api.GET("/verification/logs", s.getVerificationLogs)
 		api.GET("/verification/status", s.getVerificationStatus)
 		api.POST("/verification/start", s.startVerificationScheduler)
@@ -2498,6 +2499,58 @@ func (s *Server) runVerification(c *gin.Context) {
 		s.scheduler.MarkManualVerificationRun()
 	}()
 	c.JSON(http.StatusOK, gin.H{"message": "Verification started"})
+}
+
+func (s *Server) runVerificationByTags(c *gin.Context) {
+	var req struct {
+		Tags []string `json:"tags" binding:"required"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	tagSet := make(map[string]struct{}, len(req.Tags))
+	for _, tag := range req.Tags {
+		tag = strings.TrimSpace(tag)
+		if tag == "" {
+			continue
+		}
+		tagSet[tag] = struct{}{}
+	}
+	if len(tagSet) == 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "tags must contain at least one non-empty tag"})
+		return
+	}
+
+	// Validate that at least one tag exists in pending/verified nodes.
+	matched := 0
+	for _, n := range s.store.GetNodes(storage.NodeStatusPending) {
+		if _, ok := tagSet[n.Tag]; ok {
+			matched++
+		}
+	}
+	for _, n := range s.store.GetNodes(storage.NodeStatusVerified) {
+		if _, ok := tagSet[n.Tag]; ok {
+			matched++
+		}
+	}
+	if matched == 0 {
+		c.JSON(http.StatusNotFound, gin.H{"error": "no matching pending/verified nodes found for provided tags"})
+		return
+	}
+
+	tags := make([]string, 0, len(tagSet))
+	for tag := range tagSet {
+		tags = append(tags, tag)
+	}
+
+	go s.RunVerificationForTags(tags)
+	c.JSON(http.StatusOK, gin.H{
+		"message":        "Verification started for selected tags",
+		"matched_nodes":  matched,
+		"requested_tags": len(tags),
+	})
 }
 
 func (s *Server) getVerificationStatus(c *gin.Context) {
