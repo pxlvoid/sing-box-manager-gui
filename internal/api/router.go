@@ -73,6 +73,8 @@ type Server struct {
 
 	unsupportedNodes   map[string]UnsupportedNodeInfo
 	unsupportedNodesMu sync.RWMutex
+	storeSwapMu        sync.RWMutex
+	importMu           sync.Mutex
 }
 
 // NewServer creates an API server
@@ -109,16 +111,7 @@ func NewServer(store storage.Store, processManager *daemon.ProcessManager, probe
 	s.setupPipelineActivityPersistence()
 
 	// Hydrate unsupported nodes from store (survive restart)
-	if persisted := store.GetUnsupportedNodes(); len(persisted) > 0 {
-		for _, un := range persisted {
-			s.unsupportedNodes[un.NodeTag] = UnsupportedNodeInfo{
-				Tag:   un.NodeTag,
-				Error: un.Error,
-				Time:  un.DetectedAt,
-			}
-		}
-		logger.Printf("[startup] Loaded %d unsupported node(s) from store", len(persisted))
-	}
+	s.reloadUnsupportedNodesFromStore()
 
 	// Set scheduler callbacks
 	s.scheduler.SetUpdateCallback(s.autoApplyConfig)
@@ -138,6 +131,38 @@ func (s *Server) StopScheduler() {
 	s.scheduler.Stop()
 }
 
+func (s *Server) storeAccessGuard(c *gin.Context) {
+	// Import acquires write lock itself. SSE stream is long-lived and should not block imports.
+	path := c.Request.URL.Path
+	if path == "/api/database/import" || path == "/api/events/stream" {
+		c.Next()
+		return
+	}
+
+	s.storeSwapMu.RLock()
+	defer s.storeSwapMu.RUnlock()
+	c.Next()
+}
+
+func (s *Server) reloadUnsupportedNodesFromStore() {
+	persisted := s.store.GetUnsupportedNodes()
+
+	s.unsupportedNodesMu.Lock()
+	s.unsupportedNodes = make(map[string]UnsupportedNodeInfo, len(persisted))
+	for _, un := range persisted {
+		s.unsupportedNodes[un.NodeTag] = UnsupportedNodeInfo{
+			Tag:   un.NodeTag,
+			Error: un.Error,
+			Time:  un.DetectedAt,
+		}
+	}
+	s.unsupportedNodesMu.Unlock()
+
+	if len(persisted) > 0 {
+		logger.Printf("[startup] Loaded %d unsupported node(s) from store", len(persisted))
+	}
+}
+
 // setupRoutes sets up routes
 func (s *Server) setupRoutes() {
 	// CORS configuration
@@ -152,6 +177,7 @@ func (s *Server) setupRoutes() {
 
 	// API route group
 	api := s.router.Group("/api")
+	api.Use(s.storeAccessGuard)
 	{
 		// Subscription management
 		api.GET("/subscriptions", s.getSubscriptions)
@@ -280,6 +306,7 @@ func (s *Server) setupRoutes() {
 		api.PUT("/proxy/mode", s.setProxyMode)
 
 		// Database export/import
+		api.GET("/database/stats", s.getDatabaseStats)
 		api.GET("/database/export", s.exportDatabase)
 		api.POST("/database/import", s.importDatabase)
 
@@ -817,6 +844,34 @@ func (s *Server) updateSettings(c *gin.Context) {
 
 // ==================== Database Export/Import API ====================
 
+func (s *Server) getDatabaseStats(c *gin.Context) {
+	dbPath := filepath.Join(s.store.GetDataDir(), "data.db")
+
+	// Best effort: flush WAL before reading size so it is closer to export result.
+	if sqlStore, ok := s.store.(*storage.SQLiteStore); ok {
+		if err := sqlStore.Checkpoint(); err != nil {
+			logger.Printf("WAL checkpoint warning: %v", err)
+		}
+	}
+
+	info, err := os.Stat(dbPath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			c.JSON(http.StatusNotFound, gin.H{"error": "Database file not found"})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to read database file size"})
+		return
+	}
+
+	exportSize := info.Size()
+
+	c.JSON(http.StatusOK, gin.H{"data": gin.H{
+		"export_size_bytes": exportSize,
+		"export_size_human": humanizeBytes(exportSize),
+	}})
+}
+
 func (s *Server) exportDatabase(c *gin.Context) {
 	dbPath := filepath.Join(s.store.GetDataDir(), "data.db")
 
@@ -845,76 +900,248 @@ func (s *Server) importDatabase(c *gin.Context) {
 		return
 	}
 
-	src, err := file.Open()
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to open uploaded file"})
-		return
-	}
-	defer src.Close()
+	// Serialize imports explicitly.
+	s.importMu.Lock()
+	defer s.importMu.Unlock()
 
-	// Read uploaded file into temp file first to validate
 	dataDir := s.store.GetDataDir()
-	tmpPath := filepath.Join(dataDir, "data.db.import")
-	dst, err := os.Create(tmpPath)
+	tmpFile, err := os.CreateTemp(dataDir, "data.db.import-*")
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create temp file"})
 		return
 	}
+	tmpPath := tmpFile.Name()
+	defer os.Remove(tmpPath)
 
-	if _, err := io.Copy(dst, src); err != nil {
-		dst.Close()
-		os.Remove(tmpPath)
+	src, err := file.Open()
+	if err != nil {
+		tmpFile.Close()
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to open uploaded file"})
+		return
+	}
+
+	if _, err := io.Copy(tmpFile, src); err != nil {
+		src.Close()
+		tmpFile.Close()
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to save uploaded file"})
 		return
 	}
-	dst.Close()
-
-	// Validate that the uploaded file is a valid SQLite database
-	testDB, err := sql.Open("sqlite", tmpPath)
-	if err != nil {
-		os.Remove(tmpPath)
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid SQLite database file"})
-		return
-	}
-	// Quick check: try to query the settings table
-	var count int
-	if err := testDB.QueryRow("SELECT COUNT(*) FROM settings").Scan(&count); err != nil {
-		testDB.Close()
-		os.Remove(tmpPath)
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid database: missing settings table"})
-		return
-	}
-	testDB.Close()
-
-	// Close the current database connection
-	if err := s.store.Close(); err != nil {
-		os.Remove(tmpPath)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to close current database"})
+	src.Close()
+	if err := tmpFile.Close(); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to finalize uploaded file"})
 		return
 	}
 
-	// Remove WAL/SHM files
+	// Validate structure/integrity before starting swap.
+	if err := validateImportedDatabase(tmpPath); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid database: " + err.Error()})
+		return
+	}
+
+	// Block all store-backed API requests during cutover.
+	s.storeSwapMu.Lock()
+	defer s.storeSwapMu.Unlock()
+
+	wasSchedulerRunning := s.scheduler.IsRunning()
+	s.scheduler.Stop()
+
 	dbPath := filepath.Join(dataDir, "data.db")
-	os.Remove(dbPath + "-wal")
-	os.Remove(dbPath + "-shm")
+	backupPath := dbPath + ".backup-import"
+	_ = os.Remove(backupPath)
 
-	// Replace the database file
+	restoreAndRecover := func() error {
+		_ = os.Remove(dbPath)
+		if _, err := os.Stat(backupPath); err == nil {
+			if err := os.Rename(backupPath, dbPath); err != nil {
+				return fmt.Errorf("failed to restore backup: %w", err)
+			}
+		}
+		return s.recoverStoreAfterImportFailure(dataDir, wasSchedulerRunning)
+	}
+
+	// Best effort flush/cleanup before closing.
+	if sqlStore, ok := s.store.(*storage.SQLiteStore); ok {
+		if err := sqlStore.Checkpoint(); err != nil {
+			logger.Printf("WAL checkpoint warning: %v", err)
+		}
+	}
+	_ = os.Remove(dbPath + "-wal")
+	_ = os.Remove(dbPath + "-shm")
+
+	if err := s.store.Close(); err != nil {
+		if recoverErr := s.recoverStoreAfterImportFailure(dataDir, wasSchedulerRunning); recoverErr != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to close current database: " + err.Error() + ". Recovery failed: " + recoverErr.Error() + ". Restart the application."})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to close current database: " + err.Error()})
+		return
+	}
+
+	if err := os.Rename(dbPath, backupPath); err != nil {
+		if recoverErr := s.recoverStoreAfterImportFailure(dataDir, wasSchedulerRunning); recoverErr != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to backup current database: " + err.Error() + ". Recovery failed: " + recoverErr.Error() + ". Restart the application."})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to backup current database: " + err.Error()})
+		return
+	}
+
 	if err := os.Rename(tmpPath, dbPath); err != nil {
+		if recoverErr := restoreAndRecover(); recoverErr != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to replace database: " + err.Error() + ". Recovery failed: " + recoverErr.Error() + ". Restart the application."})
+			return
+		}
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to replace database: " + err.Error()})
 		return
 	}
 
-	// Reopen the database
 	newStore, err := storage.NewSQLiteStore(dataDir)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to reopen database: " + err.Error() + ". Restart the application."})
+		if recoverErr := restoreAndRecover(); recoverErr != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to open imported database: " + err.Error() + ". Recovery failed: " + recoverErr.Error() + ". Restart the application."})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to open imported database: " + err.Error()})
 		return
 	}
 
-	// Update the store reference
-	s.store = newStore
+	if err := s.swapStoreDependencies(newStore, wasSchedulerRunning); err != nil {
+		_ = newStore.Close()
+		if recoverErr := restoreAndRecover(); recoverErr != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to swap dependencies: " + err.Error() + ". Recovery failed: " + recoverErr.Error() + ". Restart the application."})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to swap dependencies: " + err.Error()})
+		return
+	}
+
+	_ = os.Remove(backupPath)
 
 	c.JSON(http.StatusOK, gin.H{"message": "Database imported successfully. Reload the page to see updated data."})
+}
+
+func validateImportedDatabase(dbPath string) error {
+	testDB, err := sql.Open("sqlite", dbPath)
+	if err != nil {
+		return fmt.Errorf("failed to open sqlite file: %w", err)
+	}
+	defer testDB.Close()
+
+	var quickCheck string
+	if err := testDB.QueryRow("PRAGMA quick_check(1)").Scan(&quickCheck); err != nil {
+		return fmt.Errorf("failed integrity check: %w", err)
+	}
+	if strings.ToLower(strings.TrimSpace(quickCheck)) != "ok" {
+		return fmt.Errorf("integrity check failed: %s", quickCheck)
+	}
+
+	requiredTables := []string{
+		"schema_version",
+		"settings",
+		"subscriptions",
+		"subscription_nodes",
+		"filters",
+		"rules",
+		"rule_groups",
+		"host_entries",
+	}
+	for _, table := range requiredTables {
+		exists, err := sqliteTableExists(testDB, table)
+		if err != nil {
+			return fmt.Errorf("failed to verify table %q: %w", table, err)
+		}
+		if !exists {
+			return fmt.Errorf("missing required table %q", table)
+		}
+	}
+
+	// Validate schema version compatibility.
+	var schemaVersion int
+	if err := testDB.QueryRow("SELECT COALESCE(MAX(version), 0) FROM schema_version").Scan(&schemaVersion); err != nil {
+		return fmt.Errorf("failed to read schema version: %w", err)
+	}
+	const maxSupportedSchemaVersion = 6
+	if schemaVersion > maxSupportedSchemaVersion {
+		return fmt.Errorf("schema version %d is newer than supported %d", schemaVersion, maxSupportedSchemaVersion)
+	}
+
+	// Validate settings table is readable and has expected key columns.
+	var settingsCount int
+	if err := testDB.QueryRow("SELECT COUNT(*) FROM settings").Scan(&settingsCount); err != nil {
+		return fmt.Errorf("failed to read settings table: %w", err)
+	}
+
+	return nil
+}
+
+func sqliteTableExists(db *sql.DB, tableName string) (bool, error) {
+	var count int
+	if err := db.QueryRow(
+		"SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name = ?",
+		tableName,
+	).Scan(&count); err != nil {
+		return false, err
+	}
+	return count > 0, nil
+}
+
+func (s *Server) recoverStoreAfterImportFailure(dataDir string, restartScheduler bool) error {
+	recoveredStore, err := storage.NewSQLiteStore(dataDir)
+	if err != nil {
+		return err
+	}
+	if err := s.swapStoreDependencies(recoveredStore, restartScheduler); err != nil {
+		_ = recoveredStore.Close()
+		return err
+	}
+	return nil
+}
+
+func (s *Server) swapStoreDependencies(newStore storage.Store, startScheduler bool) error {
+	if newStore == nil {
+		return fmt.Errorf("new store is nil")
+	}
+
+	newSubService := service.NewSubscriptionService(newStore)
+	newSubService.SetEventBus(s.eventBus)
+
+	newScheduler := service.NewScheduler(newStore, newSubService)
+	newScheduler.SetEventBus(s.eventBus)
+	newScheduler.SetUpdateCallback(s.autoApplyConfig)
+	newScheduler.SetVerificationCallback(s.RunVerification)
+
+	s.store = newStore
+	s.subService = newSubService
+	s.scheduler = newScheduler
+	s.kernelManager = kernel.NewManager(newStore.GetDataDir(), newStore.GetSettings)
+
+	settings := s.store.GetSettings()
+	s.processManager.SetConfigPath(s.resolvePath(settings.ConfigPath))
+	s.reloadUnsupportedNodesFromStore()
+
+	if startScheduler {
+		s.scheduler.Start()
+	}
+	return nil
+}
+
+func humanizeBytes(size int64) string {
+	const (
+		KB = 1024
+		MB = 1024 * KB
+		GB = 1024 * MB
+	)
+
+	switch {
+	case size >= GB:
+		return fmt.Sprintf("%.2f GB", float64(size)/float64(GB))
+	case size >= MB:
+		return fmt.Sprintf("%.2f MB", float64(size)/float64(MB))
+	case size >= KB:
+		return fmt.Sprintf("%.2f KB", float64(size)/float64(KB))
+	default:
+		return fmt.Sprintf("%d B", size)
+	}
 }
 
 // ==================== System Hosts API ====================

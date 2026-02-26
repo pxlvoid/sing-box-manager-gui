@@ -27,6 +27,7 @@ type Scheduler struct {
 	nextSubUpdateTime *time.Time
 	nextVerifyTime    *time.Time
 	mu                sync.Mutex
+	workersWG         sync.WaitGroup
 }
 
 // NewScheduler creates a scheduler
@@ -92,13 +93,21 @@ func (s *Scheduler) Start() StartStatus {
 
 	if subEnabled {
 		s.interval = time.Duration(settings.SubscriptionInterval) * time.Minute
-		go s.runSubscriptionTicker()
+		s.workersWG.Add(1)
+		go func() {
+			defer s.workersWG.Done()
+			s.runSubscriptionTicker()
+		}()
 		log.Printf("[Scheduler] Subscription updates started, interval: %v", s.interval)
 	}
 
 	if verifyEnabled && s.onVerify != nil {
 		s.verifyInterval = time.Duration(settings.VerificationInterval) * time.Minute
-		go s.runVerificationTicker()
+		s.workersWG.Add(1)
+		go func() {
+			defer s.workersWG.Done()
+			s.runVerificationTicker()
+		}()
 		log.Printf("[Scheduler] Verification started, interval: %v", s.verifyInterval)
 	}
 
@@ -108,9 +117,8 @@ func (s *Scheduler) Start() StartStatus {
 // Stop stops the scheduler
 func (s *Scheduler) Stop() {
 	s.mu.Lock()
-	defer s.mu.Unlock()
-
 	if !s.running {
+		s.mu.Unlock()
 		return
 	}
 
@@ -119,11 +127,15 @@ func (s *Scheduler) Stop() {
 	s.verifyRunning = false
 	s.nextSubUpdateTime = nil
 	s.nextVerifyTime = nil
-	log.Println("[Scheduler] Stopped")
+	s.mu.Unlock()
+
+	// Wait until worker goroutines finish current cycle and exit.
+	s.workersWG.Wait()
 
 	if s.eventBus != nil {
 		s.eventBus.PublishTimestamped("pipeline:stop", nil)
 	}
+	log.Println("[Scheduler] Stopped")
 }
 
 // Restart restarts the scheduler (call after updating config)

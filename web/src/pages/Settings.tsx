@@ -91,6 +91,7 @@ export default function Settings() {
 
   // Database import state
   const [dbImporting, setDbImporting] = useState(false);
+  const [dbExportSize, setDbExportSize] = useState<string>('');
   const dbFileInputRef = useRef<HTMLInputElement>(null);
 
   // Secret visibility state
@@ -124,6 +125,7 @@ export default function Settings() {
     fetchDaemonStatus();
     fetchKernelInfo();
     fetchSystemHosts();
+    fetchDatabaseStats();
   }, []);
 
   useEffect(() => {
@@ -218,6 +220,16 @@ export default function Settings() {
       setSystemHosts(res.data.data || []);
     } catch (error) {
       console.error('Failed to fetch system hosts:', error);
+    }
+  };
+
+  const fetchDatabaseStats = async () => {
+    try {
+      const res = await databaseApi.stats();
+      setDbExportSize(res.data?.data?.export_size_human || '');
+    } catch (error) {
+      console.error('Failed to fetch database stats:', error);
+      setDbExportSize('');
     }
   };
 
@@ -1188,7 +1200,7 @@ export default function Settings() {
                   startContent={<HardDriveDownload className="w-4 h-4" />}
                   onPress={handleExportDatabase}
                 >
-                  Export Database
+                  {`Export Database${dbExportSize ? ` (${dbExportSize})` : ''}`}
                 </Button>
                 <Button
                   color="warning"

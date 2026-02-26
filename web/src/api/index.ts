@@ -179,6 +179,7 @@ export const proxyModeApi = {
 
 // Database API
 export const databaseApi = {
+  stats: () => api.get('/database/stats'),
   exportUrl: '/api/database/export',
   import: (file: File) => {
     const formData = new FormData();
