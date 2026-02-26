@@ -105,6 +105,7 @@ func NewServer(store storage.Store, processManager *daemon.ProcessManager, probe
 	// Wire event bus to services
 	s.scheduler.SetEventBus(eventBus)
 	s.subService.SetEventBus(eventBus)
+	s.setupPipelineActivityPersistence()
 
 	// Hydrate unsupported nodes from store (survive restart)
 	if persisted := store.GetUnsupportedNodes(); len(persisted) > 0 {
@@ -2825,23 +2826,23 @@ func (s *Server) debugDump(c *gin.Context) {
 	}
 	type debugDumpData struct {
 		// System info first
-		Timestamp        time.Time                `json:"timestamp"`
-		Runtime          debugRuntime             `json:"runtime"`
-		Service          debugServiceStatus       `json:"service"`
-		Probe            daemon.ProbeStatus       `json:"probe"`
-		Scheduler        debugSchedulerStatus     `json:"scheduler"`
-		Settings         interface{}              `json:"settings"`
+		Timestamp time.Time            `json:"timestamp"`
+		Runtime   debugRuntime         `json:"runtime"`
+		Service   debugServiceStatus   `json:"service"`
+		Probe     daemon.ProbeStatus   `json:"probe"`
+		Scheduler debugSchedulerStatus `json:"scheduler"`
+		Settings  interface{}          `json:"settings"`
 		// Data
-		Subscriptions    interface{}              `json:"subscriptions"`
-		NodeCounts       interface{}              `json:"node_counts"`
-		PendingNodes     []storage.UnifiedNode    `json:"pending_nodes"`
-		VerifiedNodes    []storage.UnifiedNode    `json:"verified_nodes"`
-		ArchivedNodes    []storage.UnifiedNode    `json:"archived_nodes"`
-		Filters          interface{}              `json:"filters"`
-		Rules            interface{}              `json:"rules"`
-		RuleGroups       interface{}              `json:"rule_groups"`
-		CountryGroups    interface{}              `json:"country_groups"`
-		UnsupportedNodes []UnsupportedNodeInfo    `json:"unsupported_nodes"`
+		Subscriptions    interface{}               `json:"subscriptions"`
+		NodeCounts       interface{}               `json:"node_counts"`
+		PendingNodes     []storage.UnifiedNode     `json:"pending_nodes"`
+		VerifiedNodes    []storage.UnifiedNode     `json:"verified_nodes"`
+		ArchivedNodes    []storage.UnifiedNode     `json:"archived_nodes"`
+		Filters          interface{}               `json:"filters"`
+		Rules            interface{}               `json:"rules"`
+		RuleGroups       interface{}               `json:"rule_groups"`
+		CountryGroups    interface{}               `json:"country_groups"`
+		UnsupportedNodes []UnsupportedNodeInfo     `json:"unsupported_nodes"`
 		VerificationLogs []storage.VerificationLog `json:"verification_logs"`
 	}
 

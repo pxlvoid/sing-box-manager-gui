@@ -28,6 +28,7 @@ func (s *SQLiteStore) migrate() error {
 		s.migrateV1,
 		s.migrateV2,
 		s.migrateV3,
+		s.migrateV4,
 	}
 
 	for i, m := range migrations {
@@ -43,6 +44,31 @@ func (s *SQLiteStore) migrate() error {
 		}
 	}
 	return nil
+}
+
+// migrateV4 creates persistent pipeline activity logs for dashboard feed.
+func (s *SQLiteStore) migrateV4() error {
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	stmts := []string{
+		`CREATE TABLE IF NOT EXISTS pipeline_activity_logs (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			event_type TEXT NOT NULL DEFAULT '',
+			message TEXT NOT NULL DEFAULT '',
+			timestamp TIMESTAMP NOT NULL
+		)`,
+		`CREATE INDEX IF NOT EXISTS idx_pipeline_activity_logs_ts ON pipeline_activity_logs(timestamp)`,
+	}
+	for _, stmt := range stmts {
+		if _, err := tx.Exec(stmt); err != nil {
+			return fmt.Errorf("exec %q: %w", stmt[:60], err)
+		}
+	}
+	return tx.Commit()
 }
 
 // migrateV1 creates all initial tables and indices.

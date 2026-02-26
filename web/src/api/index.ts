@@ -139,6 +139,10 @@ export const verificationApi = {
   stop: () => api.post('/verification/stop'),
 };
 
+export const pipelineApi = {
+  getActivity: (limit?: number) => api.get('/pipeline/activity', { params: { limit: limit || 50 } }),
+};
+
 // Kernel management API
 export const kernelApi = {
   getInfo: () => api.get('/kernel/info'),

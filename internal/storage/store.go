@@ -51,6 +51,8 @@ type Store interface {
 	// Verification Logs
 	AddVerificationLog(log VerificationLog) error
 	GetVerificationLogs(limit int) []VerificationLog
+	AddPipelineActivityLog(log PipelineActivityLog) error
+	GetPipelineActivityLogs(limit int) []PipelineActivityLog
 
 	// Helpers
 	GetAllNodes() []Node

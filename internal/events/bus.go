@@ -28,6 +28,7 @@ type Subscriber struct {
 type Bus struct {
 	mu          sync.RWMutex
 	subscribers map[string]*Subscriber
+	onPublish   func(eventType string, data interface{})
 }
 
 // NewBus creates a new event bus.
@@ -62,6 +63,13 @@ func (b *Bus) Unsubscribe(id string) {
 // Publish sends an event to all subscribers (non-blocking).
 // If a subscriber's channel is full, the event is dropped for that subscriber.
 func (b *Bus) Publish(eventType string, data interface{}) {
+	b.mu.RLock()
+	onPublish := b.onPublish
+	b.mu.RUnlock()
+	if onPublish != nil {
+		onPublish(eventType, data)
+	}
+
 	event := &Event{
 		Type: eventType,
 		Data: data,
@@ -75,6 +83,13 @@ func (b *Bus) Publish(eventType string, data interface{}) {
 		}
 	}
 	b.mu.RUnlock()
+}
+
+// SetPublishHook registers a callback invoked on each published event.
+func (b *Bus) SetPublishHook(hook func(eventType string, data interface{})) {
+	b.mu.Lock()
+	b.onPublish = hook
+	b.mu.Unlock()
 }
 
 // PublishTimestamped is a convenience method that adds a timestamp to the data map.

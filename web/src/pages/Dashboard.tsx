@@ -17,7 +17,7 @@ export default function Dashboard() {
     fetchNodeCounts, fetchSystemInfo, fetchSettings, fetchUnsupportedNodes,
     fetchProxyGroups, switchProxy, runVerification, fetchVerificationStatus,
     startVerificationScheduler, stopVerificationScheduler,
-    fetchLatestMeasurements,
+    fetchLatestMeasurements, fetchPipelineEvents,
   } = useStore();
 
   const activityFeedRef = useRef<HTMLDivElement>(null);
@@ -62,6 +62,7 @@ export default function Dashboard() {
     fetchProxyGroups();
     fetchVerificationStatus();
     fetchLatestMeasurements();
+    fetchPipelineEvents();
 
     const interval = setInterval(() => {
       fetchServiceStatus();

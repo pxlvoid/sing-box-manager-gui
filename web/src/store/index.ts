@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { subscriptionApi, filterApi, ruleApi, ruleGroupApi, settingsApi, serviceApi, nodeApi, unifiedNodeApi, verificationApi, monitorApi, proxyApi, probeApi, measurementApi } from '../api';
+import { subscriptionApi, filterApi, ruleApi, ruleGroupApi, settingsApi, serviceApi, nodeApi, unifiedNodeApi, verificationApi, monitorApi, proxyApi, probeApi, measurementApi, pipelineApi } from '../api';
 import { toast } from '../components/Toast';
 
 export interface NodeHealthResult {
@@ -444,6 +444,7 @@ interface AppState {
   runVerification: () => Promise<void>;
   fetchVerificationStatus: () => Promise<void>;
   fetchVerificationLogs: (limit?: number) => Promise<void>;
+  fetchPipelineEvents: (limit?: number) => Promise<void>;
   startVerificationScheduler: () => Promise<void>;
   stopVerificationScheduler: () => Promise<void>;
 
@@ -930,6 +931,22 @@ export const useStore = create<AppState>((set, get) => ({
       set({ verificationLogs: res.data.data || [] });
     } catch (error) {
       console.error('Failed to fetch verification logs:', error);
+    }
+  },
+
+  fetchPipelineEvents: async (limit?: number) => {
+    try {
+      const res = await pipelineApi.getActivity(limit);
+      const logs = (res.data.data || []) as PipelineEvent[];
+      const events = [...logs].reverse();
+      for (const event of events) {
+        if (event.id > _pipelineEventId) {
+          _pipelineEventId = event.id;
+        }
+      }
+      set({ pipelineEvents: events });
+    } catch (error) {
+      console.error('Failed to fetch pipeline activity logs:', error);
     }
   },
 

@@ -57,6 +57,14 @@ type VerificationLog struct {
 	Error           string    `json:"error,omitempty"`
 }
 
+// PipelineActivityLog represents a dashboard pipeline activity entry
+type PipelineActivityLog struct {
+	ID        int64     `json:"id"`
+	Type      string    `json:"type"`
+	Message   string    `json:"message"`
+	Timestamp time.Time `json:"timestamp"`
+}
+
 // NodeCounts represents counts of nodes by status
 type NodeCounts struct {
 	Pending  int `json:"pending"`
