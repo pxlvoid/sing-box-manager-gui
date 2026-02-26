@@ -177,6 +177,15 @@ export const proxyModeApi = {
   set: (mode: string) => api.put('/proxy/mode', { mode }),
 };
 
+// Traffic monitoring API
+export const monitoringApi = {
+  getOverview: () => api.get('/monitoring/overview'),
+  getHistory: (limit: number = 120) => api.get('/monitoring/history', { params: { limit } }),
+  getClients: (limit: number = 200) => api.get('/monitoring/clients', { params: { limit } }),
+  getResources: (limit: number = 300, sourceIP?: string) =>
+    api.get('/monitoring/resources', { params: { limit, source_ip: sourceIP || undefined } }),
+};
+
 // Database API
 export const databaseApi = {
   stats: () => api.get('/database/stats'),

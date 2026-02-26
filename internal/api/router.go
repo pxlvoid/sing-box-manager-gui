@@ -75,6 +75,11 @@ type Server struct {
 	unsupportedNodesMu sync.RWMutex
 	storeSwapMu        sync.RWMutex
 	importMu           sync.Mutex
+
+	monitoringMu           sync.Mutex
+	lastTrafficSampleAt    time.Time
+	lastTrafficUploadTotal int64
+	lastTrafficDownTotal   int64
 }
 
 // NewServer creates an API server
@@ -118,6 +123,7 @@ func NewServer(store storage.Store, processManager *daemon.ProcessManager, probe
 	s.scheduler.SetVerificationCallback(s.RunVerification)
 
 	s.setupRoutes()
+	s.startTrafficAggregator()
 	return s
 }
 
@@ -134,7 +140,7 @@ func (s *Server) StopScheduler() {
 func (s *Server) storeAccessGuard(c *gin.Context) {
 	// Import acquires write lock itself. SSE stream is long-lived and should not block imports.
 	path := c.Request.URL.Path
-	if path == "/api/database/import" || path == "/api/events/stream" {
+	if path == "/api/database/import" || path == "/api/events/stream" || strings.HasPrefix(path, "/api/monitoring/ws/") {
 		c.Next()
 		return
 	}
@@ -304,6 +310,14 @@ func (s *Server) setupRoutes() {
 		// Proxy mode
 		api.GET("/proxy/mode", s.getProxyMode)
 		api.PUT("/proxy/mode", s.setProxyMode)
+
+		// Monitoring
+		api.GET("/monitoring/overview", s.getMonitoringOverview)
+		api.GET("/monitoring/history", s.getMonitoringHistory)
+		api.GET("/monitoring/clients", s.getMonitoringClients)
+		api.GET("/monitoring/resources", s.getMonitoringResources)
+		api.GET("/monitoring/ws/traffic", s.streamTrafficWebSocket)
+		api.GET("/monitoring/ws/connections", s.streamConnectionsWebSocket)
 
 		// Database export/import
 		api.GET("/database/stats", s.getDatabaseStats)
@@ -1060,7 +1074,7 @@ func validateImportedDatabase(dbPath string) error {
 	if err := testDB.QueryRow("SELECT COALESCE(MAX(version), 0) FROM schema_version").Scan(&schemaVersion); err != nil {
 		return fmt.Errorf("failed to read schema version: %w", err)
 	}
-	const maxSupportedSchemaVersion = 6
+	const maxSupportedSchemaVersion = 7
 	if schemaVersion > maxSupportedSchemaVersion {
 		return fmt.Errorf("schema version %d is newer than supported %d", schemaVersion, maxSupportedSchemaVersion)
 	}

@@ -31,6 +31,7 @@ func (s *SQLiteStore) migrate() error {
 		s.migrateV4,
 		s.migrateV5,
 		s.migrateV6,
+		s.migrateV7,
 	}
 
 	for i, m := range migrations {
@@ -526,6 +527,67 @@ func (s *SQLiteStore) migrateV6() error {
 			query_ip TEXT NOT NULL DEFAULT ''
 		)`,
 		`CREATE UNIQUE INDEX IF NOT EXISTS idx_geo_server ON geo_data(server, server_port)`,
+	}
+
+	for _, stmt := range stmts {
+		if _, err := tx.Exec(stmt); err != nil {
+			return fmt.Errorf("exec %q: %w", stmt[:60], err)
+		}
+	}
+
+	return tx.Commit()
+}
+
+// migrateV7 creates monitoring tables for traffic history.
+func (s *SQLiteStore) migrateV7() error {
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	stmts := []string{
+		`CREATE TABLE IF NOT EXISTS traffic_samples (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			timestamp TIMESTAMP NOT NULL,
+			up_bps INTEGER NOT NULL DEFAULT 0,
+			down_bps INTEGER NOT NULL DEFAULT 0,
+			upload_total INTEGER NOT NULL DEFAULT 0,
+			download_total INTEGER NOT NULL DEFAULT 0,
+			active_connections INTEGER NOT NULL DEFAULT 0,
+			client_count INTEGER NOT NULL DEFAULT 0,
+			memory_inuse INTEGER NOT NULL DEFAULT 0,
+			memory_oslimit INTEGER NOT NULL DEFAULT 0
+		)`,
+		`CREATE INDEX IF NOT EXISTS idx_traffic_samples_ts ON traffic_samples(timestamp)`,
+		`CREATE TABLE IF NOT EXISTS traffic_clients (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			sample_id INTEGER NOT NULL REFERENCES traffic_samples(id) ON DELETE CASCADE,
+			timestamp TIMESTAMP NOT NULL,
+			source_ip TEXT NOT NULL DEFAULT '',
+			active_connections INTEGER NOT NULL DEFAULT 0,
+			upload_bytes INTEGER NOT NULL DEFAULT 0,
+			download_bytes INTEGER NOT NULL DEFAULT 0,
+			duration_seconds INTEGER NOT NULL DEFAULT 0,
+			proxy_chain TEXT NOT NULL DEFAULT '',
+			host_count INTEGER NOT NULL DEFAULT 0,
+			top_host TEXT NOT NULL DEFAULT ''
+		)`,
+		`CREATE INDEX IF NOT EXISTS idx_traffic_clients_sample ON traffic_clients(sample_id)`,
+		`CREATE INDEX IF NOT EXISTS idx_traffic_clients_ip_ts ON traffic_clients(source_ip, timestamp)`,
+		`CREATE TABLE IF NOT EXISTS traffic_resources (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			sample_id INTEGER NOT NULL REFERENCES traffic_samples(id) ON DELETE CASCADE,
+			timestamp TIMESTAMP NOT NULL,
+			source_ip TEXT NOT NULL DEFAULT '',
+			host TEXT NOT NULL DEFAULT '',
+			active_connections INTEGER NOT NULL DEFAULT 0,
+			upload_bytes INTEGER NOT NULL DEFAULT 0,
+			download_bytes INTEGER NOT NULL DEFAULT 0,
+			proxy_chain TEXT NOT NULL DEFAULT ''
+		)`,
+		`CREATE INDEX IF NOT EXISTS idx_traffic_resources_sample ON traffic_resources(sample_id)`,
+		`CREATE INDEX IF NOT EXISTS idx_traffic_resources_ip_host_ts ON traffic_resources(source_ip, host, timestamp)`,
 	}
 
 	for _, stmt := range stmts {

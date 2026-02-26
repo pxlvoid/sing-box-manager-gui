@@ -81,6 +81,11 @@ type Store interface {
 	AddSiteMeasurements(measurements []SiteMeasurement) error
 	GetSiteMeasurements(server string, port int, limit int) ([]SiteMeasurement, error)
 	GetLatestSiteMeasurements() ([]SiteMeasurement, error)
+	AddTrafficSample(sample TrafficSample, clients []ClientTrafficSnapshot, resources []ClientResourceSnapshot) (int64, error)
+	GetTrafficSamples(limit int) ([]TrafficSample, error)
+	GetLatestTrafficSample() (*TrafficSample, error)
+	GetLatestTrafficClients(limit int) ([]ClientTrafficSnapshot, error)
+	GetLatestTrafficResources(limit int, sourceIP string) ([]ClientResourceSnapshot, error)
 
 	// GeoIP Data
 	UpsertGeoData(data GeoData) error

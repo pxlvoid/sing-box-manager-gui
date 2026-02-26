@@ -1,5 +1,38 @@
 # Мониторинг трафика через sing-box Clash API
 
+## Статус реализации (обновлено: 2026-02-26)
+
+Реализовано:
+
+- ✅ WebSocket-прокси через backend для:
+  - `/api/monitoring/ws/traffic` (up/down realtime)
+  - `/api/monitoring/ws/connections` (realtime снапшоты connections)
+- ✅ Агрегатор `/connections` с записью истории в основную SQLite
+- ✅ Миграция БД `v7` и таблицы:
+  - `traffic_samples`
+  - `traffic_clients`
+  - `traffic_resources`
+- ✅ REST API для мониторинга:
+  - `/api/monitoring/overview`
+  - `/api/monitoring/history`
+  - `/api/monitoring/clients`
+  - `/api/monitoring/resources`
+- ✅ UI:
+  - отдельная страница `Monitoring`
+  - виджет на `Dashboard` с переходом в детали
+  - таблица клиентов + детализация по выбранному клиенту
+  - график realtime upload/download
+
+На что обратить внимание:
+
+- ⚠️ Retention пока **не реализован** (история растет без авто-очистки).
+- ⚠️ Клиент = `sourceIP` (NAT-устройства агрегируются в один “клиент”).
+- ⚠️ `host` зависит от протокола/SNI и может быть пустым.
+- ⚠️ Вебсокет-прокси реализован минималистично (без внешней WS-библиотеки), под текущий сценарий Clash API.
+
+---
+Ниже оставлена исходная спецификация/контекст задачи.
+
 ## Текущее состояние
 
 - Clash API включен в конфиге (`external_controller` на порту 9091)

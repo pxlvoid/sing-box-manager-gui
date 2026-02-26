@@ -145,6 +145,48 @@ type SiteMeasurement struct {
 	Mode       string    `json:"mode"`
 }
 
+// TrafficSample represents an aggregated traffic point in time.
+type TrafficSample struct {
+	ID                int64     `json:"id,omitempty"`
+	Timestamp         time.Time `json:"timestamp"`
+	UpBps             int64     `json:"up_bps"`   // bytes/sec
+	DownBps           int64     `json:"down_bps"` // bytes/sec
+	UploadTotal       int64     `json:"upload_total"`
+	DownloadTotal     int64     `json:"download_total"`
+	ActiveConnections int       `json:"active_connections"`
+	ClientCount       int       `json:"client_count"`
+	MemoryInuse       int64     `json:"memory_inuse"`
+	MemoryOSLimit     int64     `json:"memory_oslimit"`
+}
+
+// ClientTrafficSnapshot represents an aggregated client (source IP) snapshot.
+type ClientTrafficSnapshot struct {
+	ID                int64     `json:"id,omitempty"`
+	SampleID          int64     `json:"sample_id"`
+	Timestamp         time.Time `json:"timestamp"`
+	SourceIP          string    `json:"source_ip"`
+	ActiveConnections int       `json:"active_connections"`
+	UploadBytes       int64     `json:"upload_bytes"`
+	DownloadBytes     int64     `json:"download_bytes"`
+	DurationSeconds   int64     `json:"duration_seconds"`
+	ProxyChain        string    `json:"proxy_chain"`
+	HostCount         int       `json:"host_count"`
+	TopHost           string    `json:"top_host"`
+}
+
+// ClientResourceSnapshot represents a host/resource snapshot per source IP.
+type ClientResourceSnapshot struct {
+	ID                int64     `json:"id,omitempty"`
+	SampleID          int64     `json:"sample_id"`
+	Timestamp         time.Time `json:"timestamp"`
+	SourceIP          string    `json:"source_ip"`
+	Host              string    `json:"host"`
+	ActiveConnections int       `json:"active_connections"`
+	UploadBytes       int64     `json:"upload_bytes"`
+	DownloadBytes     int64     `json:"download_bytes"`
+	ProxyChain        string    `json:"proxy_chain"`
+}
+
 // HealthStats represents aggregated health statistics for a node
 type HealthStats struct {
 	TotalChecks   int     `json:"total_checks"`

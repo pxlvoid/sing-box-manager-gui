@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
-import { LayoutDashboard, Globe, FileText, Settings, Activity, ScrollText, Menu, X, Sun, Moon, Stethoscope } from 'lucide-react';
+import { LayoutDashboard, Globe, FileText, Settings, Activity, ScrollText, Menu, X, Sun, Moon, Stethoscope, Network } from 'lucide-react';
 import { useTheme } from '../hooks/useTheme';
 import { useStore } from '../store';
 
@@ -8,6 +8,7 @@ const menuItems = [
   { path: '/', icon: LayoutDashboard, label: 'Dashboard' },
   { path: '/subscriptions', icon: Globe, label: 'Nodes' },
   { path: '/rules', icon: FileText, label: 'Rules' },
+  { path: '/monitoring', icon: Network, label: 'Monitoring' },
   { path: '/logs', icon: ScrollText, label: 'Logs' },
   { path: '/diagnostics', icon: Stethoscope, label: 'Diagnostics' },
   { path: '/settings', icon: Settings, label: 'Settings' },

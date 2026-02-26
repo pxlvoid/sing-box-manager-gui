@@ -1,14 +1,16 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Card, CardBody, CardHeader, Button, Chip, Input, Modal, ModalContent, ModalHeader, ModalBody, ModalFooter, Tooltip, Select, SelectItem, Spinner, Progress } from '@nextui-org/react';
-import { Play, Square, RefreshCw, Cpu, HardDrive, Wifi, Info, Activity, Copy, ClipboardCheck, Link, Globe, QrCode, Search, Stethoscope, ShieldCheck, Clock, CheckCircle, Archive } from 'lucide-react';
+import { Play, Square, RefreshCw, Cpu, HardDrive, Wifi, Info, Activity, Copy, ClipboardCheck, Link, Globe, QrCode, Search, Stethoscope, ShieldCheck, Clock, CheckCircle, Archive, Network } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 import { useStore } from '../store';
 import type { NodeSiteCheckResult } from '../store';
 import { shortSiteLabel } from '../features/nodes/types';
-import { serviceApi, configApi } from '../api';
+import { serviceApi, configApi, monitoringApi } from '../api';
 import { toast } from '../components/Toast';
 
 
 export default function Dashboard() {
+  const navigate = useNavigate();
   const {
     serviceStatus, probeStatus, subscriptions, nodeCounts, systemInfo, settings, proxyGroups,
     pendingNodes, verifiedNodes, archivedNodes, countryGroups,
@@ -29,6 +31,12 @@ export default function Dashboard() {
   const [qrLink, setQrLink] = useState<string | null>(null);
   const [proxyLinksOpen, setProxyLinksOpen] = useState(false);
   const [proxySearch, setProxySearch] = useState('');
+  const [trafficOverview, setTrafficOverview] = useState({
+    up_bps: 0,
+    down_bps: 0,
+    active_connections: 0,
+    client_count: 0,
+  });
 
   const [errorModal, setErrorModal] = useState<{
     isOpen: boolean;
@@ -43,6 +51,22 @@ export default function Dashboard() {
   const showError = (title: string, error: any) => {
     const message = error.response?.data?.error || error.message || 'Operation failed';
     setErrorModal({ isOpen: true, title, message });
+  };
+
+  const fetchTrafficOverview = async () => {
+    try {
+      const res = await monitoringApi.getOverview();
+      if (res.data?.data) {
+        setTrafficOverview({
+          up_bps: Number(res.data.data.up_bps || 0),
+          down_bps: Number(res.data.data.down_bps || 0),
+          active_connections: Number(res.data.data.active_connections || 0),
+          client_count: Number(res.data.data.client_count || 0),
+        });
+      }
+    } catch (error) {
+      console.error('Failed to fetch traffic overview:', error);
+    }
   };
 
   // Auto-scroll activity feed
@@ -66,12 +90,14 @@ export default function Dashboard() {
     fetchLatestMeasurements();
     fetchPipelineEvents();
     fetchGeoData();
+    fetchTrafficOverview();
 
     const interval = setInterval(() => {
       fetchServiceStatus();
       fetchProbeStatus();
       fetchSystemInfo();
       fetchProxyGroups();
+      fetchTrafficOverview();
     }, 5000);
     return () => clearInterval(interval);
   }, []);
@@ -317,9 +343,154 @@ export default function Dashboard() {
     await runVerificationForTags([activeTag]);
   };
 
+  const formatRate = (value: number): string => {
+    if (!Number.isFinite(value) || value <= 0) return '0 B/s';
+    const units = ['B/s', 'KB/s', 'MB/s', 'GB/s'];
+    let v = value;
+    let idx = 0;
+    while (v >= 1024 && idx < units.length - 1) {
+      v /= 1024;
+      idx += 1;
+    }
+    return `${v.toFixed(v >= 10 || idx === 0 ? 0 : 1)} ${units[idx]}`;
+  };
+
   return (
     <div className="space-y-6">
       <h1 className="text-2xl font-bold text-gray-800 dark:text-white">Dashboard</h1>
+
+      {/* Statistics cards */}
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3 sm:gap-4">
+        <Card>
+          <CardBody className="flex flex-row items-center gap-3 sm:gap-4 p-3 sm:p-4">
+            <div className="p-2 sm:p-3 bg-blue-100 dark:bg-blue-900 rounded-lg">
+              <Wifi className="w-5 h-5 sm:w-6 sm:h-6 text-blue-600 dark:text-blue-300" />
+            </div>
+            <div className="min-w-0">
+              <p className="text-xs sm:text-sm text-gray-500">Subscriptions</p>
+              <p className="text-xl sm:text-2xl font-bold">{enabledSubs} / {subscriptions.length}</p>
+            </div>
+          </CardBody>
+        </Card>
+
+        <Card>
+          <CardBody className="flex flex-row items-center gap-3 sm:gap-4 p-3 sm:p-4">
+            <div className="p-2 sm:p-3 bg-yellow-100 dark:bg-yellow-900 rounded-lg">
+              <Clock className="w-5 h-5 sm:w-6 sm:h-6 text-yellow-600 dark:text-yellow-300" />
+            </div>
+            <div className="min-w-0">
+              <p className="text-xs sm:text-sm text-gray-500">Pending</p>
+              <p className="text-xl sm:text-2xl font-bold">{nodeCounts.pending}</p>
+            </div>
+          </CardBody>
+        </Card>
+
+        <Card>
+          <CardBody className="flex flex-row items-center gap-3 sm:gap-4 p-3 sm:p-4">
+            <div className="p-2 sm:p-3 bg-green-100 dark:bg-green-900 rounded-lg">
+              <CheckCircle className="w-5 h-5 sm:w-6 sm:h-6 text-green-600 dark:text-green-300" />
+            </div>
+            <div className="min-w-0">
+              <p className="text-xs sm:text-sm text-gray-500">Verified</p>
+              <p className="text-xl sm:text-2xl font-bold">{nodeCounts.verified}</p>
+            </div>
+          </CardBody>
+        </Card>
+
+        <Card>
+          <CardBody className="flex flex-row items-center gap-3 sm:gap-4 p-3 sm:p-4">
+            <div className="p-2 sm:p-3 bg-gray-100 dark:bg-gray-700 rounded-lg">
+              <Archive className="w-5 h-5 sm:w-6 sm:h-6 text-gray-600 dark:text-gray-300" />
+            </div>
+            <div className="min-w-0">
+              <p className="text-xs sm:text-sm text-gray-500">Archived</p>
+              <p className="text-xl sm:text-2xl font-bold">{nodeCounts.archived}</p>
+            </div>
+          </CardBody>
+        </Card>
+
+        <Card className="col-span-2 sm:col-span-1">
+          <CardBody className="flex flex-row items-center gap-3 sm:gap-4 p-3 sm:p-4">
+            <div className="p-2 sm:p-3 bg-green-100 dark:bg-green-900 rounded-lg">
+              <HardDrive className="w-5 h-5 sm:w-6 sm:h-6 text-green-600 dark:text-green-300" />
+            </div>
+            <div className="min-w-0">
+              <p className="text-xs sm:text-sm text-gray-500">Total Nodes</p>
+              <p className="text-xl sm:text-2xl font-bold">{totalNodes}</p>
+            </div>
+          </CardBody>
+        </Card>
+      </div>
+
+      {/* System Resources */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4">
+        <Card>
+          <CardBody className="flex flex-row items-center gap-3 sm:gap-4 p-3 sm:p-4">
+            <div className="p-2 sm:p-3 bg-purple-100 dark:bg-purple-900 rounded-lg">
+              <Cpu className="w-5 h-5 sm:w-6 sm:h-6 text-purple-600 dark:text-purple-300" />
+            </div>
+            <div className="min-w-0">
+              <p className="text-xs sm:text-sm text-gray-500">sbm Resources</p>
+              <p className="text-base sm:text-lg font-bold">
+                {systemInfo?.sbm ? (
+                  <>
+                    <span className="text-sm font-normal text-gray-500">CPU </span>
+                    {systemInfo.sbm.cpu_percent.toFixed(1)}%
+                    <span className="text-sm font-normal text-gray-500 ml-2">Mem </span>
+                    {systemInfo.sbm.memory_mb.toFixed(1)}MB
+                  </>
+                ) : '-'}
+              </p>
+            </div>
+          </CardBody>
+        </Card>
+
+        <Card>
+          <CardBody className="flex flex-row items-center gap-3 sm:gap-4 p-3 sm:p-4">
+            <div className="p-2 sm:p-3 bg-orange-100 dark:bg-orange-900 rounded-lg">
+              <Activity className="w-5 h-5 sm:w-6 sm:h-6 text-orange-600 dark:text-orange-300" />
+            </div>
+            <div className="min-w-0">
+              <p className="text-xs sm:text-sm text-gray-500">sing-box Resources</p>
+              <p className="text-base sm:text-lg font-bold">
+                {serviceStatus?.running && systemInfo?.singbox ? (
+                  <>
+                    <span className="text-sm font-normal text-gray-500">CPU </span>
+                    {systemInfo.singbox.cpu_percent.toFixed(1)}%
+                    <span className="text-sm font-normal text-gray-500 ml-2">Mem </span>
+                    {systemInfo.singbox.memory_mb.toFixed(1)}MB
+                  </>
+                ) : (
+                  <span className="text-gray-400">Not running</span>
+                )}
+              </p>
+            </div>
+          </CardBody>
+        </Card>
+
+        <Card>
+          <CardBody className="flex flex-row items-center gap-3 sm:gap-4 p-3 sm:p-4">
+            <div className="p-2 sm:p-3 bg-teal-100 dark:bg-teal-900 rounded-lg">
+              <Stethoscope className="w-5 h-5 sm:w-6 sm:h-6 text-teal-600 dark:text-teal-300" />
+            </div>
+            <div className="min-w-0">
+              <p className="text-xs sm:text-sm text-gray-500">Probe Resources</p>
+              <p className="text-base sm:text-lg font-bold">
+                {probeStatus?.running && systemInfo?.probe ? (
+                  <>
+                    <span className="text-sm font-normal text-gray-500">CPU </span>
+                    {systemInfo.probe.cpu_percent.toFixed(1)}%
+                    <span className="text-sm font-normal text-gray-500 ml-2">Mem </span>
+                    {systemInfo.probe.memory_mb.toFixed(1)}MB
+                  </>
+                ) : (
+                  <span className="text-gray-400">Not running</span>
+                )}
+              </p>
+            </div>
+          </CardBody>
+        </Card>
+      </div>
 
       {/* Service status card */}
       <Card>
@@ -723,6 +894,39 @@ export default function Dashboard() {
           </CardBody>
         </Card>
 
+      {/* Traffic overview */}
+      <Card>
+        <CardHeader className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <Network className="w-5 h-5" />
+            <h2 className="text-lg font-semibold">Traffic Monitoring</h2>
+          </div>
+          <Button size="sm" color="primary" variant="flat" onPress={() => navigate('/monitoring')}>
+            Open Details
+          </Button>
+        </CardHeader>
+        <CardBody>
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            <div>
+              <p className="text-xs text-gray-500">Upload</p>
+              <p className="font-semibold">{formatRate(trafficOverview.up_bps)}</p>
+            </div>
+            <div>
+              <p className="text-xs text-gray-500">Download</p>
+              <p className="font-semibold">{formatRate(trafficOverview.down_bps)}</p>
+            </div>
+            <div>
+              <p className="text-xs text-gray-500">Active Connections</p>
+              <p className="font-semibold">{trafficOverview.active_connections}</p>
+            </div>
+            <div>
+              <p className="text-xs text-gray-500">Active Clients</p>
+              <p className="font-semibold">{trafficOverview.client_count}</p>
+            </div>
+          </div>
+        </CardBody>
+      </Card>
+
       {/* Proxy Links Modal */}
       <Modal isOpen={proxyLinksOpen} onClose={() => setProxyLinksOpen(false)} size="lg">
         <ModalContent>
@@ -757,139 +961,6 @@ export default function Dashboard() {
           </ModalFooter>
         </ModalContent>
       </Modal>
-
-      {/* Statistics cards */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3 sm:gap-4">
-        <Card>
-          <CardBody className="flex flex-row items-center gap-3 sm:gap-4 p-3 sm:p-4">
-            <div className="p-2 sm:p-3 bg-blue-100 dark:bg-blue-900 rounded-lg">
-              <Wifi className="w-5 h-5 sm:w-6 sm:h-6 text-blue-600 dark:text-blue-300" />
-            </div>
-            <div className="min-w-0">
-              <p className="text-xs sm:text-sm text-gray-500">Subscriptions</p>
-              <p className="text-xl sm:text-2xl font-bold">{enabledSubs} / {subscriptions.length}</p>
-            </div>
-          </CardBody>
-        </Card>
-
-        <Card>
-          <CardBody className="flex flex-row items-center gap-3 sm:gap-4 p-3 sm:p-4">
-            <div className="p-2 sm:p-3 bg-yellow-100 dark:bg-yellow-900 rounded-lg">
-              <Clock className="w-5 h-5 sm:w-6 sm:h-6 text-yellow-600 dark:text-yellow-300" />
-            </div>
-            <div className="min-w-0">
-              <p className="text-xs sm:text-sm text-gray-500">Pending</p>
-              <p className="text-xl sm:text-2xl font-bold">{nodeCounts.pending}</p>
-            </div>
-          </CardBody>
-        </Card>
-
-        <Card>
-          <CardBody className="flex flex-row items-center gap-3 sm:gap-4 p-3 sm:p-4">
-            <div className="p-2 sm:p-3 bg-green-100 dark:bg-green-900 rounded-lg">
-              <CheckCircle className="w-5 h-5 sm:w-6 sm:h-6 text-green-600 dark:text-green-300" />
-            </div>
-            <div className="min-w-0">
-              <p className="text-xs sm:text-sm text-gray-500">Verified</p>
-              <p className="text-xl sm:text-2xl font-bold">{nodeCounts.verified}</p>
-            </div>
-          </CardBody>
-        </Card>
-
-        <Card>
-          <CardBody className="flex flex-row items-center gap-3 sm:gap-4 p-3 sm:p-4">
-            <div className="p-2 sm:p-3 bg-gray-100 dark:bg-gray-700 rounded-lg">
-              <Archive className="w-5 h-5 sm:w-6 sm:h-6 text-gray-600 dark:text-gray-300" />
-            </div>
-            <div className="min-w-0">
-              <p className="text-xs sm:text-sm text-gray-500">Archived</p>
-              <p className="text-xl sm:text-2xl font-bold">{nodeCounts.archived}</p>
-            </div>
-          </CardBody>
-        </Card>
-
-        <Card className="col-span-2 sm:col-span-1">
-          <CardBody className="flex flex-row items-center gap-3 sm:gap-4 p-3 sm:p-4">
-            <div className="p-2 sm:p-3 bg-green-100 dark:bg-green-900 rounded-lg">
-              <HardDrive className="w-5 h-5 sm:w-6 sm:h-6 text-green-600 dark:text-green-300" />
-            </div>
-            <div className="min-w-0">
-              <p className="text-xs sm:text-sm text-gray-500">Total Nodes</p>
-              <p className="text-xl sm:text-2xl font-bold">{totalNodes}</p>
-            </div>
-          </CardBody>
-        </Card>
-      </div>
-
-      {/* System Resources */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4">
-        <Card>
-          <CardBody className="flex flex-row items-center gap-3 sm:gap-4 p-3 sm:p-4">
-            <div className="p-2 sm:p-3 bg-purple-100 dark:bg-purple-900 rounded-lg">
-              <Cpu className="w-5 h-5 sm:w-6 sm:h-6 text-purple-600 dark:text-purple-300" />
-            </div>
-            <div className="min-w-0">
-              <p className="text-xs sm:text-sm text-gray-500">sbm Resources</p>
-              <p className="text-base sm:text-lg font-bold">
-                {systemInfo?.sbm ? (
-                  <>
-                    <span className="text-sm font-normal text-gray-500">CPU </span>
-                    {systemInfo.sbm.cpu_percent.toFixed(1)}%
-                    <span className="text-sm font-normal text-gray-500 ml-2">Mem </span>
-                    {systemInfo.sbm.memory_mb.toFixed(1)}MB
-                  </>
-                ) : '-'}
-              </p>
-            </div>
-          </CardBody>
-        </Card>
-
-        <Card>
-          <CardBody className="flex flex-row items-center gap-3 sm:gap-4 p-3 sm:p-4">
-            <div className="p-2 sm:p-3 bg-orange-100 dark:bg-orange-900 rounded-lg">
-              <Activity className="w-5 h-5 sm:w-6 sm:h-6 text-orange-600 dark:text-orange-300" />
-            </div>
-            <div className="min-w-0">
-              <p className="text-xs sm:text-sm text-gray-500">sing-box Resources</p>
-              <p className="text-base sm:text-lg font-bold">
-                {serviceStatus?.running && systemInfo?.singbox ? (
-                  <>
-                    <span className="text-sm font-normal text-gray-500">CPU </span>
-                    {systemInfo.singbox.cpu_percent.toFixed(1)}%
-                    <span className="text-sm font-normal text-gray-500 ml-2">Mem </span>
-                    {systemInfo.singbox.memory_mb.toFixed(1)}MB
-                  </>
-                ) : (
-                  <span className="text-gray-400">Not running</span>
-                )}
-              </p>
-            </div>
-          </CardBody>
-        </Card>
-
-        <Card>
-          <CardBody className="flex flex-row items-center gap-3 sm:gap-4 p-3 sm:p-4">
-            <div className="p-2 sm:p-3 bg-teal-100 dark:bg-teal-900 rounded-lg">
-              <Stethoscope className="w-5 h-5 sm:w-6 sm:h-6 text-teal-600 dark:text-teal-300" />
-            </div>
-            <div className="min-w-0">
-              <p className="text-xs sm:text-sm text-gray-500">Probe Resources</p>
-              <p className="text-base sm:text-lg font-bold">
-                {probeStatus?.running && systemInfo?.probe ? (
-                  <>
-                    <span className="text-sm font-normal text-gray-500">CPU </span>
-                    {systemInfo.probe.cpu_percent.toFixed(1)}%
-                    <span className="text-sm font-normal text-gray-500 ml-2">Mem </span>
-                    {systemInfo.probe.memory_mb.toFixed(1)}MB
-                  </>
-                ) : (
-                  <span className="text-gray-400">Not running</span>
-                )}
-              </p>
-            </div>
-          </CardBody>
-        </Card>
-      </div>
 
       {/* Error modal */}
       <Modal isOpen={errorModal.isOpen} onClose={() => setErrorModal({ ...errorModal, isOpen: false })}>
