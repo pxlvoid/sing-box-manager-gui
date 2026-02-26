@@ -42,7 +42,7 @@ interface GithubRelease {
 }
 
 // Undo button component
-function UndoButton({ field, formData, previousSettings, settings, onUndo }: {
+function UndoButton({ field, formData: _formData, previousSettings, settings, onUndo }: {
   field: keyof SettingsType;
   formData: SettingsType;
   previousSettings: SettingsType | null;
@@ -92,7 +92,7 @@ export default function Settings() {
   const [showSecret, setShowSecret] = useState(false);
 
   // Autosave state
-  const saveTimeoutRef = useRef<ReturnType<typeof setTimeout>>();
+  const saveTimeoutRef = useRef<ReturnType<typeof setTimeout>>(undefined);
   const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
   const initializedRef = useRef(false);
 
@@ -1162,59 +1162,58 @@ export default function Settings() {
           </AccordionItem>
 
           {/* Background Service Management */}
-          {daemonStatus?.supported && (
-            <AccordionItem
-              key="daemon"
-              aria-label="Background Service"
-              title={
-                <div className="flex items-center gap-2">
-                  <span className="font-semibold">Background Service</span>
-                  {daemonStatus && (
-                    <Chip
-                      color={daemonStatus.installed ? 'success' : 'default'}
-                      variant="flat"
-                      size="sm"
-                    >
-                      {daemonStatus.installed ? 'Installed' : 'Not Installed'}
-                    </Chip>
-                  )}
-                </div>
-              }
-            >
-              <div ref={(el) => { sectionRefs.current['daemon'] = el; }} data-section="daemon" className="pb-2">
-                <p className="text-sm text-gray-500 mb-4">
-                  Installing the background service allows the sbm manager to run in the background. The web management interface remains accessible after closing the terminal. The service will auto-start on boot and automatically restart after crashes.
-                </p>
-                <div className="flex flex-wrap gap-2">
-                  {daemonStatus?.installed ? (
-                    <>
-                      <Button
-                        color="primary"
-                        variant="flat"
-                        onPress={handleRestartDaemon}
-                      >
-                        Restart Service
-                      </Button>
-                      <Button
-                        color="danger"
-                        variant="flat"
-                        onPress={handleUninstallDaemon}
-                      >
-                        Uninstall Service
-                      </Button>
-                    </>
-                  ) : (
+          <AccordionItem
+            key="daemon"
+            aria-label="Background Service"
+            className={daemonStatus?.supported ? '' : 'hidden'}
+            title={
+              <div className="flex items-center gap-2">
+                <span className="font-semibold">Background Service</span>
+                {daemonStatus && (
+                  <Chip
+                    color={daemonStatus.installed ? 'success' : 'default'}
+                    variant="flat"
+                    size="sm"
+                  >
+                    {daemonStatus.installed ? 'Installed' : 'Not Installed'}
+                  </Chip>
+                )}
+              </div>
+            }
+          >
+            <div ref={(el) => { sectionRefs.current['daemon'] = el; }} data-section="daemon" className="pb-2">
+              <p className="text-sm text-gray-500 mb-4">
+                Installing the background service allows the sbm manager to run in the background. The web management interface remains accessible after closing the terminal. The service will auto-start on boot and automatically restart after crashes.
+              </p>
+              <div className="flex flex-wrap gap-2">
+                {daemonStatus?.installed ? (
+                  <>
                     <Button
                       color="primary"
-                      onPress={handleInstallDaemon}
+                      variant="flat"
+                      onPress={handleRestartDaemon}
                     >
-                      Install Background Service
+                      Restart Service
                     </Button>
-                  )}
-                </div>
+                    <Button
+                      color="danger"
+                      variant="flat"
+                      onPress={handleUninstallDaemon}
+                    >
+                      Uninstall Service
+                    </Button>
+                  </>
+                ) : (
+                  <Button
+                    color="primary"
+                    onPress={handleInstallDaemon}
+                  >
+                    Install Background Service
+                  </Button>
+                )}
               </div>
-            </AccordionItem>
-          )}
+            </div>
+          </AccordionItem>
         </Accordion>
       </div>
 
