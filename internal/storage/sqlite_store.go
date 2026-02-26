@@ -18,8 +18,7 @@ type SQLiteStore struct {
 	dataDir string
 }
 
-// NewSQLiteStore opens (or creates) a SQLite database in dataDir/data.db,
-// runs migrations, and optionally imports data from a legacy data.json.
+// NewSQLiteStore opens (or creates) a SQLite database in dataDir/data.db and runs migrations.
 func NewSQLiteStore(dataDir string) (*SQLiteStore, error) {
 	// Ensure directories
 	if err := os.MkdirAll(dataDir, 0755); err != nil {
@@ -55,18 +54,6 @@ func NewSQLiteStore(dataDir string) (*SQLiteStore, error) {
 	if err := s.migrate(); err != nil {
 		db.Close()
 		return nil, fmt.Errorf("migration failed: %w", err)
-	}
-
-	// Import from data.json if it exists
-	jsonPath := filepath.Join(dataDir, "data.json")
-	if _, err := os.Stat(jsonPath); err == nil {
-		if err := s.importFromJSON(jsonPath); err != nil {
-			db.Close()
-			return nil, fmt.Errorf("import from data.json failed: %w", err)
-		}
-		// Rename to backup
-		bakPath := filepath.Join(dataDir, "data.json.bak")
-		os.Rename(jsonPath, bakPath)
 	}
 
 	// Ensure default settings exist

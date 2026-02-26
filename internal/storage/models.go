@@ -103,15 +103,6 @@ type Node struct {
 	CountryEmoji string                 `json:"country_emoji,omitempty"` // country emoji
 }
 
-// ManualNode represents a manually added node (legacy, kept for migration compatibility)
-type ManualNode struct {
-	ID                   string `json:"id"`
-	Node                 Node   `json:"node"`
-	Enabled              bool   `json:"enabled"`
-	GroupTag             string `json:"group_tag,omitempty"`
-	SourceSubscriptionID string `json:"source_subscription_id,omitempty"`
-}
-
 // UnsupportedNode represents a node that failed sing-box config validation (persisted)
 type UnsupportedNode struct {
 	Server     string    `json:"server"`
@@ -319,16 +310,6 @@ func DefaultSettings() *Settings {
 		VerificationInterval: 30,   // default 30 minutes
 		ArchiveThreshold:     10,   // default 10 consecutive failures
 	}
-}
-
-// AppData represents application data (legacy, used for JSON import)
-type AppData struct {
-	Subscriptions []Subscription `json:"subscriptions"`
-	ManualNodes   []ManualNode   `json:"manual_nodes"`
-	Filters       []Filter       `json:"filters"`
-	Rules         []Rule         `json:"rules"`
-	RuleGroups    []RuleGroup    `json:"rule_groups"`
-	Settings      *Settings      `json:"settings"`
 }
 
 // DefaultRuleGroups returns default rule groups

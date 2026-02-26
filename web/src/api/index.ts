@@ -185,8 +185,6 @@ export const measurementApi = {
     api.get('/measurements/health/stats/bulk', { params: { days: days || 7 } }),
   getSite: (server: string, port: number, limit?: number) =>
     api.get('/measurements/site', { params: { server, port, limit } }),
-  importFromLocalStorage: (data: object) =>
-    api.post('/measurements/import', data),
 };
 
 export default api;

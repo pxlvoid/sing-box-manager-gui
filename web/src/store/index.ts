@@ -35,32 +35,6 @@ export interface UnsupportedNodeInfo {
 
 const MAX_MEASUREMENTS_PER_NODE = 20;
 
-interface MeasurementCache {
-  healthResults: Record<string, NodeHealthResult>;
-  siteCheckResults: Record<string, NodeSiteCheckResult>;
-  healthMode: HealthCheckMode | null;
-  siteCheckMode: SiteCheckMode | null;
-  healthHistory: Record<string, TimedHealthMeasurement[]>;
-  siteCheckHistory: Record<string, TimedSiteMeasurement[]>;
-}
-
-const EMPTY_MEASUREMENT_CACHE: MeasurementCache = {
-  healthResults: {},
-  siteCheckResults: {},
-  healthMode: null,
-  siteCheckMode: null,
-  healthHistory: {},
-  siteCheckHistory: {},
-};
-
-function loadMeasurementCache(): MeasurementCache {
-  return EMPTY_MEASUREMENT_CACHE;
-}
-
-function saveMeasurementCache(_cache: MeasurementCache): void {
-  // Measurements are sourced from backend only; local cache is intentionally disabled.
-}
-
 function appendHealthHistory(
   current: Record<string, TimedHealthMeasurement[]>,
   updates: Record<string, NodeHealthResult>,
@@ -467,8 +441,6 @@ interface AppState {
   resetRunCounters: () => void;
 }
 
-const measurementCache = loadMeasurementCache();
-
 // Helper: server:port key for a node
 export function nodeServerPortKey(node: { server: string; server_port: number }): string {
   return `${node.server}:${node.server_port}`;
@@ -495,16 +467,16 @@ export const useStore = create<AppState>((set, get) => ({
   pipelineEvents: [],
   verificationProgress: null,
   runCounters: { promoted: 0, demoted: 0, archived: 0 },
-  healthResults: measurementCache.healthResults,
-  healthMode: measurementCache.healthMode,
+  healthResults: {},
+  healthMode: null,
   healthChecking: false,
   healthCheckingNodes: [],
-  healthHistory: measurementCache.healthHistory,
-  siteCheckResults: measurementCache.siteCheckResults,
-  siteCheckMode: measurementCache.siteCheckMode,
+  healthHistory: {},
+  siteCheckResults: {},
+  siteCheckMode: null,
   siteChecking: false,
   siteCheckingNodes: [],
-  siteCheckHistory: measurementCache.siteCheckHistory,
+  siteCheckHistory: {},
   proxyGroups: [],
   stabilityStats: {},
   unsupportedNodes: [],
@@ -1155,14 +1127,6 @@ export const useStore = create<AppState>((set, get) => ({
         healthHistory,
         healthMode: mode,
       });
-      saveMeasurementCache({
-        healthResults,
-        siteCheckResults: state.siteCheckResults,
-        healthMode: mode,
-        siteCheckMode: state.siteCheckMode,
-        healthHistory,
-        siteCheckHistory: state.siteCheckHistory,
-      });
       toast.success('Health check completed');
       get().fetchStabilityStats();
     } catch (error: any) {
@@ -1187,14 +1151,6 @@ export const useStore = create<AppState>((set, get) => ({
         healthResults,
         healthHistory,
         healthMode: mode,
-      });
-      saveMeasurementCache({
-        healthResults,
-        siteCheckResults: state.siteCheckResults,
-        healthMode: mode,
-        siteCheckMode: state.siteCheckMode,
-        healthHistory,
-        siteCheckHistory: state.siteCheckHistory,
       });
       if (!options?.skipStatsRefresh) {
         get().fetchStabilityStats();
@@ -1221,14 +1177,6 @@ export const useStore = create<AppState>((set, get) => ({
         siteCheckHistory,
         siteCheckMode: mode,
       });
-      saveMeasurementCache({
-        healthResults: state.healthResults,
-        siteCheckResults,
-        healthMode: state.healthMode,
-        siteCheckMode: mode,
-        healthHistory: state.healthHistory,
-        siteCheckHistory,
-      });
       toast.success('Site check completed');
     } catch (error: any) {
       console.error('Failed to check sites:', error);
@@ -1253,14 +1201,6 @@ export const useStore = create<AppState>((set, get) => ({
         siteCheckResults,
         siteCheckHistory,
         siteCheckMode: mode,
-      });
-      saveMeasurementCache({
-        healthResults: state.healthResults,
-        siteCheckResults,
-        healthMode: state.healthMode,
-        siteCheckMode: mode,
-        healthHistory: state.healthHistory,
-        siteCheckHistory,
       });
     } catch (error: any) {
       console.error('Failed to check node sites:', error);
@@ -1321,14 +1261,6 @@ export const useStore = create<AppState>((set, get) => ({
         healthMode: healthMode,
         siteCheckResults: latestSiteResults,
         siteCheckMode: siteMode,
-      });
-      saveMeasurementCache({
-        healthResults: latestHealthResults,
-        siteCheckResults: latestSiteResults,
-        healthMode: healthMode,
-        siteCheckMode: siteMode,
-        healthHistory: state.healthHistory,
-        siteCheckHistory: state.siteCheckHistory,
       });
     } catch (error) {
       console.error('Failed to fetch latest measurements:', error);
