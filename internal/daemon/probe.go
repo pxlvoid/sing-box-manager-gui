@@ -36,9 +36,10 @@ type ProbeManager struct {
 	pid         int
 	mu          sync.Mutex
 	running     bool
-	nodeTags    []string   // sorted tags of nodes currently loaded
+	nodeTags    []string       // sorted tags of nodes currently loaded
+	tagMap      *ProbeTagMap   // probe tag ↔ original tag mapping
 	startedAt   time.Time
-	configPath  string     // path to the current temp config file
+	configPath  string         // path to the current temp config file
 }
 
 // NewProbeManager creates a new ProbeManager.
@@ -74,7 +75,7 @@ func (pm *ProbeManager) Start(nodes []storage.Node) error {
 		return fmt.Errorf("failed to find free port: %w", err)
 	}
 
-	cfg := buildProbeConfig(nodes, port)
+	cfg, tagMap := buildProbeConfig(nodes, port)
 	cfgJSON, err := json.MarshalIndent(cfg, "", "  ")
 	if err != nil {
 		return fmt.Errorf("failed to marshal config: %w", err)
@@ -118,6 +119,7 @@ func (pm *ProbeManager) Start(nodes []storage.Node) error {
 	pm.running = true
 	pm.configPath = tmpPath
 	pm.nodeTags = sortedNodeTags(nodes)
+	pm.tagMap = tagMap
 	pm.startedAt = time.Now()
 
 	logger.Printf("[probe] Probe sing-box started, PID: %d, port: %d", pm.pid, pm.port)
@@ -174,32 +176,35 @@ func (pm *ProbeManager) stopLocked() {
 	pm.pid = 0
 	pm.configPath = ""
 	pm.nodeTags = nil
+	pm.tagMap = nil
 }
 
 // EnsureRunning makes sure the probe is running with the given set of nodes.
-// If it's already running with the same nodes, it returns the existing port.
+// If it's already running with the same nodes, it returns the existing port and tag map.
 // Otherwise it restarts with the new set.
-func (pm *ProbeManager) EnsureRunning(nodes []storage.Node) (int, error) {
+func (pm *ProbeManager) EnsureRunning(nodes []storage.Node) (int, *ProbeTagMap, error) {
 	pm.mu.Lock()
 
 	// Check if the current instance is alive and has the same nodes.
 	if pm.running && pm.isAliveLocked() && tagsEqual(pm.nodeTags, sortedNodeTags(nodes)) {
 		port := pm.port
+		tagMap := pm.tagMap
 		pm.mu.Unlock()
-		return port, nil
+		return port, tagMap, nil
 	}
 
 	pm.mu.Unlock()
 
 	// Need to (re)start.
 	if err := pm.Start(nodes); err != nil {
-		return 0, err
+		return 0, nil, err
 	}
 
 	pm.mu.Lock()
 	port := pm.port
+	tagMap := pm.tagMap
 	pm.mu.Unlock()
-	return port, nil
+	return port, tagMap, nil
 }
 
 // Port returns the current Clash API port (0 if not running).
@@ -299,24 +304,48 @@ func getFreePort() (int, error) {
 	return port, nil
 }
 
+// ProbeTagMap maps probe-unique tags back to original node tags.
+// Key: probe tag used in sing-box config, Value: original node tag.
+type ProbeTagMap struct {
+	// ProbeToOrig maps probe tag → original tag
+	ProbeToOrig map[string]string
+	// OrigToProbe maps "server:port" → probe tag (for health check lookups)
+	KeyToProbe map[string]string
+}
+
 // buildProbeConfig builds a minimal sing-box config for probing.
-func buildProbeConfig(nodes []storage.Node, clashAPIPort int) *builder.SingBoxConfig {
+// It assigns unique tags to each node to avoid sing-box "duplicate tag" errors
+// (nodes from different subscriptions often share the same advertising tag).
+// Returns the config and a tag mapping for correlating results back.
+func buildProbeConfig(nodes []storage.Node, clashAPIPort int) (*builder.SingBoxConfig, *ProbeTagMap) {
 	outbounds := []builder.Outbound{
 		{"type": "direct", "tag": "DIRECT"},
 		{"type": "block", "tag": "REJECT"},
 	}
 
-	var nodeTags []string
-	for _, n := range nodes {
-		outbounds = append(outbounds, builder.NodeToOutbound(n))
-		nodeTags = append(nodeTags, n.Tag)
+	tagMap := &ProbeTagMap{
+		ProbeToOrig: make(map[string]string, len(nodes)),
+		KeyToProbe:  make(map[string]string, len(nodes)),
 	}
 
-	if len(nodeTags) > 0 {
+	var probeTags []string
+	for i, n := range nodes {
+		probeTag := fmt.Sprintf("probe_%d", i)
+		ob := builder.NodeToOutbound(n)
+		ob["tag"] = probeTag
+		outbounds = append(outbounds, ob)
+		probeTags = append(probeTags, probeTag)
+
+		key := fmt.Sprintf("%s:%d", n.Server, n.ServerPort)
+		tagMap.ProbeToOrig[probeTag] = n.Tag
+		tagMap.KeyToProbe[key] = probeTag
+	}
+
+	if len(probeTags) > 0 {
 		outbounds = append(outbounds, builder.Outbound{
 			"type":      "urltest",
 			"tag":       "Proxy",
-			"outbounds": nodeTags,
+			"outbounds": probeTags,
 			"url":       "https://www.gstatic.com/generate_204",
 			"interval":  "5m",
 			"tolerance": 50,
@@ -332,7 +361,7 @@ func buildProbeConfig(nodes []storage.Node, clashAPIPort int) *builder.SingBoxCo
 				DefaultMode:        "rule",
 			},
 		},
-	}
+	}, tagMap
 }
 
 // sortedNodeTags returns a sorted list of node tags.

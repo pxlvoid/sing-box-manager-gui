@@ -6,20 +6,29 @@ import Rules from './pages/Rules';
 import Settings from './pages/Settings';
 import Logs from './pages/Logs';
 import { ToastContainer } from './components/Toast';
+import { useEventStream } from './hooks/useEventStream';
+
+function AppInner() {
+  useEventStream();
+
+  return (
+    <Layout>
+      <Routes>
+        <Route path="/" element={<Dashboard />} />
+        <Route path="/subscriptions" element={<Subscriptions />} />
+        <Route path="/rules" element={<Rules />} />
+        <Route path="/logs" element={<Logs />} />
+        <Route path="/settings" element={<Settings />} />
+      </Routes>
+    </Layout>
+  );
+}
 
 function App() {
   return (
     <BrowserRouter>
       <ToastContainer />
-      <Layout>
-        <Routes>
-          <Route path="/" element={<Dashboard />} />
-          <Route path="/subscriptions" element={<Subscriptions />} />
-          <Route path="/rules" element={<Rules />} />
-          <Route path="/logs" element={<Logs />} />
-          <Route path="/settings" element={<Settings />} />
-        </Routes>
-      </Layout>
+      <AppInner />
     </BrowserRouter>
   );
 }

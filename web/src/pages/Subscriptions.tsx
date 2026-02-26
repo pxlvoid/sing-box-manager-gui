@@ -1,14 +1,12 @@
 import { useEffect } from 'react';
 import {
   Button,
-  Spinner,
   Tabs,
   Tab,
 } from '@nextui-org/react';
-import { Plus, Globe, Activity, List, Filter as FilterIcon, Download, ClipboardPaste, ShieldCheck } from 'lucide-react';
+import { Plus, List, Filter as FilterIcon, Download, ClipboardPaste } from 'lucide-react';
 import { useStore } from '../store';
 import type { Subscription, UnifiedNode } from '../store';
-import { SITE_CHECK_TARGETS } from '../features/nodes/types';
 
 // Hooks
 import { useSubscriptionForm } from '../features/nodes/hooks/useSubscriptionForm';
@@ -63,22 +61,16 @@ export default function Subscriptions() {
     toggleFilter,
     healthResults,
     healthMode,
-    healthChecking,
     healthCheckingNodes,
-    checkAllNodesHealth,
     checkSingleNodeHealth,
     siteCheckResults,
-    siteChecking,
     siteCheckingNodes,
-    checkNodesSites,
     checkSingleNodeSites,
     unsupportedNodes,
     fetchUnsupportedNodes,
     recheckUnsupportedNodes,
     deleteUnsupportedNodes,
     fetchProbeStatus,
-    runVerification,
-    verificationRunning,
     fetchVerificationStatus,
   } = useStore();
 
@@ -130,38 +122,6 @@ export default function Subscriptions() {
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
         <h1 className="text-2xl font-bold text-gray-800 dark:text-white">Node Management</h1>
         <div className="flex flex-wrap gap-2">
-          <Button
-            color="success"
-            variant="flat"
-            size="sm"
-            startContent={verificationRunning ? <Spinner size="sm" /> : <ShieldCheck className="w-4 h-4" />}
-            onPress={() => runVerification()}
-            isDisabled={verificationRunning}
-          >
-            Verify
-          </Button>
-          <Button
-            color="warning"
-            variant="flat"
-            size="sm"
-            startContent={healthChecking ? <Spinner size="sm" /> : <Activity className="w-4 h-4" />}
-            onPress={() => checkAllNodesHealth()}
-            isDisabled={healthChecking}
-          >
-            <span className="hidden sm:inline">Health Check</span>
-            <span className="sm:hidden">Check</span>
-          </Button>
-          <Button
-            color="warning"
-            variant="flat"
-            size="sm"
-            startContent={siteChecking ? <Spinner size="sm" /> : <Globe className="w-4 h-4" />}
-            onPress={() => checkNodesSites(undefined, SITE_CHECK_TARGETS)}
-            isDisabled={siteChecking}
-          >
-            <span className="hidden sm:inline">Site Check</span>
-            <span className="sm:hidden">Sites</span>
-          </Button>
           <Button
             variant="flat"
             size="sm"

@@ -335,6 +335,27 @@ export interface SystemInfo {
   probe?: ProcessStats;
 }
 
+let _pipelineEventId = 0;
+
+export interface PipelineEvent {
+  id: number;
+  type: string;
+  message: string;
+  timestamp: string;
+}
+
+export interface VerificationProgress {
+  phase: 'pending' | 'verified' | 'health_check';
+  current: number;
+  total: number;
+}
+
+export interface RunCounters {
+  promoted: number;
+  demoted: number;
+  archived: number;
+}
+
 interface AppState {
   // Data
   subscriptions: Subscription[];
@@ -356,6 +377,11 @@ interface AppState {
   verificationStatus: VerificationStatus | null;
   verificationLogs: VerificationLog[];
   verificationRunning: boolean;
+
+  // Pipeline live monitoring (SSE)
+  pipelineEvents: PipelineEvent[];
+  verificationProgress: VerificationProgress | null;
+  runCounters: RunCounters;
 
   // Health check state
   healthResults: Record<string, NodeHealthResult>;
@@ -457,6 +483,12 @@ interface AppState {
   // Proxy group operations
   fetchProxyGroups: () => Promise<void>;
   switchProxy: (group: string, selected: string) => Promise<void>;
+
+  // Pipeline event actions (used by SSE hook)
+  addPipelineEvent: (type: string, message: string) => void;
+  setVerificationProgress: (progress: VerificationProgress | null) => void;
+  incrementRunCounter: (counter: 'promoted' | 'demoted' | 'archived') => void;
+  resetRunCounters: () => void;
 }
 
 const measurementCache = loadMeasurementCache();
@@ -522,6 +554,9 @@ export const useStore = create<AppState>((set, get) => ({
   verificationStatus: null,
   verificationLogs: [],
   verificationRunning: false,
+  pipelineEvents: [],
+  verificationProgress: null,
+  runCounters: { promoted: 0, demoted: 0, archived: 0 },
   healthResults: measurementCache.healthResults,
   healthMode: measurementCache.healthMode,
   healthChecking: false,
@@ -870,14 +905,7 @@ export const useStore = create<AppState>((set, get) => ({
     try {
       await verificationApi.run();
       toast.success('Verification started');
-      // Poll for completion after a delay
-      setTimeout(async () => {
-        await get().fetchVerificationStatus();
-        await get().fetchVerificationLogs();
-        await get().fetchNodes();
-        await get().fetchNodeCounts();
-        set({ verificationRunning: false });
-      }, 5000);
+      // SSE will handle completion — reset verificationRunning via verify:complete event
     } catch (error: any) {
       set({ verificationRunning: false });
       toast.error(error.response?.data?.error || 'Failed to start verification');
@@ -1297,6 +1325,36 @@ export const useStore = create<AppState>((set, get) => ({
       console.error('Failed to switch proxy:', error);
       toast.error(error.response?.data?.error || 'Failed to switch proxy');
     }
+  },
+
+  // Pipeline event actions (used by SSE hook)
+  addPipelineEvent: (type: string, message: string) => {
+    const event: PipelineEvent = {
+      id: ++_pipelineEventId,
+      type,
+      message,
+      timestamp: new Date().toISOString(),
+    };
+    set((state) => ({
+      pipelineEvents: [...state.pipelineEvents.slice(-49), event],
+    }));
+  },
+
+  setVerificationProgress: (progress: VerificationProgress | null) => {
+    set({ verificationProgress: progress });
+  },
+
+  incrementRunCounter: (counter: 'promoted' | 'demoted' | 'archived') => {
+    set((state) => ({
+      runCounters: {
+        ...state.runCounters,
+        [counter]: state.runCounters[counter] + 1,
+      },
+    }));
+  },
+
+  resetRunCounters: () => {
+    set({ runCounters: { promoted: 0, demoted: 0, archived: 0 } });
   },
 
 }));

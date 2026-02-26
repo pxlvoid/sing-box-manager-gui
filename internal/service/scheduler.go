@@ -5,6 +5,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/xiaobei/singbox-manager/internal/events"
 	"github.com/xiaobei/singbox-manager/internal/storage"
 )
 
@@ -14,6 +15,7 @@ type Scheduler struct {
 	subService *SubscriptionService
 	onUpdate   func() error // Callback after subscription update
 	onVerify   func()       // Callback to run verification cycle
+	eventBus   *events.Bus
 
 	stopCh             chan struct{}
 	running            bool
@@ -43,6 +45,11 @@ func (s *Scheduler) SetUpdateCallback(callback func() error) {
 // SetVerificationCallback sets the verification callback that runs periodically
 func (s *Scheduler) SetVerificationCallback(callback func()) {
 	s.onVerify = callback
+}
+
+// SetEventBus sets the event bus for publishing pipeline events
+func (s *Scheduler) SetEventBus(bus *events.Bus) {
+	s.eventBus = bus
 }
 
 // StartStatus describes what happened when Start() was called
@@ -76,6 +83,10 @@ func (s *Scheduler) Start() StartStatus {
 	s.running = true
 	s.stopCh = make(chan struct{})
 
+	if s.eventBus != nil {
+		s.eventBus.PublishTimestamped("pipeline:start", nil)
+	}
+
 	if subEnabled {
 		s.interval = time.Duration(settings.SubscriptionInterval) * time.Minute
 		go s.runSubscriptionTicker()
@@ -106,6 +117,10 @@ func (s *Scheduler) Stop() {
 	s.nextSubUpdateTime = nil
 	s.nextVerifyTime = nil
 	log.Println("[Scheduler] Stopped")
+
+	if s.eventBus != nil {
+		s.eventBus.PublishTimestamped("pipeline:stop", nil)
+	}
 }
 
 // Restart restarts the scheduler (call after updating config)

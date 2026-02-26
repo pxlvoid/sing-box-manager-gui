@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Card, CardBody, CardHeader, Button, Chip, Input, Modal, ModalContent, ModalHeader, ModalBody, ModalFooter, Tooltip, Select, SelectItem, Spinner } from '@nextui-org/react';
+import { Card, CardBody, CardHeader, Button, Chip, Input, Modal, ModalContent, ModalHeader, ModalBody, ModalFooter, Tooltip, Select, SelectItem, Spinner, Progress } from '@nextui-org/react';
 import { Play, Square, RefreshCw, Cpu, HardDrive, Wifi, Info, Activity, Copy, ClipboardCheck, Link, Globe, QrCode, Search, Stethoscope, ShieldCheck, Clock, CheckCircle, Archive } from 'lucide-react';
 import { useStore } from '../store';
 import { serviceApi, configApi, proxyApi } from '../api';
@@ -9,11 +9,14 @@ export default function Dashboard() {
   const {
     serviceStatus, probeStatus, subscriptions, nodeCounts, systemInfo, settings, proxyGroups,
     verificationStatus, verificationRunning,
+    pipelineEvents, verificationProgress, runCounters,
     fetchServiceStatus, fetchProbeStatus, stopProbe, fetchSubscriptions,
     fetchNodeCounts, fetchSystemInfo, fetchSettings, fetchUnsupportedNodes,
     fetchProxyGroups, switchProxy, runVerification, fetchVerificationStatus,
     startVerificationScheduler, stopVerificationScheduler,
   } = useStore();
+
+  const activityFeedRef = useRef<HTMLDivElement>(null);
 
   const [copiedLink, setCopiedLink] = useState<string | null>(null);
   const [qrLink, setQrLink] = useState<string | null>(null);
@@ -37,6 +40,13 @@ export default function Dashboard() {
     const message = error.response?.data?.error || error.message || 'Operation failed';
     setErrorModal({ isOpen: true, title, message });
   };
+
+  // Auto-scroll activity feed
+  useEffect(() => {
+    if (activityFeedRef.current) {
+      activityFeedRef.current.scrollTop = activityFeedRef.current.scrollHeight;
+    }
+  }, [pipelineEvents]);
 
   useEffect(() => {
     fetchServiceStatus();
@@ -282,6 +292,29 @@ export default function Dashboard() {
             >
               {verificationStatus?.scheduler_running ? 'Running' : 'Stopped'}
             </Chip>
+            {probeStatus?.running && (
+              <Tooltip
+                content={
+                  <div className="text-xs space-y-1 p-1">
+                    <div>PID: {probeStatus.pid || '-'}</div>
+                    <div>Port: {probeStatus.port}</div>
+                    <div>Nodes: {probeStatus.node_count}</div>
+                    {probeStatus.started_at && (
+                      <div>Uptime: {Math.round((Date.now() - new Date(probeStatus.started_at).getTime()) / 60000)} min</div>
+                    )}
+                    {systemInfo?.probe && (
+                      <>
+                        <div>CPU: {systemInfo.probe.cpu_percent.toFixed(1)}%</div>
+                        <div>Mem: {systemInfo.probe.memory_mb.toFixed(1)} MB</div>
+                      </>
+                    )}
+                  </div>
+                }
+                placement="bottom"
+              >
+                <Chip size="sm" variant="flat" color="warning" className="cursor-help">Probe: port {probeStatus.port}</Chip>
+              </Tooltip>
+            )}
           </div>
           <div className="flex gap-2">
             {verificationStatus?.scheduler_running ? (
@@ -311,6 +344,41 @@ export default function Dashboard() {
           </div>
         </CardHeader>
         <CardBody className="space-y-4">
+          {/* Progress bar — visible during verification */}
+          {verificationProgress && (
+            <div className="space-y-1">
+              <div className="flex justify-between text-sm">
+                <span className="text-gray-600 dark:text-gray-400">
+                  {verificationProgress.phase === 'health_check'
+                    ? `Health checking ${verificationProgress.total} nodes...`
+                    : `Checking ${verificationProgress.phase} nodes`}
+                </span>
+                <span className="font-medium">
+                  {verificationProgress.phase === 'health_check'
+                    ? ''
+                    : `${verificationProgress.current}/${verificationProgress.total}`}
+                </span>
+              </div>
+              <Progress
+                size="md"
+                value={verificationProgress.phase === 'health_check' ? undefined : verificationProgress.current}
+                maxValue={verificationProgress.phase === 'health_check' ? undefined : verificationProgress.total}
+                isIndeterminate={verificationProgress.phase === 'health_check'}
+                color={verificationProgress.phase === 'pending' ? 'warning' : verificationProgress.phase === 'health_check' ? 'primary' : 'success'}
+                className="w-full"
+              />
+            </div>
+          )}
+
+          {/* Run counters */}
+          {(runCounters.promoted > 0 || runCounters.demoted > 0 || runCounters.archived > 0 || verificationRunning) && (
+            <div className="flex gap-2 flex-wrap">
+              <Chip size="sm" variant="flat" color="success">Promoted: {runCounters.promoted}</Chip>
+              <Chip size="sm" variant="flat" color="warning">Demoted: {runCounters.demoted}</Chip>
+              <Chip size="sm" variant="flat" color="default">Archived: {runCounters.archived}</Chip>
+            </div>
+          )}
+
           {/* Scheduler tasks */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             {/* Subscription auto-update */}
@@ -349,50 +417,36 @@ export default function Dashboard() {
             </div>
           </div>
 
-          {/* Probe status */}
-          {probeStatus?.running && (
-            <div className="p-3 bg-gray-50 dark:bg-gray-800 rounded-lg">
+          {/* Activity feed */}
+          {pipelineEvents.length > 0 && (
+            <div>
               <div className="flex items-center gap-2 mb-2">
-                <Stethoscope className="w-4 h-4 text-orange-500" />
-                <span className="font-medium text-sm">Probe sing-box</span>
-                <Chip size="sm" variant="flat" color="success">Running</Chip>
+                <Activity className="w-4 h-4 text-gray-500" />
+                <span className="font-medium text-sm text-gray-600 dark:text-gray-400">Activity</span>
               </div>
-              <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 text-sm">
-                <div>
-                  <span className="text-gray-500">PID: </span>
-                  <span className="font-medium">{probeStatus.pid}</span>
-                </div>
-                <div>
-                  <span className="text-gray-500">Port: </span>
-                  <span className="font-medium">{probeStatus.port}</span>
-                </div>
-                <div>
-                  <span className="text-gray-500">Nodes: </span>
-                  <span className="font-medium">{probeStatus.node_count}</span>
-                </div>
-                <div>
-                  <span className="text-gray-500">Uptime: </span>
-                  <span className="font-medium">
-                    {probeStatus.started_at
-                      ? (() => {
-                          const seconds = Math.floor((Date.now() - new Date(probeStatus.started_at).getTime()) / 1000);
-                          if (seconds < 60) return `${seconds}s`;
-                          const minutes = Math.floor(seconds / 60);
-                          if (minutes < 60) return `${minutes}m ${seconds % 60}s`;
-                          const hours = Math.floor(minutes / 60);
-                          return `${hours}h ${minutes % 60}m`;
-                        })()
-                      : '-'}
-                  </span>
-                </div>
-                {systemInfo?.probe && (
-                  <div>
-                    <span className="text-gray-500">CPU </span>
-                    <span className="font-medium">{systemInfo.probe.cpu_percent.toFixed(1)}%</span>
-                    <span className="text-gray-500 ml-1">Mem </span>
-                    <span className="font-medium">{systemInfo.probe.memory_mb.toFixed(1)}MB</span>
-                  </div>
-                )}
+              <div
+                ref={activityFeedRef}
+                className="max-h-48 overflow-y-auto bg-gray-50 dark:bg-gray-800 rounded-lg p-3 space-y-1 text-xs font-mono"
+              >
+                {pipelineEvents.map((event) => {
+                  let color = 'text-gray-500';
+                  let icon = '';
+                  if (event.type.includes('promoted')) { color = 'text-green-600 dark:text-green-400'; icon = '+'; }
+                  else if (event.type.includes('demoted')) { color = 'text-yellow-600 dark:text-yellow-400'; icon = '-'; }
+                  else if (event.type.includes('archived')) { color = 'text-red-600 dark:text-red-400'; icon = 'x'; }
+                  else if (event.type.includes('complete')) { color = 'text-blue-600 dark:text-blue-400'; icon = '*'; }
+                  else if (event.type.includes('start')) { color = 'text-blue-500'; icon = '>'; }
+                  else if (event.type.includes('stop')) { color = 'text-gray-500'; icon = '|'; }
+                  else if (event.type.includes('refresh') || event.type.includes('synced')) { color = 'text-purple-500'; icon = '~'; }
+                  else { icon = '.'; }
+
+                  const time = new Date(event.timestamp).toLocaleTimeString();
+                  return (
+                    <div key={event.id} className={`${color} leading-tight`}>
+                      <span className="text-gray-400">[{time}]</span> {icon} {event.message}
+                    </div>
+                  );
+                })}
               </div>
             </div>
           )}

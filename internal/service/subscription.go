@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/xiaobei/singbox-manager/internal/events"
 	"github.com/xiaobei/singbox-manager/internal/parser"
 	"github.com/xiaobei/singbox-manager/internal/storage"
 	"github.com/xiaobei/singbox-manager/pkg/utils"
@@ -12,7 +13,8 @@ import (
 
 // SubscriptionService handles subscription operations
 type SubscriptionService struct {
-	store storage.Store
+	store    storage.Store
+	eventBus *events.Bus
 }
 
 // NewSubscriptionService creates a new subscription service
@@ -20,6 +22,11 @@ func NewSubscriptionService(store storage.Store) *SubscriptionService {
 	return &SubscriptionService{
 		store: store,
 	}
+}
+
+// SetEventBus sets the event bus for publishing subscription events
+func (s *SubscriptionService) SetEventBus(bus *events.Bus) {
+	s.eventBus = bus
 }
 
 // GetAll returns all subscriptions
@@ -85,6 +92,14 @@ func (s *SubscriptionService) Refresh(id string) error {
 		return err
 	}
 
+	if s.eventBus != nil {
+		s.eventBus.Publish("sub:refresh", map[string]interface{}{
+			"subscription_id": sub.ID,
+			"name":            sub.Name,
+			"node_count":      sub.NodeCount,
+		})
+	}
+
 	// Sync new nodes to unified nodes table as pending
 	s.syncToUnifiedNodes(sub)
 
@@ -131,7 +146,15 @@ func (s *SubscriptionService) syncToUnifiedNodes(sub *storage.Subscription) (int
 		})
 	}
 
-	return s.store.AddNodesBulk(unified)
+	added, err := s.store.AddNodesBulk(unified)
+	if s.eventBus != nil {
+		s.eventBus.Publish("sub:nodes_synced", map[string]interface{}{
+			"subscription_id": sub.ID,
+			"added":           added,
+			"skipped":         len(unified) - added,
+		})
+	}
+	return added, err
 }
 
 // refresh internal refresh method

@@ -26,6 +26,7 @@ import (
 	"github.com/shirou/gopsutil/v3/process"
 	"github.com/xiaobei/singbox-manager/internal/builder"
 	"github.com/xiaobei/singbox-manager/internal/daemon"
+	"github.com/xiaobei/singbox-manager/internal/events"
 	"github.com/xiaobei/singbox-manager/internal/kernel"
 	"github.com/xiaobei/singbox-manager/internal/logger"
 	"github.com/xiaobei/singbox-manager/internal/parser"
@@ -66,6 +67,8 @@ type Server struct {
 	port           int    // Web service port
 	version        string // sbm version
 
+	eventBus *events.Bus
+
 	unsupportedNodes   map[string]UnsupportedNodeInfo
 	unsupportedNodesMu sync.RWMutex
 }
@@ -78,6 +81,8 @@ func NewServer(store storage.Store, processManager *daemon.ProcessManager, probe
 
 	// Create kernel manager
 	kernelManager := kernel.NewManager(store.GetDataDir(), store.GetSettings)
+
+	eventBus := events.NewBus()
 
 	s := &Server{
 		store:            store,
@@ -92,8 +97,13 @@ func NewServer(store storage.Store, processManager *daemon.ProcessManager, probe
 		sbmPath:          sbmPath,
 		port:             port,
 		version:          version,
+		eventBus:         eventBus,
 		unsupportedNodes: make(map[string]UnsupportedNodeInfo),
 	}
+
+	// Wire event bus to services
+	s.scheduler.SetEventBus(eventBus)
+	s.subService.SetEventBus(eventBus)
 
 	// Hydrate unsupported nodes from store (survive restart)
 	if persisted := store.GetUnsupportedNodes(); len(persisted) > 0 {
@@ -269,6 +279,9 @@ func (s *Server) setupRoutes() {
 		// Probe management
 		api.GET("/probe/status", s.getProbeStatus)
 		api.POST("/probe/stop", s.stopProbe)
+
+		// SSE event stream
+		api.GET("/events/stream", s.handleEventStream)
 
 		// Measurements API
 		api.GET("/measurements/health", s.getHealthMeasurements)
@@ -1951,7 +1964,7 @@ func (s *Server) performHealthCheck(nodes []storage.Node) (map[string]*NodeHealt
 		}
 	}
 
-	port, err := s.probeManager.EnsureRunning(uniqueNodes)
+	port, tagMap, err := s.probeManager.EnsureRunning(uniqueNodes)
 	if err != nil {
 		return nil, "", err
 	}
@@ -1972,14 +1985,22 @@ func (s *Server) performHealthCheck(nodes []storage.Node) (map[string]*NodeHealt
 				Groups: make(map[string]int),
 			}
 
-			delay := s.clashProxyDelay(port, "", n.Tag)
+			// Use probe tag (unique) instead of original tag (may have duplicates)
+			key := fmt.Sprintf("%s:%d", n.Server, n.ServerPort)
+			probeTag := n.Tag
+			if tagMap != nil {
+				if pt, ok := tagMap.KeyToProbe[key]; ok {
+					probeTag = pt
+				}
+			}
+
+			delay := s.clashProxyDelay(port, "", probeTag)
 			if delay > 0 {
 				result.Alive = true
 			}
 			result.TCPLatencyMs = 0
 			result.Groups["Proxy"] = delay
 
-			key := fmt.Sprintf("%s:%d", n.Server, n.ServerPort)
 			mu.Lock()
 			results[key] = result
 			mu.Unlock()
@@ -2104,7 +2125,7 @@ func (s *Server) performSiteCheck(nodes []storage.Node, targets []string) (map[s
 		}
 	}
 
-	port, err := s.probeManager.EnsureRunning(uniqueNodes)
+	port, tagMap, err := s.probeManager.EnsureRunning(uniqueNodes)
 	if err != nil {
 		return nil, "", err
 	}
@@ -2121,14 +2142,21 @@ func (s *Server) performSiteCheck(nodes []storage.Node, targets []string) (map[s
 			sem <- struct{}{}
 			defer func() { <-sem }()
 
+			key := fmt.Sprintf("%s:%d", n.Server, n.ServerPort)
+			probeTag := n.Tag
+			if tagMap != nil {
+				if pt, ok := tagMap.KeyToProbe[key]; ok {
+					probeTag = pt
+				}
+			}
+
 			result := &NodeSiteCheckResult{
 				Sites: make(map[string]int, len(targets)),
 			}
 			for _, target := range targets {
-				result.Sites[target] = s.clashProxyDelayWithURL(port, "", n.Tag, normalizeSiteCheckURL(target), 5000)
+				result.Sites[target] = s.clashProxyDelayWithURL(port, "", probeTag, normalizeSiteCheckURL(target), 5000)
 			}
 
-			key := fmt.Sprintf("%s:%d", n.Server, n.ServerPort)
 			mu.Lock()
 			results[key] = result
 			mu.Unlock()
@@ -2925,7 +2953,46 @@ func (s *Server) getProbeStatus(c *gin.Context) {
 
 func (s *Server) stopProbe(c *gin.Context) {
 	s.probeManager.Stop()
+	s.eventBus.PublishTimestamped("probe:stopped", nil)
 	c.JSON(http.StatusOK, gin.H{"message": "Probe stopped"})
+}
+
+// ==================== SSE Event Stream ====================
+
+func (s *Server) handleEventStream(c *gin.Context) {
+	subID := fmt.Sprintf("sse-%d", time.Now().UnixNano())
+	sub := s.eventBus.Subscribe(subID)
+	defer s.eventBus.Unsubscribe(subID)
+
+	c.Writer.Header().Set("Content-Type", "text/event-stream")
+	c.Writer.Header().Set("Cache-Control", "no-cache")
+	c.Writer.Header().Set("Connection", "keep-alive")
+	c.Writer.Header().Set("X-Accel-Buffering", "no")
+
+	// Send initial ping
+	c.SSEvent("ping", "connected")
+	c.Writer.Flush()
+
+	ticker := time.NewTicker(30 * time.Second)
+	defer ticker.Stop()
+
+	clientGone := c.Request.Context().Done()
+
+	for {
+		select {
+		case <-clientGone:
+			return
+		case <-ticker.C:
+			c.SSEvent("ping", "keepalive")
+			c.Writer.Flush()
+		case event, ok := <-sub.Events:
+			if !ok {
+				return
+			}
+			c.SSEvent(event.Type, string(event.MarshalData()))
+			c.Writer.Flush()
+		}
+	}
 }
 
 // ==================== Measurements API ====================

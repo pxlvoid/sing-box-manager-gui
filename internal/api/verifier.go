@@ -29,6 +29,14 @@ func (s *Server) RunVerification() {
 		logger.Printf("[verifier] Completed in %dms: pending checked=%d promoted=%d archived=%d | verified checked=%d demoted=%d",
 			vlog.DurationMs, vlog.PendingChecked, vlog.PendingPromoted, vlog.PendingArchived,
 			vlog.VerifiedChecked, vlog.VerifiedDemoted)
+
+		s.eventBus.Publish("verify:complete", map[string]interface{}{
+			"duration_ms": vlog.DurationMs,
+			"promoted":    vlog.PendingPromoted,
+			"demoted":     vlog.VerifiedDemoted,
+			"archived":    vlog.PendingArchived,
+			"timestamp":   time.Now().Format(time.RFC3339),
+		})
 	}()
 
 	pendingNodes := s.store.GetNodes(storage.NodeStatusPending)
@@ -37,6 +45,12 @@ func (s *Server) RunVerification() {
 	if len(pendingNodes) == 0 && len(verifiedNodes) == 0 {
 		return
 	}
+
+	s.eventBus.Publish("verify:start", map[string]interface{}{
+		"pending_count":  len(pendingNodes),
+		"verified_count": len(verifiedNodes),
+		"timestamp":      time.Now().Format(time.RFC3339),
+	})
 
 	// Combine all nodes for health check
 	var allCheckNodes []storage.Node
@@ -56,6 +70,10 @@ func (s *Server) RunVerification() {
 	}
 
 	// 1. Health check via probe
+	s.eventBus.Publish("verify:health_start", map[string]interface{}{
+		"total_nodes": len(allCheckNodes),
+	})
+
 	healthResults, _, err := s.performHealthCheck(allCheckNodes)
 	if err != nil {
 		vlog.Error = fmt.Sprintf("health check failed: %v", err)
@@ -75,7 +93,7 @@ func (s *Server) RunVerification() {
 
 	// 3. Process pending nodes
 	vlog.PendingChecked = len(pendingNodes)
-	for _, pn := range pendingNodes {
+	for i, pn := range pendingNodes {
 		key := fmt.Sprintf("%s:%d", pn.Server, pn.ServerPort)
 
 		alive := false
@@ -105,6 +123,7 @@ func (s *Server) RunVerification() {
 			}
 			vlog.PendingPromoted++
 			configChanged = true
+			s.eventBus.Publish("verify:node_promoted", map[string]interface{}{"tag": pn.Tag})
 		} else {
 			// Increment failures
 			failures, err := s.store.IncrementConsecutiveFailures(pn.ID)
@@ -118,13 +137,26 @@ func (s *Server) RunVerification() {
 					continue
 				}
 				vlog.PendingArchived++
+				s.eventBus.Publish("verify:node_archived", map[string]interface{}{
+					"tag":      pn.Tag,
+					"failures": failures,
+				})
 			}
 		}
+
+		s.eventBus.Publish("verify:progress", map[string]interface{}{
+			"phase":   "pending",
+			"current": i + 1,
+			"total":   len(pendingNodes),
+			"tag":     pn.Tag,
+			"alive":   alive,
+			"sites_ok": sitesOk,
+		})
 	}
 
 	// 4. Process verified nodes
 	vlog.VerifiedChecked = len(verifiedNodes)
-	for _, vn := range verifiedNodes {
+	for i, vn := range verifiedNodes {
 		key := fmt.Sprintf("%s:%d", vn.Server, vn.ServerPort)
 
 		alive := false
@@ -154,10 +186,20 @@ func (s *Server) RunVerification() {
 			}
 			vlog.VerifiedDemoted++
 			configChanged = true
+			s.eventBus.Publish("verify:node_demoted", map[string]interface{}{"tag": vn.Tag})
 		} else {
 			// Reset failures counter
 			s.store.ResetConsecutiveFailures(vn.ID)
 		}
+
+		s.eventBus.Publish("verify:progress", map[string]interface{}{
+			"phase":   "verified",
+			"current": i + 1,
+			"total":   len(verifiedNodes),
+			"tag":     vn.Tag,
+			"alive":   alive,
+			"sites_ok": sitesOk,
+		})
 	}
 
 	// 5. If changes were made, auto-apply config
