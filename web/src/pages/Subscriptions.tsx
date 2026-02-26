@@ -233,6 +233,7 @@ export default function Subscriptions() {
         <Tab key="archived" title={<span>Archived{nodeCounts.archived > 0 && <span className="ml-1.5 text-xs opacity-60">({nodeCounts.archived})</span>}</span>}>
           <ArchivedNodesTab
             nodes={archivedNodes}
+            geoData={geoData}
             onUnarchive={unarchiveNode}
             onDelete={(id) => { if (confirm('Delete this node?')) deleteNode(id); }}
           />

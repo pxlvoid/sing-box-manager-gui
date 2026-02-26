@@ -22,6 +22,15 @@ import NodeHealthChips from '../components/NodeHealthChips';
 import GeoChip from '../components/GeoChip';
 const PAGE_SIZE = 50;
 
+function countryCodeToEmoji(code: string): string {
+  const upper = code.toUpperCase();
+  if (upper.length !== 2) return '🌐';
+  return String.fromCodePoint(
+    0x1F1E6 + upper.charCodeAt(0) - 65,
+    0x1F1E6 + upper.charCodeAt(1) - 65
+  );
+}
+
 interface VerifiedNodesTabProps {
   nodes: UnifiedNode[];
   healthResults: Record<string, NodeHealthResult>;
@@ -145,6 +154,7 @@ export default function VerifiedNodesTab({
           }
         >
           <TableHeader>
+            <TableColumn width={60}>Country</TableColumn>
             <TableColumn>Tag</TableColumn>
             <TableColumn width={100}>Type</TableColumn>
             <TableColumn width={200}>Server:Port</TableColumn>
@@ -156,15 +166,21 @@ export default function VerifiedNodesTab({
           <TableBody>
             {paginatedNodes.map((node) => {
               const key = `${node.server}:${node.server_port}`;
+              const geo = geoData[key];
+              const hasGeo = geo?.status === 'success' && geo.country_code;
+              const countryEmoji = hasGeo ? countryCodeToEmoji(geo.country_code) : '🌐';
+              const countryLabel = hasGeo ? `${geo.country} (${geo.country_code})` : 'No GeoIP data';
               return (
                 <TableRow key={node.id}>
                   <TableCell>
-                    <div className="flex items-center gap-2">
-                      <span className="text-lg">{node.country_emoji || '🌐'}</span>
-                      <span className="font-medium truncate max-w-[300px]">
-                        {node.tag}
-                      </span>
-                    </div>
+                    <Tooltip content={countryLabel}>
+                      <span className="text-lg cursor-default">{countryEmoji}</span>
+                    </Tooltip>
+                  </TableCell>
+                  <TableCell>
+                    <span className="font-medium truncate max-w-[300px]">
+                      {node.tag}
+                    </span>
                   </TableCell>
                   <TableCell>
                     <Chip size="sm" variant="flat">

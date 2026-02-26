@@ -23,6 +23,15 @@ import GeoChip from '../components/GeoChip';
 
 const ITEMS_PER_PAGE = 50;
 
+function countryCodeToEmoji(code: string): string {
+  const upper = code.toUpperCase();
+  if (upper.length !== 2) return '🌐';
+  return String.fromCodePoint(
+    0x1F1E6 + upper.charCodeAt(0) - 65,
+    0x1F1E6 + upper.charCodeAt(1) - 65
+  );
+}
+
 interface PendingNodesTabProps {
   nodes: UnifiedNode[];
   healthResults: Record<string, NodeHealthResult>;
@@ -235,6 +244,7 @@ export default function PendingNodesTab({
                 onValueChange={handleToggleSelectAll}
               />
             </TableColumn>
+            <TableColumn width={60}>Country</TableColumn>
             <TableColumn>Tag</TableColumn>
             <TableColumn width={100}>Type</TableColumn>
             <TableColumn>Server</TableColumn>
@@ -246,6 +256,10 @@ export default function PendingNodesTab({
           <TableBody>
             {paginatedNodes.map((node) => {
               const key = spKey(node);
+              const geo = geoData[key];
+              const hasGeo = geo?.status === 'success' && geo.country_code;
+              const countryEmoji = hasGeo ? countryCodeToEmoji(geo.country_code) : '🌐';
+              const countryLabel = hasGeo ? `${geo.country} (${geo.country_code})` : 'No GeoIP data';
               const failures = node.consecutive_failures;
               const failureColor =
                 failures >= 8 ? 'danger' : failures >= 5 ? 'warning' : 'default';
@@ -260,10 +274,12 @@ export default function PendingNodesTab({
                     />
                   </TableCell>
                   <TableCell>
-                    <div className="flex items-center gap-2">
-                      <span className="text-lg">{node.country_emoji || '\uD83C\uDF10'}</span>
-                      <span className="font-medium truncate max-w-[300px]">{node.tag}</span>
-                    </div>
+                    <Tooltip content={countryLabel}>
+                      <span className="text-lg cursor-default">{countryEmoji}</span>
+                    </Tooltip>
+                  </TableCell>
+                  <TableCell>
+                    <span className="font-medium truncate max-w-[300px]">{node.tag}</span>
                   </TableCell>
                   <TableCell>
                     <Chip size="sm" variant="flat">{node.type}</Chip>

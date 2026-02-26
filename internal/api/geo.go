@@ -35,10 +35,12 @@ type ipAPIResponse struct {
 }
 
 const (
-	geoIPURL         = "http://ip-api.com/json/"
-	geoRequestTimeout = 10 * time.Second
-	geoCacheMaxAge    = 24 * time.Hour
-	geoRateInterval   = 1500 * time.Millisecond // ~40 req/min to stay under 45 req/min limit
+	geoIPURL              = "http://ip-api.com/json/"
+	geoRequestTimeout     = 10 * time.Second
+	geoCacheMaxAge        = 24 * time.Hour
+	geoRateInterval       = 1500 * time.Millisecond // ~40 req/min to stay under 45 req/min limit
+	geoUnknownCountryCode = "UNKNOWN"
+	geoUnknownCountryName = "Unknown"
 )
 
 // performGeoCheck runs GeoIP lookups for the given nodes through the probe's mixed proxy.
@@ -122,6 +124,29 @@ func (s *Server) performGeoCheck(nodes []storage.Node) (map[string]*storage.GeoD
 		// Switch GeoSelector to this node via Clash API
 		if err := s.clashSwitchSelector(clashPort, "GeoSelector", probeTag); err != nil {
 			logger.Printf("[geo] Failed to switch selector to %s: %v", probeTag, err)
+			failData := storage.GeoData{
+				Server:      node.Server,
+				ServerPort:  node.ServerPort,
+				NodeTag:     node.Tag,
+				Timestamp:   time.Now(),
+				Status:      "fail",
+				Country:     geoUnknownCountryName,
+				CountryCode: geoUnknownCountryCode,
+			}
+			if saveErr := s.store.UpsertGeoData(failData); saveErr != nil {
+				logger.Printf("[geo] Failed to save geo fail status for %s: %v", key, saveErr)
+			}
+			if saveErr := s.store.UpdateNodeCountry(node.Server, node.ServerPort, geoUnknownCountryCode, storage.GetCountryEmoji(geoUnknownCountryCode)); saveErr != nil {
+				logger.Printf("[geo] Failed to set unknown country for %s: %v", key, saveErr)
+			}
+			results[key] = &failData
+			s.eventBus.Publish("verify:geo_progress", map[string]interface{}{
+				"current": i + 1,
+				"total":   total,
+				"tag":     node.Tag,
+				"country": geoUnknownCountryCode,
+				"status":  "fail",
+			})
 			continue
 		}
 
@@ -132,6 +157,29 @@ func (s *Server) performGeoCheck(nodes []storage.Node) (map[string]*storage.GeoD
 		geoData, err := s.fetchGeoIP(proxyURL, node)
 		if err != nil {
 			logger.Printf("[geo] GeoIP lookup failed for %s (%s): %v", node.Tag, key, err)
+			failData := storage.GeoData{
+				Server:      node.Server,
+				ServerPort:  node.ServerPort,
+				NodeTag:     node.Tag,
+				Timestamp:   time.Now(),
+				Status:      "fail",
+				Country:     geoUnknownCountryName,
+				CountryCode: geoUnknownCountryCode,
+			}
+			if saveErr := s.store.UpsertGeoData(failData); saveErr != nil {
+				logger.Printf("[geo] Failed to save geo fail status for %s: %v", key, saveErr)
+			}
+			if saveErr := s.store.UpdateNodeCountry(node.Server, node.ServerPort, geoUnknownCountryCode, storage.GetCountryEmoji(geoUnknownCountryCode)); saveErr != nil {
+				logger.Printf("[geo] Failed to set unknown country for %s: %v", key, saveErr)
+			}
+			results[key] = &failData
+			s.eventBus.Publish("verify:geo_progress", map[string]interface{}{
+				"current": i + 1,
+				"total":   total,
+				"tag":     node.Tag,
+				"country": geoUnknownCountryCode,
+				"status":  "fail",
+			})
 			continue
 		}
 
@@ -158,6 +206,7 @@ func (s *Server) performGeoCheck(nodes []storage.Node) (map[string]*storage.GeoD
 			"country": geoData.CountryCode,
 			"city":    geoData.City,
 			"ip":      geoData.QueryIP,
+			"status":  "success",
 		})
 
 		// Rate limit: wait between requests (except after the last one)

@@ -19,6 +19,7 @@ export const nodeTypeOptions = [
 ];
 
 export const countryOptions = [
+  { code: 'UNKNOWN', name: 'Unknown', emoji: '🌐' },
   { code: 'HK', name: 'Hong Kong', emoji: '🇭🇰' },
   { code: 'TW', name: 'Taiwan', emoji: '🇹🇼' },
   { code: 'JP', name: 'Japan', emoji: '🇯🇵' },

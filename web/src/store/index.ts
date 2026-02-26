@@ -314,7 +314,7 @@ export interface PipelineEvent {
 }
 
 export interface VerificationProgress {
-  phase: 'pending' | 'verified' | 'health_check' | 'site_check';
+  phase: 'pending' | 'verified' | 'health_check' | 'site_check' | 'geo';
   current: number;
   total: number;
 }

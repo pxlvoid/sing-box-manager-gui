@@ -15,17 +15,27 @@ import {
   Tooltip,
 } from '@nextui-org/react';
 import { Search, Trash2, RotateCcw, Archive } from 'lucide-react';
-import type { UnifiedNode } from '../../../store';
+import type { UnifiedNode, GeoData } from '../../../store';
 
 interface ArchivedNodesTabProps {
   nodes: UnifiedNode[];
+  geoData: Record<string, GeoData>;
   onUnarchive: (id: number) => void;
   onDelete: (id: number) => void;
 }
 
 const PAGE_SIZE = 50;
 
-export default function ArchivedNodesTab({ nodes, onUnarchive, onDelete }: ArchivedNodesTabProps) {
+function countryCodeToEmoji(code: string): string {
+  const upper = code.toUpperCase();
+  if (upper.length !== 2) return '🌐';
+  return String.fromCodePoint(
+    0x1F1E6 + upper.charCodeAt(0) - 65,
+    0x1F1E6 + upper.charCodeAt(1) - 65
+  );
+}
+
+export default function ArchivedNodesTab({ nodes, geoData, onUnarchive, onDelete }: ArchivedNodesTabProps) {
   const [searchQuery, setSearchQuery] = useState('');
   const [page, setPage] = useState(1);
 
@@ -110,6 +120,7 @@ export default function ArchivedNodesTab({ nodes, onUnarchive, onDelete }: Archi
           }
         >
           <TableHeader>
+            <TableColumn width={60}>Country</TableColumn>
             <TableColumn>Tag</TableColumn>
             <TableColumn width={100}>Type</TableColumn>
             <TableColumn>Server:Port</TableColumn>
@@ -118,13 +129,21 @@ export default function ArchivedNodesTab({ nodes, onUnarchive, onDelete }: Archi
             <TableColumn width={110}>Actions</TableColumn>
           </TableHeader>
           <TableBody>
-            {paginatedNodes.map((node) => (
+            {paginatedNodes.map((node) => {
+              const key = `${node.server}:${node.server_port}`;
+              const geo = geoData[key];
+              const hasGeo = geo?.status === 'success' && geo.country_code;
+              const countryEmoji = hasGeo ? countryCodeToEmoji(geo.country_code) : '🌐';
+              const countryLabel = hasGeo ? `${geo.country} (${geo.country_code})` : 'No GeoIP data';
+              return (
               <TableRow key={node.id}>
                 <TableCell>
-                  <div className="flex items-center gap-2">
-                    <span className="text-lg">{node.country_emoji || '🌐'}</span>
-                    <span className="font-medium truncate max-w-[300px]">{node.tag}</span>
-                  </div>
+                  <Tooltip content={countryLabel}>
+                    <span className="text-lg cursor-default">{countryEmoji}</span>
+                  </Tooltip>
+                </TableCell>
+                <TableCell>
+                  <span className="font-medium truncate max-w-[300px]">{node.tag}</span>
                 </TableCell>
                 <TableCell>
                   <Chip size="sm" variant="flat">{node.type}</Chip>
@@ -167,7 +186,8 @@ export default function ArchivedNodesTab({ nodes, onUnarchive, onDelete }: Archi
                   </div>
                 </TableCell>
               </TableRow>
-            ))}
+            );
+            })}
           </TableBody>
         </Table>
       )}

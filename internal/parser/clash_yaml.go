@@ -6,7 +6,6 @@ import (
 	"strings"
 
 	"github.com/xiaobei/singbox-manager/internal/storage"
-	"github.com/xiaobei/singbox-manager/pkg/utils"
 	"gopkg.in/yaml.v3"
 )
 
@@ -337,21 +336,12 @@ func convertClashProxy(proxy ClashProxy) (*storage.Node, error) {
 		extra["tls"] = tls
 	}
 
-	// Parse country info
-	var country, countryEmoji string
-	if countryInfo := utils.ParseCountryFromNodeName(proxy.Name); countryInfo != nil {
-		country = countryInfo.Code
-		countryEmoji = countryInfo.Emoji
-	}
-
 	node := &storage.Node{
 		Tag:          proxy.Name,
 		Type:         nodeType,
 		Server:       proxy.Server,
 		ServerPort:   proxy.Port,
 		Extra:        extra,
-		Country:      country,
-		CountryEmoji: countryEmoji,
 	}
 
 	return node, nil

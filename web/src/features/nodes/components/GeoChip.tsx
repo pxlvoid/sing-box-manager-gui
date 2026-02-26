@@ -7,8 +7,15 @@ interface GeoChipProps {
 }
 
 export default function GeoChip({ geo, claimedCountry }: GeoChipProps) {
-  if (!geo || geo.status !== 'success') {
+  if (!geo) {
     return <span className="text-xs text-gray-400">-</span>;
+  }
+  if (geo.status !== 'success') {
+    return (
+      <Chip size="sm" variant="flat" color="warning">
+        UNKNOWN
+      </Chip>
+    );
   }
 
   const mismatch = claimedCountry && claimedCountry !== geo.country_code && claimedCountry !== '';
