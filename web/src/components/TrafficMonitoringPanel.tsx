@@ -166,6 +166,8 @@ function appendPoint(history: TrafficHistoryPoint[], point: TrafficHistoryPoint)
   return next.slice(next.length - 120);
 }
 
+const CHART_EMA_ALPHA = 0.28;
+
 function aggregateConnections(connections: ClashConnection[]): { clients: MonitoringClient[]; resources: MonitoringResource[] } {
   type ClientAcc = {
     source_ip: string;
@@ -498,15 +500,30 @@ export default function TrafficMonitoringPanel() {
     };
   }, []);
 
-  const chartData = useMemo(
-    () => history.map((point) => ({
-      ...point,
-      time: new Date(point.timestamp).toLocaleTimeString([], { hour12: false }),
-      up_kbps: point.up_bps / 1024,
-      down_kbps: point.down_bps / 1024,
-    })),
-    [history],
-  );
+  const chartData = useMemo(() => {
+    let emaUp = 0;
+    let emaDown = 0;
+
+    return history.map((point, idx) => {
+      const rawUp = Math.max(0, toNumber(point.up_bps));
+      const rawDown = Math.max(0, toNumber(point.down_bps));
+
+      if (idx === 0) {
+        emaUp = rawUp;
+        emaDown = rawDown;
+      } else {
+        emaUp = (rawUp * CHART_EMA_ALPHA) + (emaUp * (1 - CHART_EMA_ALPHA));
+        emaDown = (rawDown * CHART_EMA_ALPHA) + (emaDown * (1 - CHART_EMA_ALPHA));
+      }
+
+      return {
+        ...point,
+        time: new Date(point.timestamp).toLocaleTimeString([], { hour12: false }),
+        up_kbps: emaUp / 1024,
+        down_kbps: emaDown / 1024,
+      };
+    });
+  }, [history]);
 
   const clients = useMemo(
     () => mergeClients(recentClients, activeClients, new Date().toISOString()),

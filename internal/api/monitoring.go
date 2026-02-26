@@ -67,6 +67,14 @@ type resourceAccumulator struct {
 	ProxyChain        string
 }
 
+type monitoringNodeTrafficItem struct {
+	NodeTag       string    `json:"node_tag"`
+	LastSeen      time.Time `json:"last_seen"`
+	UploadBytes   int64     `json:"upload_bytes"`
+	DownloadBytes int64     `json:"download_bytes"`
+	TotalBytes    int64     `json:"total_bytes"`
+}
+
 func (s *Server) startTrafficAggregator() {
 	go func() {
 		// Small startup delay to avoid noisy errors while the app boots.
@@ -358,6 +366,68 @@ func maxI64(v, min int64) int64 {
 	return v
 }
 
+func collectKnownNodeTags(store storage.Store) map[string]struct{} {
+	knownTags := make(map[string]struct{})
+	statuses := []storage.NodeStatus{
+		storage.NodeStatusPending,
+		storage.NodeStatusVerified,
+		storage.NodeStatusArchived,
+	}
+	for _, status := range statuses {
+		for _, node := range store.GetNodes(status) {
+			tag := strings.TrimSpace(node.Tag)
+			if tag == "" {
+				continue
+			}
+			knownTags[tag] = struct{}{}
+		}
+	}
+	if len(knownTags) > 0 {
+		return knownTags
+	}
+
+	for _, node := range store.GetAllNodes() {
+		tag := strings.TrimSpace(node.Tag)
+		if tag == "" {
+			continue
+		}
+		knownTags[tag] = struct{}{}
+	}
+	return knownTags
+}
+
+func selectNodeTagFromChain(proxyChain string, knownTags map[string]struct{}) (string, bool) {
+	parts := splitProxyChain(proxyChain)
+	if len(parts) == 0 {
+		return "", false
+	}
+	if len(knownTags) == 0 {
+		return parts[0], true
+	}
+	for _, part := range parts {
+		if _, ok := knownTags[part]; ok {
+			return part, true
+		}
+	}
+	return "", false
+}
+
+func splitProxyChain(proxyChain string) []string {
+	chain := strings.TrimSpace(proxyChain)
+	if chain == "" || strings.EqualFold(chain, "direct") {
+		return nil
+	}
+	raw := strings.Split(chain, "->")
+	parts := make([]string, 0, len(raw))
+	for _, part := range raw {
+		trimmed := strings.TrimSpace(part)
+		if trimmed != "" {
+			parts = append(parts, trimmed)
+		}
+	}
+	return parts
+}
+
 func (s *Server) getMonitoringOverview(c *gin.Context) {
 	latest, err := s.store.GetLatestTrafficSample()
 	if err != nil {
@@ -478,6 +548,92 @@ func (s *Server) getMonitoringResources(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"data": resources})
+}
+
+func (s *Server) getMonitoringNodesTraffic(c *gin.Context) {
+	limit := 100
+	if raw := strings.TrimSpace(c.Query("limit")); raw != "" {
+		if parsed, err := strconv.Atoi(raw); err == nil && parsed > 0 {
+			limit = parsed
+		}
+	}
+	if limit > 2000 {
+		limit = 2000
+	}
+
+	hours := 0
+	if raw := strings.TrimSpace(c.Query("hours")); raw != "" {
+		if parsed, err := strconv.Atoi(raw); err == nil && parsed >= 0 {
+			hours = parsed
+		}
+	}
+	if hours > 24*365 {
+		hours = 24 * 365
+	}
+
+	chainLimit := limit * 20
+	if chainLimit < 500 {
+		chainLimit = 500
+	}
+	if chainLimit > 5000 {
+		chainLimit = 5000
+	}
+
+	var lookback time.Duration
+	if hours > 0 {
+		lookback = time.Duration(hours) * time.Hour
+	}
+
+	chainStats, err := s.store.GetTrafficChainStats(chainLimit, lookback)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	knownTags := collectKnownNodeTags(s.store)
+	agg := make(map[string]*monitoringNodeTrafficItem, len(chainStats))
+
+	for _, chainStat := range chainStats {
+		nodeTag, ok := selectNodeTagFromChain(chainStat.ProxyChain, knownTags)
+		if !ok || nodeTag == "" {
+			continue
+		}
+
+		item, exists := agg[nodeTag]
+		if !exists {
+			item = &monitoringNodeTrafficItem{NodeTag: nodeTag}
+			agg[nodeTag] = item
+		}
+		item.UploadBytes += maxI64(chainStat.UploadBytes, 0)
+		item.DownloadBytes += maxI64(chainStat.DownloadBytes, 0)
+		if item.LastSeen.IsZero() || chainStat.LastSeen.After(item.LastSeen) {
+			item.LastSeen = chainStat.LastSeen
+		}
+	}
+
+	items := make([]monitoringNodeTrafficItem, 0, len(agg))
+	for _, item := range agg {
+		item.TotalBytes = item.UploadBytes + item.DownloadBytes
+		items = append(items, *item)
+	}
+
+	sort.Slice(items, func(i, j int) bool {
+		if items[i].TotalBytes == items[j].TotalBytes {
+			return items[i].LastSeen.After(items[j].LastSeen)
+		}
+		return items[i].TotalBytes > items[j].TotalBytes
+	})
+
+	if len(items) > limit {
+		items = items[:limit]
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"data": items,
+		"meta": gin.H{
+			"hours": hours,
+		},
+	})
 }
 
 func (s *Server) streamTrafficWebSocket(c *gin.Context) {

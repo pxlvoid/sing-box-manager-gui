@@ -211,6 +211,14 @@ type TrafficLifetimeStats struct {
 	LastSampleAt       *time.Time `json:"last_sample_at,omitempty"`
 }
 
+// TrafficChainStats represents aggregated traffic for a specific proxy chain.
+type TrafficChainStats struct {
+	ProxyChain    string    `json:"proxy_chain"`
+	LastSeen      time.Time `json:"last_seen"`
+	UploadBytes   int64     `json:"upload_bytes"`
+	DownloadBytes int64     `json:"download_bytes"`
+}
+
 // HealthStats represents aggregated health statistics for a node
 type HealthStats struct {
 	TotalChecks   int     `json:"total_checks"`

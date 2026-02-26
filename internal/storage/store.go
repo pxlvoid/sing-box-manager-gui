@@ -88,6 +88,7 @@ type Store interface {
 	GetRecentTrafficClients(limit int, lookback time.Duration) ([]TrafficClientRecent, error)
 	GetLatestTrafficResources(limit int, sourceIP string) ([]ClientResourceSnapshot, error)
 	GetTrafficLifetimeStats() (*TrafficLifetimeStats, error)
+	GetTrafficChainStats(limit int, lookback time.Duration) ([]TrafficChainStats, error)
 
 	// GeoIP Data
 	UpsertGeoData(data GeoData) error

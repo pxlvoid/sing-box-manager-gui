@@ -17,12 +17,14 @@
   - `/api/monitoring/history`
   - `/api/monitoring/clients`
   - `/api/monitoring/resources`
+  - `/api/monitoring/nodes` (агрегированный трафик по нодам из сохраненных снапшотов)
 - ✅ UI:
   - отдельная страница `Monitoring`
   - виджет на `Dashboard` с переходом в детали
   - сводка `All-time totals` (clients/traffic за всё время) на `Monitoring` и в карточке `Traffic Monitoring` на `Dashboard`
   - таблица клиентов (online + recently disconnected) + детализация по выбранному клиенту
   - график realtime upload/download
+  - блок `Traffic by Node` на странице `Node Management`
 
 На что обратить внимание:
 
