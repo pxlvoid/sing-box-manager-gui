@@ -54,6 +54,9 @@ func (s *SubscriptionService) Add(name, url string) (*storage.Subscription, erro
 		return nil, fmt.Errorf("failed to save subscription: %w", err)
 	}
 
+	// Sync nodes to unified nodes table as pending
+	s.syncToUnifiedNodes(&sub)
+
 	return &sub, nil
 }
 
@@ -78,7 +81,14 @@ func (s *SubscriptionService) Refresh(id string) error {
 		return err
 	}
 
-	return s.store.UpdateSubscription(*sub)
+	if err := s.store.UpdateSubscription(*sub); err != nil {
+		return err
+	}
+
+	// Sync new nodes to unified nodes table as pending
+	s.syncToUnifiedNodes(sub)
+
+	return nil
 }
 
 // RefreshAll refreshes all subscriptions
@@ -93,9 +103,35 @@ func (s *SubscriptionService) RefreshAll() error {
 			if err := s.store.UpdateSubscription(sub); err != nil {
 				continue
 			}
+			// Sync new nodes to unified nodes table as pending
+			s.syncToUnifiedNodes(&sub)
 		}
 	}
 	return nil
+}
+
+// syncToUnifiedNodes converts subscription nodes to unified nodes (pending) with deduplication.
+func (s *SubscriptionService) syncToUnifiedNodes(sub *storage.Subscription) (int, error) {
+	if len(sub.Nodes) == 0 {
+		return 0, nil
+	}
+
+	var unified []storage.UnifiedNode
+	for _, n := range sub.Nodes {
+		unified = append(unified, storage.UnifiedNode{
+			Tag:          n.Tag,
+			Type:         n.Type,
+			Server:       n.Server,
+			ServerPort:   n.ServerPort,
+			Country:      n.Country,
+			CountryEmoji: n.CountryEmoji,
+			Extra:        n.Extra,
+			Status:       storage.NodeStatusPending,
+			Source:       sub.ID,
+		})
+	}
+
+	return s.store.AddNodesBulk(unified)
 }
 
 // refresh internal refresh method
