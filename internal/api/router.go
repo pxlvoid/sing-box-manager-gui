@@ -2726,6 +2726,14 @@ func (s *Server) debugDump(c *gin.Context) {
 	ruleGroups := s.store.GetRuleGroups()
 	countryGroups := s.store.GetCountryGroups()
 
+	// Unified nodes by status
+	pendingNodes := s.store.GetNodes(storage.NodeStatusPending)
+	verifiedNodes := s.store.GetNodes(storage.NodeStatusVerified)
+	archivedNodes := s.store.GetNodes(storage.NodeStatusArchived)
+
+	// Verification logs (last 20)
+	verificationLogs := s.store.GetVerificationLogs(20)
+
 	// Unsupported nodes
 	s.unsupportedNodesMu.RLock()
 	unsupported := make([]UnsupportedNodeInfo, 0, len(s.unsupportedNodes))
@@ -2758,21 +2766,36 @@ func (s *Server) debugDump(c *gin.Context) {
 		MemAllocMB float64 `json:"mem_alloc_mb"`
 		MemSysMB   float64 `json:"mem_sys_mb"`
 	}
+	type debugSchedulerStatus struct {
+		Running              bool       `json:"running"`
+		SubUpdateEnabled     bool       `json:"sub_update_enabled"`
+		SubUpdateIntervalMin int        `json:"sub_update_interval_min"`
+		SubNextUpdateAt      *time.Time `json:"sub_next_update_at,omitempty"`
+		VerifyEnabled        bool       `json:"verify_enabled"`
+		VerifyIntervalMin    int        `json:"verify_interval_min"`
+		LastVerifyAt         *time.Time `json:"last_verify_at,omitempty"`
+		NextVerifyAt         *time.Time `json:"next_verify_at,omitempty"`
+	}
 	type debugDumpData struct {
 		// System info first
 		Timestamp        time.Time                `json:"timestamp"`
 		Runtime          debugRuntime             `json:"runtime"`
 		Service          debugServiceStatus       `json:"service"`
 		Probe            daemon.ProbeStatus       `json:"probe"`
+		Scheduler        debugSchedulerStatus     `json:"scheduler"`
 		Settings         interface{}              `json:"settings"`
 		// Data
 		Subscriptions    interface{}              `json:"subscriptions"`
 		NodeCounts       interface{}              `json:"node_counts"`
+		PendingNodes     []storage.UnifiedNode    `json:"pending_nodes"`
+		VerifiedNodes    []storage.UnifiedNode    `json:"verified_nodes"`
+		ArchivedNodes    []storage.UnifiedNode    `json:"archived_nodes"`
 		Filters          interface{}              `json:"filters"`
 		Rules            interface{}              `json:"rules"`
 		RuleGroups       interface{}              `json:"rule_groups"`
 		CountryGroups    interface{}              `json:"country_groups"`
 		UnsupportedNodes []UnsupportedNodeInfo    `json:"unsupported_nodes"`
+		VerificationLogs []storage.VerificationLog `json:"verification_logs"`
 	}
 
 	c.JSON(http.StatusOK, gin.H{
@@ -2791,15 +2814,29 @@ func (s *Server) debugDump(c *gin.Context) {
 				Running: serviceRunning,
 				PID:     servicePID,
 			},
-			Probe:            s.probeManager.Status(),
+			Probe: s.probeManager.Status(),
+			Scheduler: debugSchedulerStatus{
+				Running:              s.scheduler.IsRunning(),
+				SubUpdateEnabled:     settings.SubscriptionInterval > 0,
+				SubUpdateIntervalMin: settings.SubscriptionInterval,
+				SubNextUpdateAt:      s.scheduler.GetNextUpdateTime(),
+				VerifyEnabled:        settings.VerificationInterval > 0,
+				VerifyIntervalMin:    settings.VerificationInterval,
+				LastVerifyAt:         s.scheduler.GetLastVerifyTime(),
+				NextVerifyAt:         s.scheduler.GetNextVerifyTime(),
+			},
 			Settings:         settings,
 			Subscriptions:    subscriptions,
 			NodeCounts:       nodeCounts,
+			PendingNodes:     pendingNodes,
+			VerifiedNodes:    verifiedNodes,
+			ArchivedNodes:    archivedNodes,
 			Filters:          filters,
 			Rules:            rules,
 			RuleGroups:       ruleGroups,
 			CountryGroups:    countryGroups,
 			UnsupportedNodes: unsupported,
+			VerificationLogs: verificationLogs,
 		},
 	})
 }
