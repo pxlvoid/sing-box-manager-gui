@@ -562,15 +562,19 @@ export default function Dashboard() {
       </Card>
 
       {/* Active Proxy */}
-      {mainProxyGroup && (
-        <Card>
-          <CardHeader>
-            <div className="flex items-center gap-2">
-              <Globe className="w-5 h-5" />
-              <h2 className="text-lg font-semibold">Active Proxy</h2>
+      <Card>
+        <CardHeader>
+          <div className="flex items-center gap-2">
+            <Globe className="w-5 h-5" />
+            <h2 className="text-lg font-semibold">Active Proxy</h2>
+          </div>
+        </CardHeader>
+        <CardBody>
+          {!mainProxyGroup ? (
+            <div className="p-4 bg-gray-50 dark:bg-gray-800 rounded-xl text-center">
+              <p className="text-gray-500">sing-box is not running</p>
             </div>
-          </CardHeader>
-          <CardBody>
+          ) : (
             <div className="space-y-4 p-4 bg-gray-50 dark:bg-gray-800 rounded-xl">
               <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
                 <div className="min-w-0">
@@ -715,9 +719,9 @@ export default function Dashboard() {
                 <p className="text-sm text-gray-500">No proxies found for "{proxySearch.trim()}"</p>
               )}
             </div>
+          )}
           </CardBody>
         </Card>
-      )}
 
       {/* Proxy Links Modal */}
       <Modal isOpen={proxyLinksOpen} onClose={() => setProxyLinksOpen(false)} size="lg">
