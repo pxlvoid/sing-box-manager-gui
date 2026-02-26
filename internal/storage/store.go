@@ -85,6 +85,7 @@ type Store interface {
 	GetTrafficSamples(limit int) ([]TrafficSample, error)
 	GetLatestTrafficSample() (*TrafficSample, error)
 	GetLatestTrafficClients(limit int) ([]ClientTrafficSnapshot, error)
+	GetRecentTrafficClients(limit int, lookback time.Duration) ([]TrafficClientRecent, error)
 	GetLatestTrafficResources(limit int, sourceIP string) ([]ClientResourceSnapshot, error)
 
 	// GeoIP Data

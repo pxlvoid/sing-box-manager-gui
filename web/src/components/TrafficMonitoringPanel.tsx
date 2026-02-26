@@ -27,6 +27,8 @@ interface MonitoringOverview {
 
 interface MonitoringClient {
   source_ip: string;
+  last_seen?: string;
+  online?: boolean;
   active_connections: number;
   upload_bytes: number;
   download_bytes: number;
@@ -131,6 +133,13 @@ function formatDuration(seconds: number): string {
   const h = Math.floor(m / 60);
   const mm = m % 60;
   return `${h}h ${mm}m`;
+}
+
+function formatDateTime(value?: string): string {
+  if (!value) return '-';
+  const ts = Date.parse(value);
+  if (Number.isNaN(ts)) return '-';
+  return new Date(ts).toLocaleString();
 }
 
 function appendPoint(history: TrafficHistoryPoint[], point: TrafficHistoryPoint): TrafficHistoryPoint[] {
@@ -262,29 +271,72 @@ function aggregateConnections(connections: ClashConnection[]): { clients: Monito
   return { clients, resources };
 }
 
+function mergeClients(recent: MonitoringClient[], active: MonitoringClient[], nowISO: string): MonitoringClient[] {
+  const merged = new Map<string, MonitoringClient>();
+
+  for (const item of recent) {
+    merged.set(item.source_ip, {
+      ...item,
+      online: Boolean(item.online),
+      last_seen: item.last_seen || nowISO,
+    });
+  }
+
+  for (const item of active) {
+    merged.set(item.source_ip, {
+      ...item,
+      online: true,
+      last_seen: nowISO,
+    });
+  }
+
+  const list = [...merged.values()];
+  list.sort((a, b) => {
+    if (Boolean(a.online) !== Boolean(b.online)) {
+      return a.online ? -1 : 1;
+    }
+    const aTime = Date.parse(a.last_seen || '') || 0;
+    const bTime = Date.parse(b.last_seen || '') || 0;
+    return bTime - aTime;
+  });
+  return list;
+}
+
 export default function TrafficMonitoringPanel() {
   const [loading, setLoading] = useState(true);
   const [overview, setOverview] = useState<MonitoringOverview>(defaultOverview);
   const [history, setHistory] = useState<TrafficHistoryPoint[]>([]);
-  const [clients, setClients] = useState<MonitoringClient[]>([]);
+  const [activeClients, setActiveClients] = useState<MonitoringClient[]>([]);
+  const [recentClients, setRecentClients] = useState<MonitoringClient[]>([]);
   const [resources, setResources] = useState<MonitoringResource[]>([]);
   const [selectedClientIP, setSelectedClientIP] = useState<string>('');
+  const [fallbackResources, setFallbackResources] = useState<MonitoringResource[]>([]);
+  const [fallbackResourcesFor, setFallbackResourcesFor] = useState<string>('');
   const [trafficConnected, setTrafficConnected] = useState(false);
   const [connectionsConnected, setConnectionsConnected] = useState(false);
+
+  const fetchRecentClients = useCallback(async () => {
+    try {
+      const res = await monitoringApi.getRecentClients(400, 24);
+      setRecentClients(res.data?.data || []);
+    } catch (error) {
+      console.error('Failed to fetch recent monitoring clients:', error);
+    }
+  }, []);
 
   const fetchInitial = useCallback(async () => {
     try {
       setLoading(true);
-      const [overviewRes, historyRes, clientsRes, resourcesRes] = await Promise.all([
+      const [overviewRes, historyRes, recentClientsRes, resourcesRes] = await Promise.all([
         monitoringApi.getOverview(),
         monitoringApi.getHistory(120),
-        monitoringApi.getClients(200),
+        monitoringApi.getRecentClients(400, 24),
         monitoringApi.getResources(300),
       ]);
 
       setOverview({ ...defaultOverview, ...(overviewRes.data?.data || {}) });
       setHistory(historyRes.data?.data || []);
-      setClients(clientsRes.data?.data || []);
+      setRecentClients(recentClientsRes.data?.data || []);
       setResources(resourcesRes.data?.data || []);
     } catch (error) {
       console.error('Failed to fetch monitoring data:', error);
@@ -296,6 +348,13 @@ export default function TrafficMonitoringPanel() {
   useEffect(() => {
     fetchInitial();
   }, [fetchInitial]);
+
+  useEffect(() => {
+    const timer = window.setInterval(() => {
+      fetchRecentClients();
+    }, 15000);
+    return () => window.clearInterval(timer);
+  }, [fetchRecentClients]);
 
   useEffect(() => {
     let ws: WebSocket | null = null;
@@ -378,8 +437,9 @@ export default function TrafficMonitoringPanel() {
           const { clients: liveClients, resources: liveResources } = aggregateConnections(liveConnections);
           const ts = new Date().toISOString();
 
-          setClients(liveClients);
+          setActiveClients(liveClients.map((client) => ({ ...client, online: true, last_seen: ts })));
           setResources(liveResources);
+          setRecentClients((prev) => mergeClients(prev, liveClients, ts));
           setOverview((prev) => ({
             ...prev,
             running: true,
@@ -417,6 +477,11 @@ export default function TrafficMonitoringPanel() {
     [history],
   );
 
+  const clients = useMemo(
+    () => mergeClients(recentClients, activeClients, new Date().toISOString()),
+    [recentClients, activeClients],
+  );
+
   useEffect(() => {
     if (clients.length === 0) {
       setSelectedClientIP('');
@@ -432,9 +497,44 @@ export default function TrafficMonitoringPanel() {
     [clients, selectedClientIP],
   );
 
-  const selectedResources = useMemo(
+  useEffect(() => {
+    if (!selectedClient || selectedClient.online) {
+      setFallbackResources([]);
+      setFallbackResourcesFor('');
+      return;
+    }
+    if (fallbackResourcesFor === selectedClient.source_ip) {
+      return;
+    }
+
+    let cancelled = false;
+    monitoringApi
+      .getResources(300, selectedClient.source_ip)
+      .then((res) => {
+        if (cancelled) return;
+        setFallbackResources(res.data?.data || []);
+        setFallbackResourcesFor(selectedClient.source_ip);
+      })
+      .catch((error) => {
+        if (cancelled) return;
+        console.error('Failed to fetch fallback client resources:', error);
+        setFallbackResources([]);
+        setFallbackResourcesFor(selectedClient.source_ip);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedClient, fallbackResourcesFor]);
+
+  const liveSelectedResources = useMemo(
     () => (selectedClient ? resources.filter((resource) => resource.source_ip === selectedClient.source_ip) : []),
     [resources, selectedClient],
+  );
+
+  const selectedResources = useMemo(
+    () => (selectedClient?.online ? liveSelectedResources : fallbackResources),
+    [selectedClient, liveSelectedResources, fallbackResources],
   );
 
   return (
@@ -524,7 +624,7 @@ export default function TrafficMonitoringPanel() {
             <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
               <Card className="shadow-none border border-gray-200 dark:border-gray-700">
                 <CardHeader>
-                  <h3 className="font-semibold">Clients</h3>
+                  <h3 className="font-semibold">Clients (active + recently disconnected)</h3>
                 </CardHeader>
                 <CardBody className="pt-0">
                   <div className="max-h-72 overflow-auto">
@@ -532,9 +632,10 @@ export default function TrafficMonitoringPanel() {
                       <thead className="text-left text-gray-500 border-b border-gray-200 dark:border-gray-700">
                         <tr>
                           <th className="py-2 pr-3">IP</th>
+                          <th className="py-2 pr-3">Status</th>
+                          <th className="py-2 pr-3">Last Seen</th>
                           <th className="py-2 pr-3">Conn</th>
                           <th className="py-2 pr-3">Traffic</th>
-                          <th className="py-2 pr-3">Duration</th>
                           <th className="py-2">Top Host</th>
                         </tr>
                       </thead>
@@ -548,9 +649,14 @@ export default function TrafficMonitoringPanel() {
                               onClick={() => setSelectedClientIP(client.source_ip)}
                             >
                               <td className="py-2 pr-3 font-mono">{client.source_ip}</td>
+                              <td className="py-2 pr-3">
+                                <Chip size="sm" variant="flat" color={client.online ? 'success' : 'default'}>
+                                  {client.online ? 'online' : 'offline'}
+                                </Chip>
+                              </td>
+                              <td className="py-2 pr-3">{formatDateTime(client.last_seen)}</td>
                               <td className="py-2 pr-3">{client.active_connections}</td>
                               <td className="py-2 pr-3">{formatBytes(client.upload_bytes + client.download_bytes)}</td>
-                              <td className="py-2 pr-3">{formatDuration(client.duration_seconds)}</td>
                               <td className="py-2 truncate max-w-[160px]" title={client.top_host || '-'}>
                                 {client.top_host || '-'}
                               </td>
@@ -559,7 +665,7 @@ export default function TrafficMonitoringPanel() {
                         })}
                         {clients.length === 0 && (
                           <tr>
-                            <td className="py-3 text-gray-500" colSpan={5}>No active clients</td>
+                            <td className="py-3 text-gray-500" colSpan={6}>No clients in recent history</td>
                           </tr>
                         )}
                       </tbody>
@@ -574,6 +680,8 @@ export default function TrafficMonitoringPanel() {
                   {selectedClient ? (
                     <div className="grid grid-cols-2 gap-2 text-xs text-gray-600 dark:text-gray-300">
                       <div><span className="text-gray-500">IP:</span> <span className="font-mono">{selectedClient.source_ip}</span></div>
+                      <div><span className="text-gray-500">Status:</span> {selectedClient.online ? 'online' : 'offline'}</div>
+                      <div><span className="text-gray-500">Last seen:</span> {formatDateTime(selectedClient.last_seen)}</div>
                       <div><span className="text-gray-500">Connections:</span> {selectedClient.active_connections}</div>
                       <div><span className="text-gray-500">Duration:</span> {formatDuration(selectedClient.duration_seconds)}</div>
                       <div><span className="text-gray-500">Hosts:</span> {selectedClient.host_count}</div>

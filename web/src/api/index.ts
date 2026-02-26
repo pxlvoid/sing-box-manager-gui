@@ -182,6 +182,8 @@ export const monitoringApi = {
   getOverview: () => api.get('/monitoring/overview'),
   getHistory: (limit: number = 120) => api.get('/monitoring/history', { params: { limit } }),
   getClients: (limit: number = 200) => api.get('/monitoring/clients', { params: { limit } }),
+  getRecentClients: (limit: number = 300, hours: number = 24) =>
+    api.get('/monitoring/clients/recent', { params: { limit, hours } }),
   getResources: (limit: number = 300, sourceIP?: string) =>
     api.get('/monitoring/resources', { params: { limit, source_ip: sourceIP || undefined } }),
 };

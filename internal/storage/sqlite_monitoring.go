@@ -246,7 +246,13 @@ func (s *SQLiteStore) GetLatestTrafficResources(limit int, sourceIP string) ([]C
 		limit = 5000
 	}
 
-	sampleID, err := s.latestTrafficSampleID()
+	sampleID := int64(0)
+	var err error
+	if sourceIP != "" {
+		sampleID, err = s.latestTrafficSampleIDForSource(sourceIP)
+	} else {
+		sampleID, err = s.latestTrafficSampleID()
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -298,9 +304,104 @@ func (s *SQLiteStore) GetLatestTrafficResources(limit int, sourceIP string) ([]C
 	return resources, nil
 }
 
+func (s *SQLiteStore) GetRecentTrafficClients(limit int, lookback time.Duration) ([]TrafficClientRecent, error) {
+	if limit <= 0 {
+		limit = 200
+	}
+	if limit > 5000 {
+		limit = 5000
+	}
+	if lookback <= 0 {
+		lookback = 24 * time.Hour
+	}
+
+	cutoff := time.Now().Add(-lookback)
+	rows, err := s.db.Query(`
+		WITH latest_sample AS (
+			SELECT id AS sample_id FROM traffic_samples ORDER BY timestamp DESC LIMIT 1
+		),
+		ranked AS (
+			SELECT
+				tc.source_ip,
+				tc.sample_id,
+				tc.timestamp,
+				tc.active_connections,
+				tc.upload_bytes,
+				tc.download_bytes,
+				tc.duration_seconds,
+				tc.proxy_chain,
+				tc.host_count,
+				tc.top_host,
+				ROW_NUMBER() OVER (PARTITION BY tc.source_ip ORDER BY tc.timestamp DESC, tc.id DESC) AS rn
+			FROM traffic_clients tc
+			WHERE tc.timestamp >= ?
+		)
+		SELECT
+			r.source_ip,
+			r.timestamp,
+			CASE WHEN r.sample_id = (SELECT sample_id FROM latest_sample) THEN 1 ELSE 0 END AS online,
+			r.active_connections,
+			r.upload_bytes,
+			r.download_bytes,
+			r.duration_seconds,
+			r.proxy_chain,
+			r.host_count,
+			r.top_host
+		FROM ranked r
+		WHERE r.rn = 1
+		ORDER BY online DESC, r.timestamp DESC
+		LIMIT ?`, cutoff, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	clients := make([]TrafficClientRecent, 0, limit)
+	for rows.Next() {
+		var client TrafficClientRecent
+		var online int
+		if err := rows.Scan(
+			&client.SourceIP,
+			&client.LastSeen,
+			&online,
+			&client.ActiveConnections,
+			&client.UploadBytes,
+			&client.DownloadBytes,
+			&client.DurationSeconds,
+			&client.ProxyChain,
+			&client.HostCount,
+			&client.TopHost,
+		); err != nil {
+			return nil, fmt.Errorf("scan recent traffic client row: %w", err)
+		}
+		client.Online = online != 0
+		clients = append(clients, client)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate recent traffic client rows: %w", err)
+	}
+
+	return clients, nil
+}
+
 func (s *SQLiteStore) latestTrafficSampleID() (int64, error) {
 	var sampleID int64
 	err := s.db.QueryRow(`SELECT id FROM traffic_samples ORDER BY timestamp DESC LIMIT 1`).Scan(&sampleID)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return 0, nil
+		}
+		return 0, err
+	}
+	return sampleID, nil
+}
+
+func (s *SQLiteStore) latestTrafficSampleIDForSource(sourceIP string) (int64, error) {
+	var sampleID int64
+	err := s.db.QueryRow(
+		`SELECT sample_id FROM traffic_clients WHERE source_ip = ? ORDER BY timestamp DESC, id DESC LIMIT 1`,
+		sourceIP,
+	).Scan(&sampleID)
 	if err != nil {
 		if err == sql.ErrNoRows {
 			return 0, nil

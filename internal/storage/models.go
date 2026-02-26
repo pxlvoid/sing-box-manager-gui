@@ -174,6 +174,20 @@ type ClientTrafficSnapshot struct {
 	TopHost           string    `json:"top_host"`
 }
 
+// TrafficClientRecent represents the latest known snapshot of a client (including offline ones).
+type TrafficClientRecent struct {
+	SourceIP          string    `json:"source_ip"`
+	LastSeen          time.Time `json:"last_seen"`
+	Online            bool      `json:"online"`
+	ActiveConnections int       `json:"active_connections"`
+	UploadBytes       int64     `json:"upload_bytes"`
+	DownloadBytes     int64     `json:"download_bytes"`
+	DurationSeconds   int64     `json:"duration_seconds"`
+	ProxyChain        string    `json:"proxy_chain"`
+	HostCount         int       `json:"host_count"`
+	TopHost           string    `json:"top_host"`
+}
+
 // ClientResourceSnapshot represents a host/resource snapshot per source IP.
 type ClientResourceSnapshot struct {
 	ID                int64     `json:"id,omitempty"`

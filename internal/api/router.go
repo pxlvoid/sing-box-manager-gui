@@ -315,6 +315,7 @@ func (s *Server) setupRoutes() {
 		api.GET("/monitoring/overview", s.getMonitoringOverview)
 		api.GET("/monitoring/history", s.getMonitoringHistory)
 		api.GET("/monitoring/clients", s.getMonitoringClients)
+		api.GET("/monitoring/clients/recent", s.getMonitoringRecentClients)
 		api.GET("/monitoring/resources", s.getMonitoringResources)
 		api.GET("/monitoring/ws/traffic", s.streamTrafficWebSocket)
 		api.GET("/monitoring/ws/connections", s.streamConnectionsWebSocket)

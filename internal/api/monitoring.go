@@ -416,6 +416,32 @@ func (s *Server) getMonitoringClients(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"data": clients})
 }
 
+func (s *Server) getMonitoringRecentClients(c *gin.Context) {
+	limit := 300
+	if raw := strings.TrimSpace(c.Query("limit")); raw != "" {
+		if parsed, err := strconv.Atoi(raw); err == nil && parsed > 0 {
+			limit = parsed
+		}
+	}
+
+	hours := 24
+	if raw := strings.TrimSpace(c.Query("hours")); raw != "" {
+		if parsed, err := strconv.Atoi(raw); err == nil && parsed > 0 {
+			hours = parsed
+		}
+	}
+	if hours > 24*30 {
+		hours = 24 * 30
+	}
+
+	clients, err := s.store.GetRecentTrafficClients(limit, time.Duration(hours)*time.Hour)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"data": clients})
+}
+
 func (s *Server) getMonitoringResources(c *gin.Context) {
 	limit := 300
 	if raw := strings.TrimSpace(c.Query("limit")); raw != "" {
