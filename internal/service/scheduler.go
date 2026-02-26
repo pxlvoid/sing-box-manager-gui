@@ -45,13 +45,22 @@ func (s *Scheduler) SetVerificationCallback(callback func()) {
 	s.onVerify = callback
 }
 
+// StartStatus describes what happened when Start() was called
+type StartStatus int
+
+const (
+	StartStatusOK          StartStatus = iota // Started successfully
+	StartStatusAlreadyRunning                 // Was already running
+	StartStatusAllDisabled                    // All intervals are 0
+)
+
 // Start starts the scheduler
-func (s *Scheduler) Start() {
+func (s *Scheduler) Start() StartStatus {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
 	if s.running {
-		return
+		return StartStatusAlreadyRunning
 	}
 
 	settings := s.store.GetSettings()
@@ -61,7 +70,7 @@ func (s *Scheduler) Start() {
 
 	if !subEnabled && !verifyEnabled {
 		log.Println("[Scheduler] All scheduled tasks disabled")
-		return
+		return StartStatusAllDisabled
 	}
 
 	s.running = true
@@ -78,6 +87,8 @@ func (s *Scheduler) Start() {
 		go s.runVerificationTicker()
 		log.Printf("[Scheduler] Verification started, interval: %v", s.verifyInterval)
 	}
+
+	return StartStatusOK
 }
 
 // Stop stops the scheduler

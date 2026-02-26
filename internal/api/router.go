@@ -1607,6 +1607,27 @@ func (s *Server) getSystemInfo(c *gin.Context) {
 		}
 	}
 
+	// Get probe sing-box process info
+	if s.probeManager != nil && s.probeManager.IsRunning() {
+		probeStatus := s.probeManager.Status()
+		if probeStatus.PID > 0 {
+			probePid := int32(probeStatus.PID)
+			if probeProc, err := process.NewProcess(probePid); err == nil {
+				cpuPercent, _ := probeProc.CPUPercent()
+				var memoryMB float64
+				if memInfo, err := probeProc.MemoryInfo(); err == nil && memInfo != nil {
+					memoryMB = float64(memInfo.RSS) / 1024 / 1024
+				}
+
+				result["probe"] = ProcessStats{
+					PID:        int(probePid),
+					CPUPercent: cpuPercent,
+					MemoryMB:   memoryMB,
+				}
+			}
+		}
+	}
+
 	c.JSON(http.StatusOK, gin.H{"data": result})
 }
 
@@ -2437,13 +2458,24 @@ func (s *Server) getVerificationStatus(c *gin.Context) {
 		"next_run_at":        s.scheduler.GetNextVerifyTime(),
 		"node_counts":        s.store.GetNodeCounts(),
 		"scheduler_running":  s.scheduler.IsRunning(),
+		"sub_update_enabled":     settings.SubscriptionInterval > 0,
+		"sub_update_interval_min": settings.SubscriptionInterval,
+		"sub_next_update_at":     s.scheduler.GetNextUpdateTime(),
+		"auto_apply":             settings.AutoApply,
 	}
 	c.JSON(http.StatusOK, gin.H{"data": result})
 }
 
 func (s *Server) startVerificationScheduler(c *gin.Context) {
-	s.scheduler.Start()
-	c.JSON(http.StatusOK, gin.H{"message": "Scheduler started"})
+	status := s.scheduler.Start()
+	switch status {
+	case service.StartStatusAlreadyRunning:
+		c.JSON(http.StatusOK, gin.H{"message": "Scheduler is already running"})
+	case service.StartStatusAllDisabled:
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Cannot start: both subscription_interval and verification_interval are set to 0 in Settings"})
+	default:
+		c.JSON(http.StatusOK, gin.H{"message": "Scheduler started"})
+	}
 }
 
 func (s *Server) stopVerificationScheduler(c *gin.Context) {

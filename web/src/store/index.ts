@@ -174,6 +174,10 @@ export interface VerificationStatus {
   next_run_at?: string;
   node_counts: NodeCounts;
   scheduler_running: boolean;
+  sub_update_enabled: boolean;
+  sub_update_interval_min: number;
+  sub_next_update_at?: string;
+  auto_apply: boolean;
 }
 
 export interface Subscription {
@@ -328,6 +332,7 @@ export interface ProcessStats {
 export interface SystemInfo {
   sbm?: ProcessStats;
   singbox?: ProcessStats;
+  probe?: ProcessStats;
 }
 
 interface AppState {

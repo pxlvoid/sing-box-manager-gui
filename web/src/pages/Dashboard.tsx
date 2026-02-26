@@ -263,53 +263,134 @@ export default function Dashboard() {
         </CardBody>
       </Card>
 
-      {/* Probe sing-box status */}
+      {/* Pipeline: Scheduler + Probe + Verification — unified block */}
       <Card>
         <CardHeader className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
           <div className="flex items-center gap-3">
             <Stethoscope className="w-5 h-5" />
-            <h2 className="text-lg font-semibold">Probe sing-box</h2>
-            <Chip color={probeStatus?.running ? 'success' : 'default'} variant="flat" size="sm">
-              {probeStatus?.running ? 'Running' : 'Stopped'}
+            <h2 className="text-lg font-semibold">Pipeline</h2>
+            <Chip
+              color={verificationStatus?.scheduler_running ? 'success' : 'default'}
+              variant="flat"
+              size="sm"
+            >
+              {verificationStatus?.scheduler_running ? 'Running' : 'Stopped'}
             </Chip>
           </div>
-          {probeStatus?.running && (
-            <Button size="sm" color="danger" variant="flat" startContent={<Square className="w-4 h-4" />} onPress={stopProbe}>Stop</Button>
-          )}
+          <div className="flex gap-2">
+            {verificationStatus?.scheduler_running ? (
+              <Button size="sm" color="danger" variant="flat" startContent={<Square className="w-4 h-4" />} onPress={() => stopVerificationScheduler()}>
+                Stop
+              </Button>
+            ) : (
+              <Button size="sm" color="success" variant="flat" startContent={<Play className="w-4 h-4" />} onPress={() => startVerificationScheduler()}>
+                Start
+              </Button>
+            )}
+            <Button
+              size="sm"
+              color="primary"
+              variant="flat"
+              startContent={verificationRunning ? <Spinner size="sm" /> : <ShieldCheck className="w-4 h-4" />}
+              onPress={() => runVerification()}
+              isDisabled={verificationRunning}
+            >
+              Verify Now
+            </Button>
+            {probeStatus?.running && (
+              <Button size="sm" color="danger" variant="flat" startContent={<Square className="w-4 h-4" />} onPress={stopProbe}>
+                Stop Probe
+              </Button>
+            )}
+          </div>
         </CardHeader>
-        {probeStatus?.running && (
-          <CardBody>
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-              <div>
-                <p className="text-sm text-gray-500">PID</p>
-                <p className="font-medium">{probeStatus.pid}</p>
+        <CardBody className="space-y-4">
+          {/* Scheduler tasks */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            {/* Subscription auto-update */}
+            <div className="p-3 bg-gray-50 dark:bg-gray-800 rounded-lg space-y-2">
+              <div className="flex items-center gap-2">
+                <RefreshCw className="w-4 h-4 text-blue-500" />
+                <span className="font-medium text-sm">Subscription Update</span>
+                <Chip size="sm" variant="flat" color={verificationStatus?.sub_update_enabled ? 'success' : 'default'}>
+                  {verificationStatus?.sub_update_enabled ? `Every ${verificationStatus.sub_update_interval_min}min` : 'Disabled'}
+                </Chip>
+                {verificationStatus?.auto_apply && (
+                  <Chip size="sm" variant="flat" color="primary">Auto-apply</Chip>
+                )}
               </div>
-              <div>
-                <p className="text-sm text-gray-500">Clash API Port</p>
-                <p className="font-medium">{probeStatus.port}</p>
-              </div>
-              <div>
-                <p className="text-sm text-gray-500">Nodes</p>
-                <p className="font-medium">{probeStatus.node_count}</p>
-              </div>
-              <div>
-                <p className="text-sm text-gray-500">Uptime</p>
-                <p className="font-medium">
-                  {probeStatus.started_at
-                    ? (() => {
-                        const seconds = Math.floor((Date.now() - new Date(probeStatus.started_at).getTime()) / 1000);
-                        if (seconds < 60) return `${seconds}s`;
-                        const minutes = Math.floor(seconds / 60);
-                        if (minutes < 60) return `${minutes}m ${seconds % 60}s`;
-                        const hours = Math.floor(minutes / 60);
-                        return `${hours}h ${minutes % 60}m`;
-                      })()
-                    : '-'}
-                </p>
+              <div className="text-sm text-gray-500">
+                Next update: {verificationStatus?.sub_next_update_at
+                  ? new Date(verificationStatus.sub_next_update_at).toLocaleString()
+                  : '-'}
               </div>
             </div>
-          </CardBody>
-        )}
+
+            {/* Verification */}
+            <div className="p-3 bg-gray-50 dark:bg-gray-800 rounded-lg space-y-2">
+              <div className="flex items-center gap-2">
+                <ShieldCheck className="w-4 h-4 text-green-500" />
+                <span className="font-medium text-sm">Verification</span>
+                <Chip size="sm" variant="flat" color={verificationStatus?.enabled ? 'success' : 'default'}>
+                  {verificationStatus?.enabled ? `Every ${verificationStatus.interval_min}min` : 'Disabled'}
+                </Chip>
+              </div>
+              <div className="grid grid-cols-2 gap-1 text-sm text-gray-500">
+                <div>Last: {verificationStatus?.last_run_at ? new Date(verificationStatus.last_run_at).toLocaleString() : 'Never'}</div>
+                <div>Next: {verificationStatus?.next_run_at ? new Date(verificationStatus.next_run_at).toLocaleString() : '-'}</div>
+                <div>Threshold: {settings?.archive_threshold || 10} failures</div>
+              </div>
+            </div>
+          </div>
+
+          {/* Probe status */}
+          {probeStatus?.running && (
+            <div className="p-3 bg-gray-50 dark:bg-gray-800 rounded-lg">
+              <div className="flex items-center gap-2 mb-2">
+                <Stethoscope className="w-4 h-4 text-orange-500" />
+                <span className="font-medium text-sm">Probe sing-box</span>
+                <Chip size="sm" variant="flat" color="success">Running</Chip>
+              </div>
+              <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 text-sm">
+                <div>
+                  <span className="text-gray-500">PID: </span>
+                  <span className="font-medium">{probeStatus.pid}</span>
+                </div>
+                <div>
+                  <span className="text-gray-500">Port: </span>
+                  <span className="font-medium">{probeStatus.port}</span>
+                </div>
+                <div>
+                  <span className="text-gray-500">Nodes: </span>
+                  <span className="font-medium">{probeStatus.node_count}</span>
+                </div>
+                <div>
+                  <span className="text-gray-500">Uptime: </span>
+                  <span className="font-medium">
+                    {probeStatus.started_at
+                      ? (() => {
+                          const seconds = Math.floor((Date.now() - new Date(probeStatus.started_at).getTime()) / 1000);
+                          if (seconds < 60) return `${seconds}s`;
+                          const minutes = Math.floor(seconds / 60);
+                          if (minutes < 60) return `${minutes}m ${seconds % 60}s`;
+                          const hours = Math.floor(minutes / 60);
+                          return `${hours}h ${minutes % 60}m`;
+                        })()
+                      : '-'}
+                  </span>
+                </div>
+                {systemInfo?.probe && (
+                  <div>
+                    <span className="text-gray-500">CPU </span>
+                    <span className="font-medium">{systemInfo.probe.cpu_percent.toFixed(1)}%</span>
+                    <span className="text-gray-500 ml-1">Mem </span>
+                    <span className="font-medium">{systemInfo.probe.memory_mb.toFixed(1)}MB</span>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+        </CardBody>
       </Card>
 
       {/* Active Proxy */}
@@ -482,88 +563,6 @@ export default function Dashboard() {
           </CardBody>
         </Card>
       </div>
-
-      {/* Verification Status */}
-      <Card>
-        <CardHeader className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
-          <div className="flex items-center gap-3">
-            <ShieldCheck className="w-5 h-5" />
-            <h2 className="text-lg font-semibold">Verification</h2>
-            <Chip
-              color={verificationStatus?.enabled ? 'success' : 'default'}
-              variant="flat"
-              size="sm"
-            >
-              {verificationStatus?.enabled ? `Every ${verificationStatus.interval_min}min` : 'Disabled'}
-            </Chip>
-          </div>
-          <div className="flex gap-2">
-            {verificationStatus?.scheduler_running ? (
-              <Button
-                size="sm"
-                color="danger"
-                variant="flat"
-                startContent={<Square className="w-4 h-4" />}
-                onPress={() => stopVerificationScheduler()}
-              >
-                Stop
-              </Button>
-            ) : (
-              <Button
-                size="sm"
-                color="success"
-                variant="flat"
-                startContent={<Play className="w-4 h-4" />}
-                onPress={() => startVerificationScheduler()}
-              >
-                Start
-              </Button>
-            )}
-            <Button
-              size="sm"
-              color="success"
-              variant="flat"
-              startContent={verificationRunning ? <Spinner size="sm" /> : <ShieldCheck className="w-4 h-4" />}
-              onPress={() => runVerification()}
-              isDisabled={verificationRunning}
-            >
-              Run Now
-            </Button>
-          </div>
-        </CardHeader>
-        <CardBody>
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-            <div>
-              <p className="text-sm text-gray-500">Last Run</p>
-              <p className="font-medium">
-                {verificationStatus?.last_run_at
-                  ? new Date(verificationStatus.last_run_at).toLocaleString()
-                  : 'Never'}
-              </p>
-            </div>
-            <div>
-              <p className="text-sm text-gray-500">Next Run</p>
-              <p className="font-medium">
-                {verificationStatus?.next_run_at
-                  ? new Date(verificationStatus.next_run_at).toLocaleString()
-                  : '-'}
-              </p>
-            </div>
-            <div>
-              <p className="text-sm text-gray-500">Interval</p>
-              <p className="font-medium">
-                {verificationStatus?.enabled ? `${verificationStatus.interval_min} min` : 'Disabled'}
-              </p>
-            </div>
-            <div>
-              <p className="text-sm text-gray-500">Threshold</p>
-              <p className="font-medium">
-                {settings?.archive_threshold || 10} failures
-              </p>
-            </div>
-          </div>
-        </CardBody>
-      </Card>
 
       {/* System Resources */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
