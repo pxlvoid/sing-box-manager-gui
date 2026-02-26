@@ -17,23 +17,25 @@ type Scheduler struct {
 	onVerify   func()       // Callback to run verification cycle
 	eventBus   *events.Bus
 
-	stopCh             chan struct{}
-	running            bool
-	interval           time.Duration
-	verifyInterval     time.Duration
-	verifyRunning      bool
-	lastVerifyTime     *time.Time
-	nextSubUpdateTime  *time.Time
-	nextVerifyTime     *time.Time
-	mu                 sync.Mutex
+	stopCh            chan struct{}
+	verifyResetCh     chan struct{}
+	running           bool
+	interval          time.Duration
+	verifyInterval    time.Duration
+	verifyRunning     bool
+	lastVerifyTime    *time.Time
+	nextSubUpdateTime *time.Time
+	nextVerifyTime    *time.Time
+	mu                sync.Mutex
 }
 
 // NewScheduler creates a scheduler
 func NewScheduler(store storage.Store, subService *SubscriptionService) *Scheduler {
 	return &Scheduler{
-		store:      store,
-		subService: subService,
-		stopCh:     make(chan struct{}),
+		store:         store,
+		subService:    subService,
+		stopCh:        make(chan struct{}),
+		verifyResetCh: make(chan struct{}, 1),
 	}
 }
 
@@ -56,9 +58,9 @@ func (s *Scheduler) SetEventBus(bus *events.Bus) {
 type StartStatus int
 
 const (
-	StartStatusOK          StartStatus = iota // Started successfully
-	StartStatusAlreadyRunning                 // Was already running
-	StartStatusAllDisabled                    // All intervals are 0
+	StartStatusOK             StartStatus = iota // Started successfully
+	StartStatusAlreadyRunning                    // Was already running
+	StartStatusAllDisabled                       // All intervals are 0
 )
 
 // Start starts the scheduler
@@ -82,6 +84,7 @@ func (s *Scheduler) Start() StartStatus {
 
 	s.running = true
 	s.stopCh = make(chan struct{})
+	s.verifyResetCh = make(chan struct{}, 1)
 
 	if s.eventBus != nil {
 		s.eventBus.PublishTimestamped("pipeline:start", nil)
@@ -177,6 +180,13 @@ func (s *Scheduler) runVerificationTicker() {
 		select {
 		case <-s.stopCh:
 			return
+		case <-s.verifyResetCh:
+			ticker.Stop()
+			ticker = time.NewTicker(s.verifyInterval)
+			s.mu.Lock()
+			next := time.Now().Add(s.verifyInterval)
+			s.nextVerifyTime = &next
+			s.mu.Unlock()
 		case <-ticker.C:
 			s.runVerification()
 			s.mu.Lock()
@@ -201,6 +211,23 @@ func (s *Scheduler) runVerification() {
 	s.mu.Unlock()
 
 	log.Println("[Scheduler] Verification completed")
+}
+
+// MarkManualVerificationRun marks a manually-triggered verification as completed and
+// resets the periodic verification timer so the next run is scheduled from now.
+func (s *Scheduler) MarkManualVerificationRun() {
+	s.mu.Lock()
+	now := time.Now()
+	s.lastVerifyTime = &now
+	shouldReset := s.running && s.verifyInterval > 0
+	s.mu.Unlock()
+
+	if shouldReset {
+		select {
+		case s.verifyResetCh <- struct{}{}:
+		default:
+		}
+	}
 }
 
 // updateSubscriptions updates all subscriptions

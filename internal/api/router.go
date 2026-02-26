@@ -2493,16 +2493,26 @@ func (s *Server) getNodeCounts(c *gin.Context) {
 // ==================== Verification API ====================
 
 func (s *Server) runVerification(c *gin.Context) {
-	go s.RunVerification()
+	go func() {
+		s.RunVerification()
+		s.scheduler.MarkManualVerificationRun()
+	}()
 	c.JSON(http.StatusOK, gin.H{"message": "Verification started"})
 }
 
 func (s *Server) getVerificationStatus(c *gin.Context) {
 	settings := s.store.GetSettings()
+	lastRunAt := s.scheduler.GetLastVerifyTime()
+	if logs := s.store.GetVerificationLogs(1); len(logs) > 0 {
+		logTs := logs[0].Timestamp
+		if lastRunAt == nil || logTs.After(*lastRunAt) {
+			lastRunAt = &logTs
+		}
+	}
 	result := gin.H{
 		"enabled":                 settings.VerificationInterval > 0,
 		"interval_min":            settings.VerificationInterval,
-		"last_run_at":             s.scheduler.GetLastVerifyTime(),
+		"last_run_at":             lastRunAt,
 		"next_run_at":             s.scheduler.GetNextVerifyTime(),
 		"node_counts":             s.store.GetNodeCounts(),
 		"scheduler_running":       s.scheduler.IsRunning(),
