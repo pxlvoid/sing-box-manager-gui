@@ -142,7 +142,7 @@ export default function Layout({ children }: LayoutProps) {
       </aside>
 
       {/* Main content area */}
-      <main className="flex-1 p-4 md:p-8 overflow-auto ml-0 md:ml-64 mt-14 md:mt-0">
+      <main className="flex-1 p-4 md:p-8 overflow-x-auto ml-0 md:ml-64 mt-14 md:mt-0">
         {children}
       </main>
     </div>
