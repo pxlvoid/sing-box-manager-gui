@@ -4,17 +4,21 @@ import { Play, Square, RefreshCw, Cpu, HardDrive, Wifi, Info, Activity, Copy, Cl
 import { useStore } from '../store';
 import type { NodeSiteCheckResult } from '../store';
 import { shortSiteLabel } from '../features/nodes/types';
-import { serviceApi, configApi } from '../api';
+import { serviceApi, configApi, proxyApi } from '../api';
 import { toast } from '../components/Toast';
+
+const MAX_PROXY_DELAY_OPTIONS = 50;
+const PROXY_DELAY_REFRESH_INTERVAL_MS = 15000;
 
 export default function Dashboard() {
   const {
     serviceStatus, probeStatus, subscriptions, nodeCounts, systemInfo, settings, proxyGroups,
+    pendingNodes, verifiedNodes, archivedNodes, countryGroups,
     verificationStatus, verificationRunning,
     healthResults, siteCheckResults,
     pipelineEvents, verificationProgress, runCounters,
     fetchServiceStatus, fetchProbeStatus, stopProbe, fetchSubscriptions,
-    fetchNodeCounts, fetchSystemInfo, fetchSettings, fetchUnsupportedNodes,
+    fetchNodeCounts, fetchSystemInfo, fetchSettings, fetchUnsupportedNodes, fetchNodes, fetchCountryGroups,
     fetchProxyGroups, switchProxy, runVerification, runVerificationForTags, fetchVerificationStatus,
     startVerificationScheduler, stopVerificationScheduler,
     fetchLatestMeasurements, fetchPipelineEvents,
@@ -25,6 +29,9 @@ export default function Dashboard() {
   const [copiedLink, setCopiedLink] = useState<string | null>(null);
   const [qrLink, setQrLink] = useState<string | null>(null);
   const [proxyLinksOpen, setProxyLinksOpen] = useState(false);
+  const [proxySelectOpen, setProxySelectOpen] = useState(false);
+  const [proxyDelays, setProxyDelays] = useState<Record<string, number>>({});
+  const [proxyDelaysRefreshing, setProxyDelaysRefreshing] = useState(false);
   const [proxySearch, setProxySearch] = useState('');
 
   const [errorModal, setErrorModal] = useState<{
@@ -54,6 +61,8 @@ export default function Dashboard() {
     fetchProbeStatus();
     fetchSubscriptions();
     fetchNodeCounts();
+    fetchNodes();
+    fetchCountryGroups();
     fetchSystemInfo();
     fetchSettings();
     fetchProxyGroups();
@@ -172,6 +181,23 @@ export default function Dashboard() {
   const totalNodes = nodeCounts.pending + nodeCounts.verified + nodeCounts.archived;
   const enabledSubs = subscriptions.filter(sub => sub.enabled).length;
   const mainProxyGroup = proxyGroups.find((group) => group.name.toLowerCase() === 'proxy');
+  const allKnownNodes = useMemo(
+    () => [...verifiedNodes, ...pendingNodes, ...archivedNodes],
+    [verifiedNodes, pendingNodes, archivedNodes],
+  );
+  const knownNodesByTag = useMemo(() => {
+    const map = new Map<string, (typeof allKnownNodes)[number]>();
+    for (const node of allKnownNodes) {
+      if (!map.has(node.tag)) {
+        map.set(node.tag, node);
+      }
+    }
+    return map;
+  }, [allKnownNodes]);
+  const countryGroupTags = useMemo(
+    () => new Set(countryGroups.map((country) => `${country.emoji} ${country.name}`)),
+    [countryGroups],
+  );
   const proxyGroupsByName = useMemo(
     () => new Map(proxyGroups.map((group) => [group.name, group])),
     [proxyGroups],
@@ -198,21 +224,106 @@ export default function Dashboard() {
   const activeProxyRefreshing = verificationRunning;
   const qrImageUrl = qrLink ? `https://quickchart.io/qr?text=${encodeURIComponent(qrLink)}&size=260` : '';
 
+  const getServerPortLabel = (tag: string): string => {
+    const node = knownNodesByTag.get(tag);
+    return node ? `${node.server}:${node.server_port}` : '';
+  };
+
+  const getLatestMeasuredDelay = (tag: string): number | null => {
+    const liveDelay = proxyDelays[tag];
+    if (typeof liveDelay === 'number') {
+      return liveDelay;
+    }
+
+    const node = knownNodesByTag.get(tag);
+    const serverPortKey = node ? `${node.server}:${node.server_port}` : '';
+    const health = healthResults[tag] || (serverPortKey ? healthResults[serverPortKey] : undefined);
+    if (!health) return null;
+
+    if (!health.alive || health.tcp_latency_ms <= 0) {
+      return 0;
+    }
+    return health.tcp_latency_ms;
+  };
+
+  const formatDelayLabel = (delay: number | null): string => {
+    if (delay === null) return '-';
+    if (delay <= 0) return 'fail';
+    return `${delay}ms`;
+  };
+
+  const delayChipColor = (delay: number | null): 'default' | 'success' | 'warning' | 'danger' => {
+    if (delay === null) return 'default';
+    if (delay <= 0) return 'danger';
+    if (delay < 300) return 'success';
+    if (delay < 800) return 'warning';
+    return 'danger';
+  };
+
+  const selectableMainProxyOptions = useMemo(() => {
+    if (!mainProxyGroup) return [];
+    return mainProxyGroup.all.filter((item) => !countryGroupTags.has(item) || item === mainProxyGroup.now);
+  }, [mainProxyGroup, countryGroupTags]);
+
   const normalizedProxySearch = proxySearch.trim().toLowerCase();
-  const hasSearchMatches = !normalizedProxySearch || !!mainProxyGroup?.all.some((item) =>
+  const hasSearchMatches = !normalizedProxySearch || selectableMainProxyOptions.some((item) =>
     item.toLowerCase().includes(normalizedProxySearch),
   );
   const filteredMainProxyOptions = useMemo(() => {
     if (!mainProxyGroup) return [];
     const matchedOptions = normalizedProxySearch
-      ? mainProxyGroup.all.filter((item) => item.toLowerCase().includes(normalizedProxySearch))
-      : mainProxyGroup.all;
+      ? selectableMainProxyOptions.filter((item) => item.toLowerCase().includes(normalizedProxySearch))
+      : selectableMainProxyOptions;
 
     if (mainProxyGroup.now && !matchedOptions.includes(mainProxyGroup.now)) {
       return [mainProxyGroup.now, ...matchedOptions];
     }
     return matchedOptions;
-  }, [mainProxyGroup, normalizedProxySearch]);
+  }, [mainProxyGroup, normalizedProxySearch, selectableMainProxyOptions]);
+
+  useEffect(() => {
+    if (!proxySelectOpen || !serviceStatus?.running || filteredMainProxyOptions.length === 0) {
+      setProxyDelaysRefreshing(false);
+      return;
+    }
+
+    const optionsToMeasure = filteredMainProxyOptions.slice(0, MAX_PROXY_DELAY_OPTIONS);
+    let cancelled = false;
+
+    const refreshProxyDelays = async () => {
+      if (cancelled) return;
+      setProxyDelaysRefreshing(true);
+
+      const measured = await Promise.all(optionsToMeasure.map(async (name) => {
+        try {
+          const res = await proxyApi.checkDelay(name);
+          const delay = Number(res.data?.data?.delay);
+          return [name, Number.isFinite(delay) ? delay : 0] as const;
+        } catch {
+          return [name, 0] as const;
+        }
+      }));
+
+      if (cancelled) return;
+      setProxyDelays((prev) => {
+        const next = { ...prev };
+        for (const [name, delay] of measured) {
+          next[name] = delay;
+        }
+        return next;
+      });
+      setProxyDelaysRefreshing(false);
+    };
+
+    refreshProxyDelays();
+    const intervalId = window.setInterval(refreshProxyDelays, PROXY_DELAY_REFRESH_INTERVAL_MS);
+
+    return () => {
+      cancelled = true;
+      window.clearInterval(intervalId);
+      setProxyDelaysRefreshing(false);
+    };
+  }, [proxySelectOpen, serviceStatus?.running, filteredMainProxyOptions]);
 
   const handleRefreshActiveProxy = async () => {
     const activeTag = resolvedActiveProxyTag;
@@ -482,11 +593,35 @@ export default function Dashboard() {
                   <div className="flex items-center gap-2 min-w-0">
                     <span className="font-semibold text-base whitespace-nowrap">Main</span>
                     <Chip size="sm" variant="flat">{mainProxyGroup.now}</Chip>
+                    {getServerPortLabel(mainProxyGroup.now) && (
+                      <span className="text-xs text-gray-500 truncate">{getServerPortLabel(mainProxyGroup.now)}</span>
+                    )}
+                    {getLatestMeasuredDelay(mainProxyGroup.now) !== null && (
+                      <Chip
+                        size="sm"
+                        variant="flat"
+                        color={delayChipColor(getLatestMeasuredDelay(mainProxyGroup.now))}
+                      >
+                        {formatDelayLabel(getLatestMeasuredDelay(mainProxyGroup.now))}
+                      </Chip>
+                    )}
                   </div>
                   {isAutoMode && resolvedActiveProxyTag && resolvedActiveProxyTag !== mainProxyGroup.now && (
                     <div className="flex items-center gap-2 min-w-0">
                       <span className="font-semibold text-sm whitespace-nowrap text-gray-500">Current</span>
                       <Chip size="sm" variant="flat" color="primary">{resolvedActiveProxyTag}</Chip>
+                      {getServerPortLabel(resolvedActiveProxyTag) && (
+                        <span className="text-xs text-gray-500 truncate">{getServerPortLabel(resolvedActiveProxyTag)}</span>
+                      )}
+                      {getLatestMeasuredDelay(resolvedActiveProxyTag) !== null && (
+                        <Chip
+                          size="sm"
+                          variant="flat"
+                          color={delayChipColor(getLatestMeasuredDelay(resolvedActiveProxyTag))}
+                        >
+                          {formatDelayLabel(getLatestMeasuredDelay(resolvedActiveProxyTag))}
+                        </Chip>
+                      )}
                     </div>
                   )}
                 </div>
@@ -507,8 +642,9 @@ export default function Dashboard() {
               {(() => {
                 const activeTag = resolvedActiveProxyTag;
                 if (!activeTag) return null;
-                const health = healthResults[activeTag];
-                const siteResult: NodeSiteCheckResult | undefined = siteCheckResults[activeTag];
+                const serverPortLabel = getServerPortLabel(activeTag);
+                const health = healthResults[activeTag] || (serverPortLabel ? healthResults[serverPortLabel] : undefined);
+                const siteResult: NodeSiteCheckResult | undefined = siteCheckResults[activeTag] || (serverPortLabel ? siteCheckResults[serverPortLabel] : undefined);
                 if (!health && !siteResult) return null;
                 return (
                   <div className="flex flex-wrap gap-1">
@@ -544,6 +680,7 @@ export default function Dashboard() {
               <Select
                 size="lg"
                 selectedKeys={[mainProxyGroup.now]}
+                onOpenChange={setProxySelectOpen}
                 onChange={(e) => {
                   if (e.target.value) {
                     switchProxy(mainProxyGroup.name, e.target.value);
@@ -555,9 +692,31 @@ export default function Dashboard() {
                 classNames={{ trigger: 'min-h-14', value: 'text-base' }}
               >
                 {filteredMainProxyOptions.map((item) => (
-                  <SelectItem key={item}>{item}</SelectItem>
+                  <SelectItem key={item} textValue={item}>
+                    <div className="flex items-center justify-between gap-3">
+                      <div className="min-w-0">
+                        <p className="text-sm truncate">{item}</p>
+                        {getServerPortLabel(item) && (
+                          <p className="text-xs text-gray-500 truncate">{getServerPortLabel(item)}</p>
+                        )}
+                      </div>
+                      {getLatestMeasuredDelay(item) !== null && (
+                        <Chip size="sm" variant="flat" color={delayChipColor(getLatestMeasuredDelay(item))}>
+                          {formatDelayLabel(getLatestMeasuredDelay(item))}
+                        </Chip>
+                      )}
+                    </div>
+                  </SelectItem>
                 ))}
               </Select>
+
+              {proxySelectOpen && (
+                <p className="text-xs text-gray-500">
+                  {proxyDelaysRefreshing
+                    ? 'Refreshing ping...'
+                    : `Ping updates every ${Math.round(PROXY_DELAY_REFRESH_INTERVAL_MS / 1000)}s while selector is open`}
+                </p>
+              )}
 
               {!hasSearchMatches && (
                 <p className="text-sm text-gray-500">No proxies found for "{proxySearch.trim()}"</p>
