@@ -336,7 +336,13 @@ func (pm *ProbeManager) monitor(cmd *exec.Cmd, pid int) {
 func (pm *ProbeManager) validateProbeConfig(nodes []storage.Node, port int, geoPort int) ([]storage.Node, []BrokenNode, error) {
 	excluded := make(map[int]bool) // indices of broken nodes
 	var brokenNodes []BrokenNode
-	const maxIterations = 50
+	// Validation removes at least one broken node per successful iteration.
+	// With large subscriptions, a fixed cap (50) can stop early and abort health checks.
+	// Scale the cap with node count, while keeping a sane minimum.
+	maxIterations := len(nodes) + 2 // +1 for final successful pass, +1 safety margin
+	if maxIterations < 50 {
+		maxIterations = 50
+	}
 
 	// Regex for parsing probe outbound errors: outbound[N] or outbounds[N]
 	outboundRe := regexp.MustCompile(`outbounds?\[(\d+)\]\.?([^:]*?):\s*(.+)`)
@@ -598,4 +604,3 @@ func tagsEqual(a, b []string) bool {
 	}
 	return true
 }
-
