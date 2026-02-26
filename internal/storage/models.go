@@ -1,6 +1,9 @@
 package storage
 
-import "time"
+import (
+	"strings"
+	"time"
+)
 
 // NodeStatus represents the lifecycle status of a unified node
 type NodeStatus string
@@ -282,6 +285,9 @@ type Settings struct {
 	// Verification settings
 	VerificationInterval int `json:"verification_interval"` // verification interval in minutes, 0 to disable
 	ArchiveThreshold     int `json:"archive_threshold"`     // consecutive failures before archiving
+
+	// Proxy mode
+	ProxyMode string `json:"proxy_mode"` // rule, global, direct
 }
 
 // DefaultSettings returns default settings
@@ -309,7 +315,30 @@ func DefaultSettings() *Settings {
 		GithubProxy:          "",   // no proxy by default
 		VerificationInterval: 30,   // default 30 minutes
 		ArchiveThreshold:     10,   // default 10 consecutive failures
+		ProxyMode:            ProxyModeRule,
 	}
+}
+
+// Proxy mode constants
+const (
+	ProxyModeRule   = "rule"
+	ProxyModeGlobal = "global"
+	ProxyModeDirect = "direct"
+)
+
+// NormalizeProxyMode normalizes proxy mode string, falling back to "rule".
+func NormalizeProxyMode(mode string) string {
+	m := strings.ToLower(strings.TrimSpace(mode))
+	if IsValidProxyMode(m) {
+		return m
+	}
+	return ProxyModeRule
+}
+
+// IsValidProxyMode checks if the given mode is a valid proxy mode.
+func IsValidProxyMode(mode string) bool {
+	m := strings.ToLower(strings.TrimSpace(mode))
+	return m == ProxyModeRule || m == ProxyModeGlobal || m == ProxyModeDirect
 }
 
 // DefaultRuleGroups returns default rule groups

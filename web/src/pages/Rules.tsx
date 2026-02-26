@@ -21,11 +21,11 @@ import {
   Spinner,
   Tooltip,
 } from '@nextui-org/react';
-import { Shield, Globe, Tv, MessageCircle, Github, Bot, Apple, Monitor, Plus, Pencil, Trash2, CheckCircle, XCircle, RotateCcw } from 'lucide-react';
+import { Shield, Globe, Tv, MessageCircle, Github, Bot, Apple, Monitor, Plus, Pencil, Trash2, CheckCircle, XCircle, RotateCcw, AlertTriangle } from 'lucide-react';
 import { useStore } from '../store';
 import { ruleApi, ruleGroupApi, ruleSetApi, settingsApi } from '../api';
 import { toast } from '../components/Toast';
-import type { Rule, RuleGroup } from '../store';
+import type { Rule, RuleGroup, ProxyMode } from '../store';
 
 // Rule set validation result type
 interface ValidationResult {
@@ -118,6 +118,11 @@ export default function Rules() {
     addRule,
     updateRule,
     deleteRule,
+    proxyMode,
+    proxyModeRunning,
+    proxyModeSwitching,
+    fetchProxyMode,
+    setProxyMode,
   } = useStore();
 
   // Custom rule modal
@@ -163,6 +168,7 @@ export default function Rules() {
     fetchSettings();
     fetchFilters();
     fetchCountryGroups();
+    fetchProxyMode();
   }, []);
 
   // Validate rule sets helper
@@ -855,6 +861,51 @@ export default function Rules() {
       <div className="flex justify-between items-center">
         <h1 className="text-2xl font-bold text-gray-800 dark:text-white">Rule Management</h1>
       </div>
+
+      {/* Proxy Mode */}
+      <Card>
+        <CardBody className="gap-3">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div>
+              <h2 className="text-lg font-semibold">Proxy Mode</h2>
+              <p className="text-sm text-gray-500 dark:text-gray-400">
+                Режим маршрутизации трафика. Rule — по правилам, Global — весь через прокси, Direct — весь напрямую.
+                {!proxyModeRunning && (
+                  <span className="ml-1 text-warning-500">Сервис остановлен — режим применится при запуске.</span>
+                )}
+              </p>
+            </div>
+            <div className="flex gap-2">
+              {(['rule', 'global', 'direct'] as ProxyMode[]).map((mode) => (
+                <Button
+                  key={mode}
+                  size="sm"
+                  variant={proxyMode === mode ? 'solid' : 'bordered'}
+                  color={proxyMode === mode ? 'primary' : 'default'}
+                  isDisabled={proxyModeSwitching}
+                  isLoading={proxyModeSwitching && proxyMode !== mode}
+                  onPress={() => {
+                    if (proxyMode !== mode) setProxyMode(mode);
+                  }}
+                  className="capitalize"
+                >
+                  {mode}
+                </Button>
+              ))}
+            </div>
+          </div>
+          {proxyMode !== 'rule' && (
+            <div className="flex items-center gap-2 p-2 bg-warning-50 dark:bg-warning-900/20 border border-warning-200 dark:border-warning-800 rounded-lg text-warning-700 dark:text-warning-400 text-sm">
+              <AlertTriangle className="w-4 h-4 flex-shrink-0" />
+              <span>
+                {proxyMode === 'global'
+                  ? 'Режим Global — весь трафик идёт через прокси. Правила маршрутизации не применяются.'
+                  : 'Режим Direct — весь трафик идёт напрямую. Правила маршрутизации не применяются.'}
+              </span>
+            </div>
+          )}
+        </CardBody>
+      </Card>
 
       {/* Preset Rule Groups */}
       <Card>

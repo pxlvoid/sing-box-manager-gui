@@ -30,6 +30,7 @@ type Store interface {
 	// Settings
 	GetSettings() *Settings
 	UpdateSettings(settings *Settings) error
+	UpdateProxyMode(mode string) error
 
 	// Unified Nodes
 	GetNodes(status NodeStatus) []UnifiedNode

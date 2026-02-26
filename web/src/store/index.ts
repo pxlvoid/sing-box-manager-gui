@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { subscriptionApi, filterApi, ruleApi, ruleGroupApi, settingsApi, serviceApi, nodeApi, unifiedNodeApi, verificationApi, monitorApi, proxyApi, probeApi, measurementApi, pipelineApi } from '../api';
+import { subscriptionApi, filterApi, ruleApi, ruleGroupApi, settingsApi, serviceApi, nodeApi, unifiedNodeApi, verificationApi, monitorApi, proxyApi, probeApi, measurementApi, pipelineApi, proxyModeApi } from '../api';
 import { toast } from '../components/Toast';
 
 export interface NodeHealthResult {
@@ -243,7 +243,10 @@ export interface Settings {
   archive_threshold: number;     // Consecutive failures before archiving
   github_proxy: string;          // GitHub proxy address
   debug_api_enabled: boolean;    // Enable debug API for remote diagnostics
+  proxy_mode: ProxyMode;         // Proxy mode: rule, global, direct
 }
+
+export type ProxyMode = 'rule' | 'global' | 'direct';
 
 export interface ServiceStatus {
   running: boolean;
@@ -434,6 +437,14 @@ interface AppState {
   fetchProxyGroups: () => Promise<void>;
   switchProxy: (group: string, selected: string) => Promise<void>;
 
+  // Proxy mode operations
+  proxyMode: ProxyMode;
+  proxyModeRunning: boolean;
+  proxyModeSource: 'runtime' | 'settings';
+  proxyModeSwitching: boolean;
+  fetchProxyMode: () => Promise<void>;
+  setProxyMode: (mode: ProxyMode) => Promise<void>;
+
   // Pipeline event actions (used by SSE hook)
   addPipelineEvent: (type: string, message: string) => void;
   setVerificationProgress: (progress: VerificationProgress | null) => void;
@@ -478,6 +489,10 @@ export const useStore = create<AppState>((set, get) => ({
   siteCheckingNodes: [],
   siteCheckHistory: {},
   proxyGroups: [],
+  proxyMode: 'rule',
+  proxyModeRunning: false,
+  proxyModeSource: 'settings',
+  proxyModeSwitching: false,
   stabilityStats: {},
   unsupportedNodes: [],
   loading: false,
@@ -570,7 +585,12 @@ export const useStore = create<AppState>((set, get) => ({
   fetchSettings: async () => {
     try {
       const res = await settingsApi.get();
-      set({ settings: res.data.data });
+      const settings = res.data.data;
+      set({ settings });
+      // Fallback: sync proxyMode from settings if runtime data hasn't been fetched yet
+      if (settings?.proxy_mode && get().proxyModeSource === 'settings') {
+        set({ proxyMode: settings.proxy_mode });
+      }
     } catch (error) {
       console.error('Failed to fetch settings:', error);
     }
@@ -1336,6 +1356,46 @@ export const useStore = create<AppState>((set, get) => ({
     } catch (error: any) {
       console.error('Failed to switch proxy:', error);
       toast.error(error.response?.data?.error || 'Failed to switch proxy');
+    }
+  },
+
+  fetchProxyMode: async () => {
+    try {
+      const res = await proxyModeApi.get();
+      const data = res.data.data;
+      if (data) {
+        set({
+          proxyMode: data.mode || 'rule',
+          proxyModeRunning: data.running ?? false,
+          proxyModeSource: data.source || 'settings',
+        });
+      }
+    } catch (error) {
+      console.error('Failed to fetch proxy mode:', error);
+    }
+  },
+
+  setProxyMode: async (mode: ProxyMode) => {
+    set({ proxyModeSwitching: true });
+    try {
+      const res = await proxyModeApi.set(mode);
+      const data = res.data.data;
+      if (data) {
+        set({
+          proxyMode: data.mode || mode,
+          proxyModeRunning: data.running ?? false,
+        });
+      }
+      if (res.data.warning) {
+        toast.warning(res.data.warning);
+      } else {
+        toast.success(`Proxy mode: ${mode}`);
+      }
+    } catch (error: any) {
+      console.error('Failed to set proxy mode:', error);
+      toast.error(error.response?.data?.error || 'Failed to set proxy mode');
+    } finally {
+      set({ proxyModeSwitching: false });
     }
   },
 

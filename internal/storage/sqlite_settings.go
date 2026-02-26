@@ -16,7 +16,8 @@ func (s *SQLiteStore) GetSettings() *Settings {
 		final_outbound, ruleset_base_url,
 		auto_apply, subscription_interval,
 		github_proxy, debug_api_enabled,
-		verification_interval, archive_threshold
+		verification_interval, archive_threshold,
+		proxy_mode
 		FROM settings WHERE id = 1`)
 
 	settings := &Settings{}
@@ -33,6 +34,7 @@ func (s *SQLiteStore) GetSettings() *Settings {
 		&autoApply, &settings.SubscriptionInterval,
 		&settings.GithubProxy, &debugAPI,
 		&settings.VerificationInterval, &settings.ArchiveThreshold,
+		&settings.ProxyMode,
 	)
 	if err != nil {
 		return DefaultSettings()
@@ -44,6 +46,7 @@ func (s *SQLiteStore) GetSettings() *Settings {
 	settings.HttpAuth = httpAuth != 0
 	settings.AutoApply = autoApply != 0
 	settings.DebugAPIEnabled = debugAPI != 0
+	settings.ProxyMode = NormalizeProxyMode(settings.ProxyMode)
 
 	// Load host entries
 	settings.Hosts = s.getHostEntries()
@@ -69,8 +72,9 @@ func (s *SQLiteStore) UpdateSettings(settings *Settings) error {
 		final_outbound, ruleset_base_url,
 		auto_apply, subscription_interval,
 		github_proxy, debug_api_enabled,
-		verification_interval, archive_threshold)
-		VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		verification_interval, archive_threshold,
+		proxy_mode)
+		VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		settings.SingBoxPath, settings.ConfigPath,
 		settings.MixedPort, settings.MixedAddress, boolToInt(settings.TunEnabled), boolToInt(settings.AllowLAN),
 		settings.SocksPort, settings.SocksAddress, boolToInt(settings.SocksAuth), settings.SocksUsername, settings.SocksPassword,
@@ -81,7 +85,8 @@ func (s *SQLiteStore) UpdateSettings(settings *Settings) error {
 		settings.FinalOutbound, settings.RuleSetBaseURL,
 		boolToInt(settings.AutoApply), settings.SubscriptionInterval,
 		settings.GithubProxy, boolToInt(settings.DebugAPIEnabled),
-		settings.VerificationInterval, settings.ArchiveThreshold)
+		settings.VerificationInterval, settings.ArchiveThreshold,
+		NormalizeProxyMode(settings.ProxyMode))
 	if err != nil {
 		return err
 	}
@@ -105,6 +110,24 @@ func (s *SQLiteStore) UpdateSettings(settings *Settings) error {
 	}
 
 	return tx.Commit()
+}
+
+func (s *SQLiteStore) UpdateProxyMode(mode string) error {
+	normalized := NormalizeProxyMode(mode)
+	res, err := s.db.Exec(`UPDATE settings SET proxy_mode = ? WHERE id = 1`, normalized)
+	if err != nil {
+		return err
+	}
+	rows, err := res.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if rows == 0 {
+		defaults := DefaultSettings()
+		defaults.ProxyMode = normalized
+		return s.UpdateSettings(defaults)
+	}
+	return nil
 }
 
 func (s *SQLiteStore) getHostEntries() []HostEntry {

@@ -166,6 +166,12 @@ export const proxyApi = {
   checkDelay: (name: string) => api.get(`/proxy/delay/${encodeURIComponent(name)}`),
 };
 
+// Proxy mode API
+export const proxyModeApi = {
+  get: () => api.get('/proxy/mode'),
+  set: (mode: string) => api.put('/proxy/mode', { mode }),
+};
+
 // Debug API
 export const debugApi = {
   dump: () => api.get('/debug/dump'),
