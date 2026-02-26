@@ -384,6 +384,72 @@ func (s *SQLiteStore) GetRecentTrafficClients(limit int, lookback time.Duration)
 	return clients, nil
 }
 
+func (s *SQLiteStore) GetTrafficLifetimeStats() (*TrafficLifetimeStats, error) {
+	stats := &TrafficLifetimeStats{}
+
+	var firstSample sql.NullTime
+	var lastSample sql.NullTime
+	if err := s.db.QueryRow(
+		`SELECT COUNT(*) AS sample_count, MIN(timestamp), MAX(timestamp) FROM traffic_samples`,
+	).Scan(&stats.SampleCount, &firstSample, &lastSample); err != nil {
+		return nil, err
+	}
+	if firstSample.Valid {
+		t := firstSample.Time
+		stats.FirstSampleAt = &t
+	}
+	if lastSample.Valid {
+		t := lastSample.Time
+		stats.LastSampleAt = &t
+	}
+
+	if err := s.db.QueryRow(`SELECT COUNT(DISTINCT source_ip) FROM traffic_clients`).Scan(&stats.TotalClients); err != nil {
+		return nil, err
+	}
+
+	var totalUpload sql.NullInt64
+	var totalDownload sql.NullInt64
+	if err := s.db.QueryRow(`
+		WITH ordered AS (
+			SELECT
+				id,
+				timestamp,
+				upload_total,
+				download_total,
+				LAG(upload_total) OVER (ORDER BY timestamp, id) AS prev_upload_total,
+				LAG(download_total) OVER (ORDER BY timestamp, id) AS prev_download_total
+			FROM traffic_samples
+		)
+		SELECT
+			COALESCE(SUM(
+				CASE
+					WHEN prev_upload_total IS NULL THEN upload_total
+					WHEN upload_total >= prev_upload_total THEN upload_total - prev_upload_total
+					ELSE upload_total
+				END
+			), 0) AS total_upload,
+			COALESCE(SUM(
+				CASE
+					WHEN prev_download_total IS NULL THEN download_total
+					WHEN download_total >= prev_download_total THEN download_total - prev_download_total
+					ELSE download_total
+				END
+			), 0) AS total_download
+		FROM ordered;
+	`).Scan(&totalUpload, &totalDownload); err != nil {
+		return nil, err
+	}
+
+	if totalUpload.Valid {
+		stats.TotalUploadBytes = totalUpload.Int64
+	}
+	if totalDownload.Valid {
+		stats.TotalDownloadBytes = totalDownload.Int64
+	}
+
+	return stats, nil
+}
+
 func (s *SQLiteStore) latestTrafficSampleID() (int64, error) {
 	var sampleID int64
 	err := s.db.QueryRow(`SELECT id FROM traffic_samples ORDER BY timestamp DESC LIMIT 1`).Scan(&sampleID)

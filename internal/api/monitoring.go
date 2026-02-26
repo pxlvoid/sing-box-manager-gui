@@ -386,6 +386,28 @@ func (s *Server) getMonitoringOverview(c *gin.Context) {
 	})
 }
 
+func (s *Server) getMonitoringLifetimeStats(c *gin.Context) {
+	stats, err := s.store.GetTrafficLifetimeStats()
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	if stats == nil {
+		stats = &storage.TrafficLifetimeStats{}
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"data": gin.H{
+			"sample_count":         stats.SampleCount,
+			"total_clients":        stats.TotalClients,
+			"total_upload_bytes":   stats.TotalUploadBytes,
+			"total_download_bytes": stats.TotalDownloadBytes,
+			"total_traffic_bytes":  stats.TotalUploadBytes + stats.TotalDownloadBytes,
+			"first_sample_at":      stats.FirstSampleAt,
+			"last_sample_at":       stats.LastSampleAt,
+		},
+	})
+}
+
 func (s *Server) getMonitoringHistory(c *gin.Context) {
 	limit := 120
 	if raw := strings.TrimSpace(c.Query("limit")); raw != "" {

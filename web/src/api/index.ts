@@ -180,6 +180,7 @@ export const proxyModeApi = {
 // Traffic monitoring API
 export const monitoringApi = {
   getOverview: () => api.get('/monitoring/overview'),
+  getLifetime: () => api.get('/monitoring/lifetime'),
   getHistory: (limit: number = 120) => api.get('/monitoring/history', { params: { limit } }),
   getClients: (limit: number = 200) => api.get('/monitoring/clients', { params: { limit } }),
   getRecentClients: (limit: number = 300, hours: number = 24) =>

@@ -8,6 +8,30 @@ import { shortSiteLabel } from '../features/nodes/types';
 import { serviceApi, configApi, monitoringApi } from '../api';
 import { toast } from '../components/Toast';
 
+interface WSTrafficPayload {
+  up?: number | string;
+  down?: number | string;
+  error?: unknown;
+}
+
+interface WSConnectionsPayload {
+  connections?: Array<{ metadata?: { sourceIP?: string } }>;
+  error?: unknown;
+}
+
+function toWebSocketURL(path: string): string {
+  const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+  return `${protocol}//${window.location.host}${path}`;
+}
+
+function toNumber(value: unknown): number {
+  if (typeof value === 'number' && Number.isFinite(value)) return value;
+  if (typeof value === 'string') {
+    const parsed = Number(value);
+    if (Number.isFinite(parsed)) return parsed;
+  }
+  return 0;
+}
 
 export default function Dashboard() {
   const navigate = useNavigate();
@@ -100,6 +124,90 @@ export default function Dashboard() {
       fetchTrafficOverview();
     }, 5000);
     return () => clearInterval(interval);
+  }, []);
+
+  useEffect(() => {
+    let ws: WebSocket | null = null;
+    let retryTimer: number | null = null;
+    let closed = false;
+
+    const connect = () => {
+      ws = new WebSocket(toWebSocketURL('/api/monitoring/ws/traffic'));
+      ws.onclose = () => {
+        if (!closed) {
+          retryTimer = window.setTimeout(connect, 3000);
+        }
+      };
+      ws.onerror = () => ws?.close();
+      ws.onmessage = (event) => {
+        try {
+          const data = JSON.parse(event.data) as WSTrafficPayload;
+          if (!data || typeof data !== 'object' || 'error' in data) return;
+          if (!('up' in data) || !('down' in data)) return;
+
+          const up = toNumber(data.up);
+          const down = toNumber(data.down);
+          setTrafficOverview((prev) => ({
+            ...prev,
+            up_bps: up,
+            down_bps: down,
+          }));
+        } catch (error) {
+          console.error('Failed to parse dashboard traffic websocket payload:', error);
+        }
+      };
+    };
+
+    connect();
+    return () => {
+      closed = true;
+      if (retryTimer !== null) window.clearTimeout(retryTimer);
+      ws?.close();
+    };
+  }, []);
+
+  useEffect(() => {
+    let ws: WebSocket | null = null;
+    let retryTimer: number | null = null;
+    let closed = false;
+
+    const connect = () => {
+      ws = new WebSocket(toWebSocketURL('/api/monitoring/ws/connections?interval=1000'));
+      ws.onclose = () => {
+        if (!closed) {
+          retryTimer = window.setTimeout(connect, 3000);
+        }
+      };
+      ws.onerror = () => ws?.close();
+      ws.onmessage = (event) => {
+        try {
+          const data = JSON.parse(event.data) as WSConnectionsPayload;
+          if (!data || typeof data !== 'object' || 'error' in data) return;
+
+          const connections = Array.isArray(data.connections) ? data.connections : [];
+          const clients = new Set<string>();
+          for (const conn of connections) {
+            const sourceIP = conn?.metadata?.sourceIP?.trim();
+            clients.add(sourceIP || 'unknown');
+          }
+
+          setTrafficOverview((prev) => ({
+            ...prev,
+            active_connections: connections.length,
+            client_count: clients.size,
+          }));
+        } catch (error) {
+          console.error('Failed to parse dashboard connections websocket payload:', error);
+        }
+      };
+    };
+
+    connect();
+    return () => {
+      closed = true;
+      if (retryTimer !== null) window.clearTimeout(retryTimer);
+      ws?.close();
+    };
   }, []);
 
   const handleStart = async () => {

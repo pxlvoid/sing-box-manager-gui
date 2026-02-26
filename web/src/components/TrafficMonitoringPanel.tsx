@@ -25,6 +25,16 @@ interface MonitoringOverview {
   memory_oslimit: number;
 }
 
+interface MonitoringLifetimeStats {
+  sample_count: number;
+  total_clients: number;
+  total_upload_bytes: number;
+  total_download_bytes: number;
+  total_traffic_bytes: number;
+  first_sample_at?: string;
+  last_sample_at?: string;
+}
+
 interface MonitoringClient {
   source_ip: string;
   last_seen?: string;
@@ -80,6 +90,14 @@ const defaultOverview: MonitoringOverview = {
   client_count: 0,
   memory_inuse: 0,
   memory_oslimit: 0,
+};
+
+const defaultLifetime: MonitoringLifetimeStats = {
+  sample_count: 0,
+  total_clients: 0,
+  total_upload_bytes: 0,
+  total_download_bytes: 0,
+  total_traffic_bytes: 0,
 };
 
 function toWebSocketURL(path: string): string {
@@ -305,6 +323,7 @@ function mergeClients(recent: MonitoringClient[], active: MonitoringClient[], no
 export default function TrafficMonitoringPanel() {
   const [loading, setLoading] = useState(true);
   const [overview, setOverview] = useState<MonitoringOverview>(defaultOverview);
+  const [lifetime, setLifetime] = useState<MonitoringLifetimeStats>(defaultLifetime);
   const [history, setHistory] = useState<TrafficHistoryPoint[]>([]);
   const [activeClients, setActiveClients] = useState<MonitoringClient[]>([]);
   const [recentClients, setRecentClients] = useState<MonitoringClient[]>([]);
@@ -324,17 +343,28 @@ export default function TrafficMonitoringPanel() {
     }
   }, []);
 
+  const fetchLifetime = useCallback(async () => {
+    try {
+      const res = await monitoringApi.getLifetime();
+      setLifetime({ ...defaultLifetime, ...(res.data?.data || {}) });
+    } catch (error) {
+      console.error('Failed to fetch lifetime monitoring stats:', error);
+    }
+  }, []);
+
   const fetchInitial = useCallback(async () => {
     try {
       setLoading(true);
-      const [overviewRes, historyRes, recentClientsRes, resourcesRes] = await Promise.all([
+      const [overviewRes, lifetimeRes, historyRes, recentClientsRes, resourcesRes] = await Promise.all([
         monitoringApi.getOverview(),
+        monitoringApi.getLifetime(),
         monitoringApi.getHistory(120),
         monitoringApi.getRecentClients(400, 24),
         monitoringApi.getResources(300),
       ]);
 
       setOverview({ ...defaultOverview, ...(overviewRes.data?.data || {}) });
+      setLifetime({ ...defaultLifetime, ...(lifetimeRes.data?.data || {}) });
       setHistory(historyRes.data?.data || []);
       setRecentClients(recentClientsRes.data?.data || []);
       setResources(resourcesRes.data?.data || []);
@@ -352,9 +382,10 @@ export default function TrafficMonitoringPanel() {
   useEffect(() => {
     const timer = window.setInterval(() => {
       fetchRecentClients();
+      fetchLifetime();
     }, 15000);
     return () => window.clearInterval(timer);
-  }, [fetchRecentClients]);
+  }, [fetchRecentClients, fetchLifetime]);
 
   useEffect(() => {
     let ws: WebSocket | null = null;
@@ -598,6 +629,35 @@ export default function TrafficMonitoringPanel() {
                 </CardBody>
               </Card>
             </div>
+
+            <Card className="shadow-none border border-gray-200 dark:border-gray-700">
+              <CardHeader>
+                <h3 className="font-semibold">System Totals (all time)</h3>
+              </CardHeader>
+              <CardBody className="pt-0">
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 text-sm">
+                  <div>
+                    <p className="text-xs text-gray-500">Clients seen</p>
+                    <p className="font-semibold">{lifetime.total_clients}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-gray-500">Total upload</p>
+                    <p className="font-semibold">{formatBytes(lifetime.total_upload_bytes)}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-gray-500">Total download</p>
+                    <p className="font-semibold">{formatBytes(lifetime.total_download_bytes)}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-gray-500">Total traffic</p>
+                    <p className="font-semibold">{formatBytes(lifetime.total_traffic_bytes)}</p>
+                  </div>
+                </div>
+                <div className="mt-3 text-xs text-gray-500">
+                  Window: {formatDateTime(lifetime.first_sample_at)} → {formatDateTime(lifetime.last_sample_at)} · samples: {lifetime.sample_count}
+                </div>
+              </CardBody>
+            </Card>
 
             <div className="h-72 w-full rounded-lg border border-gray-200 dark:border-gray-700 p-3">
               <ResponsiveContainer width="100%" height="100%">

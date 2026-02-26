@@ -313,6 +313,7 @@ func (s *Server) setupRoutes() {
 
 		// Monitoring
 		api.GET("/monitoring/overview", s.getMonitoringOverview)
+		api.GET("/monitoring/lifetime", s.getMonitoringLifetimeStats)
 		api.GET("/monitoring/history", s.getMonitoringHistory)
 		api.GET("/monitoring/clients", s.getMonitoringClients)
 		api.GET("/monitoring/clients/recent", s.getMonitoringRecentClients)

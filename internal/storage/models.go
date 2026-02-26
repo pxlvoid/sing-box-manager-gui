@@ -201,6 +201,16 @@ type ClientResourceSnapshot struct {
 	ProxyChain        string    `json:"proxy_chain"`
 }
 
+// TrafficLifetimeStats represents global monitoring totals across all persisted samples.
+type TrafficLifetimeStats struct {
+	SampleCount        int64      `json:"sample_count"`
+	TotalClients       int64      `json:"total_clients"`
+	TotalUploadBytes   int64      `json:"total_upload_bytes"`
+	TotalDownloadBytes int64      `json:"total_download_bytes"`
+	FirstSampleAt      *time.Time `json:"first_sample_at,omitempty"`
+	LastSampleAt       *time.Time `json:"last_sample_at,omitempty"`
+}
+
 // HealthStats represents aggregated health statistics for a node
 type HealthStats struct {
 	TotalChecks   int     `json:"total_checks"`
