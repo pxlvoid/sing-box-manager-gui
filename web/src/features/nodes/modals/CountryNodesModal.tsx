@@ -68,7 +68,7 @@ export default function CountryNodesModal({
               {countryNodes.map((node, idx) => (
                 <div
                   key={idx}
-                  className="flex items-center gap-2 p-2 bg-gray-50 dark:bg-gray-800 rounded text-sm"
+                  className="flex flex-wrap items-center gap-2 p-2 bg-gray-50 dark:bg-gray-800 rounded text-sm"
                 >
                   <span className="truncate flex-1 min-w-0">
                     <span className="block truncate">{node.tag}</span>

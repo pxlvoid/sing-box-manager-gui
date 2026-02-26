@@ -16,6 +16,8 @@ import {
 } from '@nextui-org/react';
 import { Search, Trash2, RotateCcw, Archive } from 'lucide-react';
 import type { UnifiedNode, GeoData } from '../../../store';
+import MobileNodeCard from '../components/MobileNodeCard';
+import useIsMobile from '../../../hooks/useIsMobile';
 
 interface ArchivedNodesTabProps {
   nodes: UnifiedNode[];
@@ -36,6 +38,7 @@ function countryCodeToEmoji(code: string): string {
 }
 
 export default function ArchivedNodesTab({ nodes, geoData, onUnarchive, onDelete }: ArchivedNodesTabProps) {
+  const isMobile = useIsMobile();
   const [searchQuery, setSearchQuery] = useState('');
   const [page, setPage] = useState(1);
 
@@ -81,7 +84,7 @@ export default function ArchivedNodesTab({ nodes, geoData, onUnarchive, onDelete
             setPage(1);
           }}
           startContent={<Search className="w-3.5 h-3.5 text-gray-400" />}
-          className="w-64"
+          className="w-full sm:w-64"
           isClearable
           onClear={() => {
             setSearchQuery('');
@@ -101,7 +104,28 @@ export default function ArchivedNodesTab({ nodes, geoData, onUnarchive, onDelete
             <p className="text-gray-500">No archived nodes match your search.</p>
           </CardBody>
         </Card>
+      ) : isMobile ? (
+        /* Mobile: card list */
+        <div className="space-y-2">
+          {paginatedNodes.map((node) => (
+            <MobileNodeCard
+              key={node.id}
+              node={node}
+              geoData={geoData}
+              variant="archived"
+              onUnarchive={onUnarchive}
+              onDelete={onDelete}
+            />
+          ))}
+          {totalPages > 1 && (
+            <div className="flex justify-center pt-2">
+              <Pagination size="sm" total={totalPages} page={safePage} onChange={setPage} />
+            </div>
+          )}
+        </div>
       ) : (
+        /* Desktop: table */
+        <div className="overflow-x-auto -mx-3 px-3">
         <Table
           aria-label="Archived nodes table"
           removeWrapper
@@ -143,7 +167,7 @@ export default function ArchivedNodesTab({ nodes, geoData, onUnarchive, onDelete
                   </Tooltip>
                 </TableCell>
                 <TableCell>
-                  <span className="font-medium truncate max-w-[300px]">{node.tag}</span>
+                  <span className="font-medium truncate block max-w-[180px] sm:max-w-[300px]">{node.tag}</span>
                 </TableCell>
                 <TableCell>
                   <Chip size="sm" variant="flat">{node.type}</Chip>
@@ -190,6 +214,7 @@ export default function ArchivedNodesTab({ nodes, geoData, onUnarchive, onDelete
             })}
           </TableBody>
         </Table>
+        </div>
       )}
     </div>
   );

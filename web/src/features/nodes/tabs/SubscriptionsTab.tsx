@@ -104,7 +104,7 @@ export default function SubscriptionsTab({
             </div>
           </CardHeader>
           <CardBody className="pt-0">
-            <div className="flex items-center gap-4 text-sm text-gray-500">
+            <div className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-4 text-sm text-gray-500">
               <span>Updated: {new Date(sub.updated_at).toLocaleString()}</span>
               {sub.expire_at && (
                 <span>Expires: {new Date(sub.expire_at).toLocaleDateString()}</span>

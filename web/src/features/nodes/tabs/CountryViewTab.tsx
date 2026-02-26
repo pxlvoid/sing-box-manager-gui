@@ -23,7 +23,7 @@ export default function CountryViewTab({
   }
 
   return (
-    <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 mt-4">
+    <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3 sm:gap-4 mt-4">
       {countryGroups.map((group) => (
         <Card
           key={group.code}
@@ -31,11 +31,11 @@ export default function CountryViewTab({
           className="hover:shadow-md transition-shadow cursor-pointer"
           onPress={() => onCountryClick(group)}
         >
-          <CardBody className="flex flex-row items-center gap-3">
-            <span className="text-3xl">{group.emoji}</span>
-            <div>
-              <h3 className="font-semibold">{group.name}</h3>
-              <p className="text-sm text-gray-500">{group.node_count} nodes</p>
+          <CardBody className="flex flex-row items-center gap-2 sm:gap-3 p-3 sm:p-4">
+            <span className="text-2xl sm:text-3xl">{group.emoji}</span>
+            <div className="min-w-0">
+              <h3 className="font-semibold text-sm sm:text-base truncate">{group.name}</h3>
+              <p className="text-xs sm:text-sm text-gray-500">{group.node_count} nodes</p>
             </div>
           </CardBody>
         </Card>

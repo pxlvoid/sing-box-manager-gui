@@ -76,17 +76,17 @@ export default function Layout({ children }: LayoutProps) {
   return (
     <div className="flex min-h-screen bg-gray-50 dark:bg-gray-900">
       {/* Mobile top bar */}
-      <div className="fixed top-0 left-0 right-0 z-40 flex items-center justify-between px-4 py-3 bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 md:hidden">
-        <h1 className="text-lg font-bold text-gray-800 dark:text-white flex items-center gap-2">
-          <Activity className="w-5 h-5 text-primary" />
-          SingBox Manager
-        </h1>
+      <div className="fixed top-0 left-0 right-0 z-40 flex items-center gap-3 px-4 py-3 bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 md:hidden">
         <button
           onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
           className="p-2 rounded-lg text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
         >
           {mobileMenuOpen ? <X className="w-6 h-6" /> : <Menu className="w-6 h-6" />}
         </button>
+        <h1 className="text-lg font-bold text-gray-800 dark:text-white flex items-center gap-2">
+          <Activity className="w-5 h-5 text-primary" />
+          SingBox Manager
+        </h1>
       </div>
 
       {/* Mobile sidebar overlay */}

@@ -20,6 +20,8 @@ import type { NodeHealthResult, HealthCheckMode, NodeSiteCheckResult } from '../
 import { SITE_CHECK_TARGETS } from '../types';
 import NodeHealthChips from '../components/NodeHealthChips';
 import GeoChip from '../components/GeoChip';
+import MobileNodeCard from '../components/MobileNodeCard';
+import useIsMobile from '../../../hooks/useIsMobile';
 const PAGE_SIZE = 50;
 
 function countryCodeToEmoji(code: string): string {
@@ -60,6 +62,7 @@ export default function VerifiedNodesTab({
   onDelete,
   onEdit,
 }: VerifiedNodesTabProps) {
+  const isMobile = useIsMobile();
   const [searchQuery, setSearchQuery] = useState('');
   const [page, setPage] = useState(1);
 
@@ -115,7 +118,7 @@ export default function VerifiedNodesTab({
             setPage(1);
           }}
           startContent={<Search className="w-3.5 h-3.5 text-gray-400" />}
-          className="w-64"
+          className="w-full sm:w-64"
           isClearable
           onClear={() => {
             setSearchQuery('');
@@ -135,7 +138,34 @@ export default function VerifiedNodesTab({
             <p className="text-gray-500">No nodes match current search.</p>
           </CardBody>
         </Card>
+      ) : isMobile ? (
+        /* Mobile: card list */
+        <div className="space-y-2">
+          {paginatedNodes.map((node) => (
+              <MobileNodeCard
+                key={node.id}
+                node={node}
+                geoData={geoData}
+                variant="verified"
+                healthResults={healthResults}
+                healthMode={healthMode}
+                healthCheckingNodes={healthCheckingNodes}
+                siteCheckResults={siteCheckResults}
+                onHealthCheck={checkSingleNodeHealth}
+                onDemote={onDemote}
+                onDelete={onDelete}
+                onEdit={onEdit}
+              />
+          ))}
+          {totalPages > 1 && (
+            <div className="flex justify-center pt-2">
+              <Pagination size="sm" total={totalPages} page={safePage} onChange={setPage} />
+            </div>
+          )}
+        </div>
       ) : (
+        /* Desktop: table */
+        <div className="overflow-x-auto -mx-3 px-3">
         <Table
           aria-label="Verified nodes table"
           removeWrapper
@@ -178,7 +208,7 @@ export default function VerifiedNodesTab({
                     </Tooltip>
                   </TableCell>
                   <TableCell>
-                    <span className="font-medium truncate max-w-[300px]">
+                    <span className="font-medium truncate block max-w-[180px] sm:max-w-[300px]">
                       {node.tag}
                     </span>
                   </TableCell>
@@ -261,6 +291,7 @@ export default function VerifiedNodesTab({
             })}
           </TableBody>
         </Table>
+        </div>
       )}
     </div>
   );

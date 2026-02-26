@@ -365,7 +365,7 @@ export default function Logs() {
               ))
             )}
           </div>
-          <div className="mt-2 text-sm text-gray-500 flex justify-between">
+          <div className="mt-2 text-xs sm:text-sm text-gray-500 flex flex-col sm:flex-row justify-between gap-1">
             <span>
               {filteredLogs.length}/{currentLogs.length} lines (loaded: {lineLimit})
             </span>

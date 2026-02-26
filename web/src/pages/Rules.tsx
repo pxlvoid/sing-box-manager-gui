@@ -859,7 +859,7 @@ export default function Rules() {
 
   return (
     <div className="space-y-6">
-      <div className="flex justify-between items-center">
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
         <h1 className="text-2xl font-bold text-gray-800 dark:text-white">Rule Management</h1>
       </div>
 

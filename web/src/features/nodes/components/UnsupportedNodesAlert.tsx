@@ -22,7 +22,7 @@ export default function UnsupportedNodesAlert({
   return (
     <Card className="border border-warning-200 bg-warning-50 dark:bg-warning-50/10">
       <CardBody>
-        <div className="flex flex-row justify-between items-center gap-3">
+        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
           <div className="flex gap-3 items-center">
             <AlertTriangle className="w-5 h-5 text-warning-600 shrink-0" />
             <p className="font-semibold text-warning-700 dark:text-warning-500 text-sm">

@@ -540,7 +540,7 @@ export default function Settings() {
   const visibleSections = SECTIONS.filter(s => s.id !== 'daemon' || daemonStatus?.supported);
 
   return (
-    <div className="flex gap-6">
+    <div className="flex gap-4 sm:gap-6">
       {/* Sticky sidebar navigation — desktop */}
       <nav className="hidden lg:block w-48 shrink-0">
         <div className="sticky top-4 space-y-1">
@@ -565,8 +565,8 @@ export default function Settings() {
       </nav>
 
       {/* Mobile horizontal nav */}
-      <div className="lg:hidden fixed top-14 left-0 right-0 z-30 bg-background/80 backdrop-blur-md border-b border-divider px-4 py-2">
-        <div className="flex gap-2 overflow-x-auto no-scrollbar">
+      <div className="lg:hidden fixed top-14 left-0 right-0 z-30 bg-background/80 backdrop-blur-md border-b border-divider px-4 py-2 md:left-64">
+        <div className="flex gap-2 overflow-x-auto no-scrollbar pb-1">
           {visibleSections.map((section) => (
             <Chip
               key={section.id}
@@ -1020,7 +1020,7 @@ export default function Settings() {
                     {formData.hosts.map((host) => (
                       <div
                         key={host.id}
-                        className="flex items-center justify-between p-3 bg-default-100 rounded-lg mb-2"
+                        className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 p-3 bg-default-100 rounded-lg mb-2"
                       >
                         <div className="flex-1">
                           <div className="flex items-center gap-2">
@@ -1060,7 +1060,7 @@ export default function Settings() {
                     {systemHosts.map((host) => (
                       <div
                         key={host.id}
-                        className="flex items-center justify-between p-3 bg-default-100 rounded-lg mb-2"
+                        className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 p-3 bg-default-100 rounded-lg mb-2"
                       >
                         <div className="flex-1">
                           <div className="flex items-center gap-2">

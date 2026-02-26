@@ -20,6 +20,8 @@ import type { UnifiedNode, NodeHealthResult, HealthCheckMode, NodeSiteCheckResul
 import { spKey, SITE_CHECK_TARGETS } from '../types';
 import NodeHealthChips from '../components/NodeHealthChips';
 import GeoChip from '../components/GeoChip';
+import MobileNodeCard from '../components/MobileNodeCard';
+import useIsMobile from '../../../hooks/useIsMobile';
 
 const ITEMS_PER_PAGE = 50;
 
@@ -67,6 +69,7 @@ export default function PendingNodesTab({
   onBulkPromote,
   onBulkArchive,
 }: PendingNodesTabProps) {
+  const isMobile = useIsMobile();
   const [searchQuery, setSearchQuery] = useState('');
   const [page, setPage] = useState(1);
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
@@ -153,7 +156,7 @@ export default function PendingNodesTab({
             setPage(1);
           }}
           startContent={<Search className="w-3.5 h-3.5 text-gray-400" />}
-          className="w-56"
+          className="w-full sm:w-56"
           isClearable
           onClear={() => {
             setSearchQuery('');
@@ -169,7 +172,7 @@ export default function PendingNodesTab({
 
       {/* Bulk actions bar */}
       {selectedIds.size > 0 && (
-        <div className="flex items-center gap-2 p-2 bg-primary-50 dark:bg-primary-900/20 rounded-lg">
+        <div className="flex flex-wrap items-center gap-2 p-2 bg-primary-50 dark:bg-primary-900/20 rounded-lg">
           <span className="text-sm font-medium">{selectedIds.size} selected</span>
           <Button
             size="sm"
@@ -210,14 +213,53 @@ export default function PendingNodesTab({
         </div>
       )}
 
-      {/* Table */}
+      {/* Table / Cards */}
       {filteredNodes.length === 0 ? (
         <Card>
           <CardBody className="py-8 text-center">
             <p className="text-gray-500">No nodes match current search.</p>
           </CardBody>
         </Card>
+      ) : isMobile ? (
+        /* Mobile: card list with select-all */
+        <div className="space-y-2">
+          <div className="flex items-center gap-2 px-1">
+            <Checkbox
+              size="sm"
+              isSelected={allPageSelected}
+              isIndeterminate={somePageSelected && !allPageSelected}
+              onValueChange={handleToggleSelectAll}
+            />
+            <span className="text-xs text-gray-500">Select all on page</span>
+          </div>
+          {paginatedNodes.map((node) => (
+            <MobileNodeCard
+              key={node.id}
+              node={node}
+              geoData={geoData}
+              variant="pending"
+              healthResults={healthResults}
+              healthMode={healthMode}
+              healthCheckingNodes={healthCheckingNodes}
+              siteCheckResults={siteCheckResults}
+              onHealthCheck={checkSingleNodeHealth}
+              selected={selectedIds.has(node.id)}
+              onToggleSelect={handleToggleSelect}
+              onPromote={onPromote}
+              onArchive={onArchive}
+              onDelete={onDelete}
+              onEdit={onEdit}
+            />
+          ))}
+          {totalPages > 1 && (
+            <div className="flex justify-center pt-2">
+              <Pagination size="sm" total={totalPages} page={safePage} onChange={setPage} />
+            </div>
+          )}
+        </div>
       ) : (
+        /* Desktop: table */
+        <div className="overflow-x-auto -mx-3 px-3">
         <Table
           aria-label="Pending nodes table"
           removeWrapper
@@ -279,7 +321,7 @@ export default function PendingNodesTab({
                     </Tooltip>
                   </TableCell>
                   <TableCell>
-                    <span className="font-medium truncate max-w-[300px]">{node.tag}</span>
+                    <span className="font-medium truncate block max-w-[180px] sm:max-w-[300px]">{node.tag}</span>
                   </TableCell>
                   <TableCell>
                     <Chip size="sm" variant="flat">{node.type}</Chip>
@@ -371,6 +413,7 @@ export default function PendingNodesTab({
             })}
           </TableBody>
         </Table>
+        </div>
       )}
     </div>
   );
