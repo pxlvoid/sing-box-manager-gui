@@ -880,6 +880,21 @@ export default function Settings() {
             value={String(formData.subscription_interval)}
             onChange={(e) => setFormData({ ...formData, subscription_interval: parseInt(e.target.value) || 0 })}
           />
+          <Input
+            type="number"
+            min={1}
+            label="Archive Threshold (failures)"
+            placeholder="10"
+            description="Pending nodes with failures >= threshold are archived before verification checks"
+            value={String(formData.archive_threshold ?? 10)}
+            onChange={(e) => {
+              const parsed = parseInt(e.target.value, 10);
+              setFormData({
+                ...formData,
+                archive_threshold: Number.isFinite(parsed) && parsed > 0 ? parsed : 10,
+              });
+            }}
+          />
         </CardBody>
       </Card>
 

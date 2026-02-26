@@ -58,7 +58,11 @@ func (s *Server) runVerificationWithTagFilter(tagSet map[string]struct{}) {
 		})
 	}()
 
+	configChanged := false
 	pendingNodes, verifiedNodes := s.collectVerificationNodes(tagSet)
+
+	// Archive pending nodes that already exceeded threshold before any probe checks.
+	pendingNodes = s.archiveThresholdExceededPendingNodes(pendingNodes, archiveThreshold, &vlog, &configChanged)
 
 	if len(pendingNodes) == 0 && len(verifiedNodes) == 0 {
 		return
@@ -87,7 +91,6 @@ func (s *Server) runVerificationWithTagFilter(tagSet map[string]struct{}) {
 
 	// 0. Pre-validate: run probe config validation to detect broken nodes
 	//    and archive them immediately before health checks.
-	configChanged := false
 	s.archiveBrokenNodes(allCheckNodes, tagToUnified, &vlog, &configChanged)
 
 	// Re-fetch nodes after archiving broken ones (they may have changed status)
@@ -272,6 +275,45 @@ func (s *Server) runVerificationWithTagFilter(tagSet map[string]struct{}) {
 			logger.Printf("[verifier] Config auto-applied")
 		}
 	}
+}
+
+func (s *Server) archiveThresholdExceededPendingNodes(
+	pendingNodes []storage.UnifiedNode,
+	archiveThreshold int,
+	vlog *storage.VerificationLog,
+	configChanged *bool,
+) []storage.UnifiedNode {
+	if archiveThreshold <= 0 || len(pendingNodes) == 0 {
+		return pendingNodes
+	}
+
+	filtered := make([]storage.UnifiedNode, 0, len(pendingNodes))
+	for _, pn := range pendingNodes {
+		if pn.ConsecutiveFailures < archiveThreshold {
+			filtered = append(filtered, pn)
+			continue
+		}
+
+		if err := s.store.ArchiveNode(pn.ID); err != nil {
+			logger.Printf("[verifier] Failed to archive threshold-exceeded node %d: %v", pn.ID, err)
+			filtered = append(filtered, pn)
+			continue
+		}
+
+		vlog.PendingArchived++
+		*configChanged = true
+
+		s.eventBus.Publish("verify:node_archived", map[string]interface{}{
+			"tag":         pn.Tag,
+			"server":      pn.Server,
+			"server_port": pn.ServerPort,
+			"failures":    pn.ConsecutiveFailures,
+			"reason":      "threshold exceeded before check",
+			"timestamp":   time.Now().Format(time.RFC3339),
+		})
+	}
+
+	return filtered
 }
 
 func (s *Server) collectVerificationNodes(tagSet map[string]struct{}) ([]storage.UnifiedNode, []storage.UnifiedNode) {
