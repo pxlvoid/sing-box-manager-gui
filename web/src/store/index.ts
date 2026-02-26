@@ -1316,9 +1316,9 @@ export const useStore = create<AppState>((set, get) => ({
         }
       }
 
-      // Merge: don't overwrite existing (manual) results that are more recent
-      const mergedHealth = { ...newHealthResults, ...state.healthResults };
-      const mergedSites = { ...newSiteResults, ...state.siteCheckResults };
+      // Backend returns latest persisted measurements; prefer them over cached local values.
+      const mergedHealth = { ...state.healthResults, ...newHealthResults };
+      const mergedSites = { ...state.siteCheckResults, ...newSiteResults };
 
       set({
         healthResults: mergedHealth,

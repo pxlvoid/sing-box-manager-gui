@@ -175,6 +175,29 @@ export default function Dashboard() {
   const totalNodes = nodeCounts.pending + nodeCounts.verified + nodeCounts.archived;
   const enabledSubs = subscriptions.filter(sub => sub.enabled).length;
   const mainProxyGroup = proxyGroups.find((group) => group.name.toLowerCase() === 'proxy');
+  const proxyGroupsByName = useMemo(
+    () => new Map(proxyGroups.map((group) => [group.name, group])),
+    [proxyGroups],
+  );
+  const selectedMainProxyGroup = useMemo(() => {
+    if (!mainProxyGroup?.now) return null;
+    return proxyGroupsByName.get(mainProxyGroup.now) || null;
+  }, [mainProxyGroup?.now, proxyGroupsByName]);
+  const resolvedActiveProxyTag = useMemo(() => {
+    if (!mainProxyGroup?.now) return '';
+    let current = mainProxyGroup.now;
+    const visited = new Set<string>();
+
+    while (current && !visited.has(current)) {
+      visited.add(current);
+      const group = proxyGroupsByName.get(current);
+      if (!group?.now || group.now === current) break;
+      current = group.now;
+    }
+    return current;
+  }, [mainProxyGroup?.now, proxyGroupsByName]);
+  const isAutoMode = (selectedMainProxyGroup?.type || '').toLowerCase() === 'urltest'
+    || (mainProxyGroup?.now || '').toLowerCase() === 'auto';
   const qrImageUrl = qrLink ? `https://quickchart.io/qr?text=${encodeURIComponent(qrLink)}&size=260` : '';
 
   const normalizedProxySearch = proxySearch.trim().toLowerCase();
@@ -215,14 +238,14 @@ export default function Dashboard() {
   }, []);
 
   useEffect(() => {
-    if (!serviceStatus?.running || !mainProxyGroup?.now) {
+    if (!serviceStatus?.running || !resolvedActiveProxyTag) {
       activeProxyDelayRequestRef.current += 1;
       setActiveProxyDelay(null);
       setCheckingActiveProxyDelay(false);
       return;
     }
-    checkActiveProxyDelay(mainProxyGroup.now);
-  }, [serviceStatus?.running, mainProxyGroup?.now, checkActiveProxyDelay]);
+    checkActiveProxyDelay(resolvedActiveProxyTag);
+  }, [serviceStatus?.running, resolvedActiveProxyTag, checkActiveProxyDelay]);
 
   return (
     <div className="space-y-6">
@@ -477,9 +500,17 @@ export default function Dashboard() {
           <CardBody>
             <div className="space-y-4 p-4 bg-gray-50 dark:bg-gray-800 rounded-xl">
               <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
-                <div className="flex items-center gap-2 min-w-0">
-                  <span className="font-semibold text-base whitespace-nowrap">Main</span>
-                  <Chip size="sm" variant="flat">{mainProxyGroup.now}</Chip>
+                <div className="min-w-0 space-y-1">
+                  <div className="flex items-center gap-2 min-w-0">
+                    <span className="font-semibold text-base whitespace-nowrap">Main</span>
+                    <Chip size="sm" variant="flat">{mainProxyGroup.now}</Chip>
+                  </div>
+                  {isAutoMode && resolvedActiveProxyTag && resolvedActiveProxyTag !== mainProxyGroup.now && (
+                    <div className="flex items-center gap-2 min-w-0">
+                      <span className="font-semibold text-sm whitespace-nowrap text-gray-500">Current</span>
+                      <Chip size="sm" variant="flat" color="primary">{resolvedActiveProxyTag}</Chip>
+                    </div>
+                  )}
                 </div>
                 <div className="flex items-center gap-2">
                   <Chip
@@ -489,15 +520,14 @@ export default function Dashboard() {
                   >
                     {activeProxyDelay === null ? 'Ping: N/A' : activeProxyDelay > 0 ? `Ping: ${activeProxyDelay}ms` : 'Ping: Timeout'}
                   </Chip>
-                  <Button size="sm" variant="flat" isIconOnly isLoading={checkingActiveProxyDelay} onPress={() => checkActiveProxyDelay(mainProxyGroup.now)} aria-label="Recheck active proxy ping">
-                    <Activity className="w-4 h-4" />
-                  </Button>
+                  {checkingActiveProxyDelay && <Spinner size="sm" />}
                 </div>
               </div>
 
               {/* Health & Site check results for active proxy */}
               {(() => {
-                const activeTag = mainProxyGroup.now;
+                const activeTag = resolvedActiveProxyTag;
+                if (!activeTag) return null;
                 const health = healthResults[activeTag];
                 const siteResult: NodeSiteCheckResult | undefined = siteCheckResults[activeTag];
                 if (!health && !siteResult) return null;

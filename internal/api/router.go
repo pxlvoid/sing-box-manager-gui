@@ -2657,7 +2657,8 @@ func (s *Server) getProxyGroups(c *gin.Context) {
 
 	var groups []ProxyGroup
 	for name, proxy := range clashResp.Proxies {
-		if proxy.Type == "Selector" || proxy.Type == "selector" {
+		proxyType := strings.ToLower(strings.TrimSpace(proxy.Type))
+		if proxyType == "selector" || proxyType == "urltest" {
 			groups = append(groups, ProxyGroup{
 				Name: name,
 				Type: proxy.Type,
