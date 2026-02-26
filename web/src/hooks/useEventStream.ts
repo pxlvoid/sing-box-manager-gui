@@ -75,6 +75,23 @@ export function useEventStream() {
         useStore.getState().setVerificationProgress({ phase: data.phase, current: data.current, total: data.total });
       });
 
+      es.addEventListener('verify:geo_start', (e) => {
+        const data = JSON.parse(e.data);
+        const s = useStore.getState();
+        s.addPipelineEvent('verify:geo_start', `GEO detection: ${data.total_nodes} nodes`);
+        s.setVerificationProgress({ phase: 'geo', current: 0, total: data.total_nodes });
+      });
+
+      es.addEventListener('verify:geo_progress', (e) => {
+        const data = JSON.parse(e.data);
+        useStore.getState().setVerificationProgress({ phase: 'geo', current: data.current, total: data.total });
+      });
+
+      es.addEventListener('verify:geo_complete', (e) => {
+        const data = JSON.parse(e.data);
+        useStore.getState().addPipelineEvent('verify:geo_complete', `GEO detection complete: ${data.checked} nodes`);
+      });
+
       es.addEventListener('verify:node_promoted', (e) => {
         const data = JSON.parse(e.data) as Record<string, unknown>;
         const s = useStore.getState();

@@ -177,6 +177,19 @@ export const proxyModeApi = {
   set: (mode: string) => api.put('/proxy/mode', { mode }),
 };
 
+// Database API
+export const databaseApi = {
+  exportUrl: '/api/database/export',
+  import: (file: File) => {
+    const formData = new FormData();
+    formData.append('database', file);
+    return api.post('/database/import', formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+      timeout: 60000,
+    });
+  },
+};
+
 // Debug API
 export const debugApi = {
   dump: () => api.get('/debug/dump'),

@@ -2,6 +2,7 @@ package api
 
 import (
 	"crypto/rand"
+	"database/sql"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
@@ -277,6 +278,10 @@ func (s *Server) setupRoutes() {
 		// Proxy mode
 		api.GET("/proxy/mode", s.getProxyMode)
 		api.PUT("/proxy/mode", s.setProxyMode)
+
+		// Database export/import
+		api.GET("/database/export", s.exportDatabase)
+		api.POST("/database/import", s.importDatabase)
 
 		// Debug API
 		api.GET("/debug/dump", s.debugDump)
@@ -808,6 +813,108 @@ func (s *Server) updateSettings(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{"data": settings, "message": "Updated successfully"})
+}
+
+// ==================== Database Export/Import API ====================
+
+func (s *Server) exportDatabase(c *gin.Context) {
+	dbPath := filepath.Join(s.store.GetDataDir(), "data.db")
+
+	// Checkpoint WAL to ensure all data is in the main db file
+	if sqlStore, ok := s.store.(*storage.SQLiteStore); ok {
+		if err := sqlStore.Checkpoint(); err != nil {
+			logger.Printf("WAL checkpoint warning: %v", err)
+		}
+	}
+
+	c.Header("Content-Disposition", "attachment; filename=data.db")
+	c.Header("Content-Type", "application/octet-stream")
+	c.File(dbPath)
+}
+
+func (s *Server) importDatabase(c *gin.Context) {
+	file, err := c.FormFile("database")
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "No database file provided"})
+		return
+	}
+
+	// Validate file size (max 100MB)
+	if file.Size > 100*1024*1024 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "File too large (max 100MB)"})
+		return
+	}
+
+	src, err := file.Open()
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to open uploaded file"})
+		return
+	}
+	defer src.Close()
+
+	// Read uploaded file into temp file first to validate
+	dataDir := s.store.GetDataDir()
+	tmpPath := filepath.Join(dataDir, "data.db.import")
+	dst, err := os.Create(tmpPath)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create temp file"})
+		return
+	}
+
+	if _, err := io.Copy(dst, src); err != nil {
+		dst.Close()
+		os.Remove(tmpPath)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to save uploaded file"})
+		return
+	}
+	dst.Close()
+
+	// Validate that the uploaded file is a valid SQLite database
+	testDB, err := sql.Open("sqlite", tmpPath)
+	if err != nil {
+		os.Remove(tmpPath)
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid SQLite database file"})
+		return
+	}
+	// Quick check: try to query the settings table
+	var count int
+	if err := testDB.QueryRow("SELECT COUNT(*) FROM settings").Scan(&count); err != nil {
+		testDB.Close()
+		os.Remove(tmpPath)
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid database: missing settings table"})
+		return
+	}
+	testDB.Close()
+
+	// Close the current database connection
+	if err := s.store.Close(); err != nil {
+		os.Remove(tmpPath)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to close current database"})
+		return
+	}
+
+	// Remove WAL/SHM files
+	dbPath := filepath.Join(dataDir, "data.db")
+	os.Remove(dbPath + "-wal")
+	os.Remove(dbPath + "-shm")
+
+	// Replace the database file
+	if err := os.Rename(tmpPath, dbPath); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to replace database: " + err.Error()})
+		return
+	}
+
+	// Reopen the database
+	newStore, err := storage.NewSQLiteStore(dataDir)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to reopen database: " + err.Error() + ". Restart the application."})
+		return
+	}
+
+	// Update the store reference
+	s.store = newStore
+
+	c.JSON(http.StatusOK, gin.H{"message": "Database imported successfully. Reload the page to see updated data."})
 }
 
 // ==================== System Hosts API ====================

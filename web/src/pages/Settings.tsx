@@ -1,9 +1,9 @@
 import { useEffect, useState, useRef, useCallback } from 'react';
 import { Accordion, AccordionItem, Input, Button, Switch, Chip, Modal, ModalContent, ModalHeader, ModalBody, ModalFooter, Select, SelectItem, Progress, Textarea, useDisclosure } from '@nextui-org/react';
-import { Download, Upload, Terminal, CheckCircle, AlertCircle, Plus, Pencil, Trash2, Server, Eye, EyeOff, Copy, RefreshCw, Wifi, Undo2, Loader2, Check } from 'lucide-react';
+import { Download, Upload, Terminal, CheckCircle, AlertCircle, Plus, Pencil, Trash2, Server, Eye, EyeOff, Copy, RefreshCw, Wifi, Undo2, Loader2, Check, Database, HardDriveDownload, HardDriveUpload } from 'lucide-react';
 import { useStore } from '../store';
 import type { Settings as SettingsType, HostEntry } from '../store';
-import { daemonApi, kernelApi, settingsApi } from '../api';
+import { daemonApi, databaseApi, kernelApi, settingsApi } from '../api';
 import { toast } from '../components/Toast';
 
 // Section definitions for navigation
@@ -13,6 +13,7 @@ const SECTIONS = [
   { id: 'dns', label: 'DNS', icon: Upload },
   { id: 'panel', label: 'Control Panel' },
   { id: 'automation', label: 'Automation' },
+  { id: 'database', label: 'Database', icon: Database },
   { id: 'debug', label: 'Debug API' },
   { id: 'daemon', label: 'Service' },
 ] as const;
@@ -87,6 +88,10 @@ export default function Settings() {
   const [editingHost, setEditingHost] = useState<HostEntry | null>(null);
   const [hostFormData, setHostFormData] = useState({ domain: '', enabled: true });
   const [ipsText, setIpsText] = useState('');
+
+  // Database import state
+  const [dbImporting, setDbImporting] = useState(false);
+  const dbFileInputRef = useRef<HTMLInputElement>(null);
 
   // Secret visibility state
   const [showSecret, setShowSecret] = useState(false);
@@ -408,6 +413,34 @@ export default function Settings() {
     } catch (error: any) {
       console.error('Failed to restart daemon service:', error);
       toast.error(error.response?.data?.error || 'Failed to restart service');
+    }
+  };
+
+  const handleExportDatabase = () => {
+    window.location.href = databaseApi.exportUrl;
+  };
+
+  const handleImportDatabase = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (!confirm('Importing a database will replace ALL current data (nodes, subscriptions, rules, settings, etc.). Continue?')) {
+      e.target.value = '';
+      return;
+    }
+
+    setDbImporting(true);
+    try {
+      const res = await databaseApi.import(file);
+      toast.success(res.data.message || 'Database imported successfully');
+      // Reload the page to reflect new data
+      setTimeout(() => window.location.reload(), 1500);
+    } catch (error: any) {
+      console.error('Failed to import database:', error);
+      toast.error(error.response?.data?.error || 'Failed to import database');
+    } finally {
+      setDbImporting(false);
+      e.target.value = '';
     }
   };
 
@@ -1130,6 +1163,54 @@ export default function Settings() {
                   className="flex-1"
                 />
                 <UndoButton field="archive_threshold" formData={formData} previousSettings={previousSettings} settings={settings} onUndo={handleUndo} />
+              </div>
+            </div>
+          </AccordionItem>
+
+          {/* Database Export/Import */}
+          <AccordionItem
+            key="database"
+            aria-label="Database"
+            title={
+              <div className="flex items-center gap-2">
+                <span className="font-semibold">Database</span>
+              </div>
+            }
+          >
+            <div ref={(el) => { sectionRefs.current['database'] = el; }} data-section="database" className="space-y-4 pb-2">
+              <p className="text-sm text-gray-500">
+                Export the entire SQLite database to transfer between server and local environments, or import a previously exported database.
+              </p>
+              <div className="flex flex-wrap gap-3">
+                <Button
+                  color="primary"
+                  variant="flat"
+                  startContent={<HardDriveDownload className="w-4 h-4" />}
+                  onPress={handleExportDatabase}
+                >
+                  Export Database
+                </Button>
+                <Button
+                  color="warning"
+                  variant="flat"
+                  startContent={<HardDriveUpload className="w-4 h-4" />}
+                  isLoading={dbImporting}
+                  onPress={() => dbFileInputRef.current?.click()}
+                >
+                  Import Database
+                </Button>
+                <input
+                  ref={dbFileInputRef}
+                  type="file"
+                  accept=".db,.sqlite,.sqlite3"
+                  className="hidden"
+                  onChange={handleImportDatabase}
+                />
+              </div>
+              <div className="p-3 bg-warning-50 dark:bg-warning-900/20 rounded-lg">
+                <p className="text-sm text-warning-700 dark:text-warning-400">
+                  Importing a database will replace ALL current data including nodes, subscriptions, rules, and settings. The page will reload automatically after import.
+                </p>
               </div>
             </div>
           </AccordionItem>

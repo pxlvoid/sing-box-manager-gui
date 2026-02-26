@@ -433,9 +433,11 @@ export default function Dashboard() {
               <div className="flex justify-between text-sm">
                 <span className="text-gray-600 dark:text-gray-400">
                   {verificationProgress.phase === 'health_check'
-                    ? `Health check: ${verificationProgress.current}/${verificationProgress.total}`
+                    ? 'Health check'
                     : verificationProgress.phase === 'site_check'
-                    ? `Site check: ${verificationProgress.current}/${verificationProgress.total}`
+                    ? 'Site check'
+                    : verificationProgress.phase === 'geo'
+                    ? 'GEO detection'
                     : `Checking ${verificationProgress.phase} nodes`}
                 </span>
                 <span className="font-medium">
@@ -452,7 +454,8 @@ export default function Dashboard() {
                   verificationProgress.phase === 'pending' ? 'warning'
                   : verificationProgress.phase === 'health_check' ? 'primary'
                   : verificationProgress.phase === 'site_check' ? 'secondary'
-                  : 'success'
+                  : verificationProgress.phase === 'geo' ? 'success'
+                  : 'default'
                 }
                 className="w-full"
               />

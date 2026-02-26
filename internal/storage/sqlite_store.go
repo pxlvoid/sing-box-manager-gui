@@ -104,6 +104,12 @@ func (s *SQLiteStore) Close() error {
 	return s.db.Close()
 }
 
+// Checkpoint forces a WAL checkpoint to flush all data to the main database file.
+func (s *SQLiteStore) Checkpoint() error {
+	_, err := s.db.Exec("PRAGMA wal_checkpoint(TRUNCATE)")
+	return err
+}
+
 // GetDataDir returns the data directory.
 func (s *SQLiteStore) GetDataDir() string {
 	return s.dataDir
