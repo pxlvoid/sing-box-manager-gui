@@ -20,6 +20,7 @@
 - ✅ UI:
   - отдельная страница `Monitoring`
   - виджет на `Dashboard` с переходом в детали
+  - сводка `All-time totals` (clients/traffic за всё время) на `Monitoring` и в карточке `Traffic Monitoring` на `Dashboard`
   - таблица клиентов (online + recently disconnected) + детализация по выбранному клиенту
   - график realtime upload/download
 

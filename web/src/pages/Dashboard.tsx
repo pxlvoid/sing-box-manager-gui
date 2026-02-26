@@ -19,6 +19,24 @@ interface WSConnectionsPayload {
   error?: unknown;
 }
 
+interface MonitoringLifetimeStats {
+  sample_count: number;
+  total_clients: number;
+  total_upload_bytes: number;
+  total_download_bytes: number;
+  total_traffic_bytes: number;
+  first_sample_at?: string;
+  last_sample_at?: string;
+}
+
+const defaultMonitoringLifetime: MonitoringLifetimeStats = {
+  sample_count: 0,
+  total_clients: 0,
+  total_upload_bytes: 0,
+  total_download_bytes: 0,
+  total_traffic_bytes: 0,
+};
+
 function toWebSocketURL(path: string): string {
   const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
   return `${protocol}//${window.location.host}${path}`;
@@ -61,6 +79,7 @@ export default function Dashboard() {
     active_connections: 0,
     client_count: 0,
   });
+  const [trafficLifetime, setTrafficLifetime] = useState<MonitoringLifetimeStats>(defaultMonitoringLifetime);
 
   const [errorModal, setErrorModal] = useState<{
     isOpen: boolean;
@@ -93,6 +112,15 @@ export default function Dashboard() {
     }
   };
 
+  const fetchTrafficLifetime = async () => {
+    try {
+      const res = await monitoringApi.getLifetime();
+      setTrafficLifetime({ ...defaultMonitoringLifetime, ...(res.data?.data || {}) });
+    } catch (error) {
+      console.error('Failed to fetch traffic lifetime stats:', error);
+    }
+  };
+
   // Auto-scroll activity feed
   useEffect(() => {
     if (activityFeedRef.current) {
@@ -115,6 +143,7 @@ export default function Dashboard() {
     fetchPipelineEvents();
     fetchGeoData();
     fetchTrafficOverview();
+    fetchTrafficLifetime();
 
     const interval = setInterval(() => {
       fetchServiceStatus();
@@ -122,6 +151,7 @@ export default function Dashboard() {
       fetchSystemInfo();
       fetchProxyGroups();
       fetchTrafficOverview();
+      fetchTrafficLifetime();
     }, 5000);
     return () => clearInterval(interval);
   }, []);
@@ -461,6 +491,25 @@ export default function Dashboard() {
       idx += 1;
     }
     return `${v.toFixed(v >= 10 || idx === 0 ? 0 : 1)} ${units[idx]}`;
+  };
+
+  const formatBytes = (value: number): string => {
+    if (!Number.isFinite(value) || value <= 0) return '0 B';
+    const units = ['B', 'KB', 'MB', 'GB', 'TB'];
+    let v = value;
+    let idx = 0;
+    while (v >= 1024 && idx < units.length - 1) {
+      v /= 1024;
+      idx += 1;
+    }
+    return `${v.toFixed(v >= 10 || idx === 0 ? 0 : 1)} ${units[idx]}`;
+  };
+
+  const formatDateTime = (value?: string): string => {
+    if (!value) return '-';
+    const ts = Date.parse(value);
+    if (Number.isNaN(ts)) return '-';
+    return new Date(ts).toLocaleString();
   };
 
   return (
@@ -1031,6 +1080,30 @@ export default function Dashboard() {
               <p className="text-xs text-gray-500">Active Clients</p>
               <p className="font-semibold">{trafficOverview.client_count}</p>
             </div>
+          </div>
+          <div className="mt-4 pt-4 border-t border-gray-200 dark:border-gray-700">
+            <p className="text-xs text-gray-500 mb-2">All-time totals</p>
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+              <div>
+                <p className="text-xs text-gray-500">Clients Seen</p>
+                <p className="font-semibold">{trafficLifetime.total_clients}</p>
+              </div>
+              <div>
+                <p className="text-xs text-gray-500">Total Upload</p>
+                <p className="font-semibold">{formatBytes(trafficLifetime.total_upload_bytes)}</p>
+              </div>
+              <div>
+                <p className="text-xs text-gray-500">Total Download</p>
+                <p className="font-semibold">{formatBytes(trafficLifetime.total_download_bytes)}</p>
+              </div>
+              <div>
+                <p className="text-xs text-gray-500">Total Traffic</p>
+                <p className="font-semibold">{formatBytes(trafficLifetime.total_traffic_bytes)}</p>
+              </div>
+            </div>
+            <p className="text-xs text-gray-500 mt-2">
+              Window: {formatDateTime(trafficLifetime.first_sample_at)} → {formatDateTime(trafficLifetime.last_sample_at)} · samples: {trafficLifetime.sample_count}
+            </p>
           </div>
         </CardBody>
       </Card>
