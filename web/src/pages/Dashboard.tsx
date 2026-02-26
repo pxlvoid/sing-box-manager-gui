@@ -11,7 +11,7 @@ export default function Dashboard() {
   const {
     serviceStatus, probeStatus, subscriptions, nodeCounts, systemInfo, settings, proxyGroups,
     verificationStatus, verificationRunning,
-    healthResults, healthMode, siteCheckResults,
+    healthResults, siteCheckResults,
     pipelineEvents, verificationProgress, runCounters,
     fetchServiceStatus, fetchProbeStatus, stopProbe, fetchSubscriptions,
     fetchNodeCounts, fetchSystemInfo, fetchSettings, fetchUnsupportedNodes,
