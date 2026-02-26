@@ -4,11 +4,9 @@ import { Play, Square, RefreshCw, Cpu, HardDrive, Wifi, Info, Activity, Copy, Cl
 import { useStore } from '../store';
 import type { NodeSiteCheckResult } from '../store';
 import { shortSiteLabel } from '../features/nodes/types';
-import { serviceApi, configApi, proxyApi } from '../api';
+import { serviceApi, configApi } from '../api';
 import { toast } from '../components/Toast';
 
-const MAX_PROXY_DELAY_OPTIONS = 50;
-const PROXY_DELAY_REFRESH_INTERVAL_MS = 15000;
 
 export default function Dashboard() {
   const {
@@ -29,9 +27,6 @@ export default function Dashboard() {
   const [copiedLink, setCopiedLink] = useState<string | null>(null);
   const [qrLink, setQrLink] = useState<string | null>(null);
   const [proxyLinksOpen, setProxyLinksOpen] = useState(false);
-  const [proxySelectOpen, setProxySelectOpen] = useState(false);
-  const [proxyDelays, setProxyDelays] = useState<Record<string, number>>({});
-  const [proxyDelaysRefreshing, setProxyDelaysRefreshing] = useState(false);
   const [proxySearch, setProxySearch] = useState('');
 
   const [errorModal, setErrorModal] = useState<{
@@ -230,11 +225,6 @@ export default function Dashboard() {
   };
 
   const getLatestMeasuredDelay = (tag: string): number | null => {
-    const liveDelay = proxyDelays[tag];
-    if (typeof liveDelay === 'number') {
-      return liveDelay;
-    }
-
     const node = knownNodesByTag.get(tag);
     const serverPortKey = node ? `${node.server}:${node.server_port}` : '';
     const health = healthResults[tag] || (serverPortKey ? healthResults[serverPortKey] : undefined);
@@ -260,6 +250,25 @@ export default function Dashboard() {
     return 'danger';
   };
 
+  const getSiteCheckSummary = (tag: string): { avg: number; count: number; failed: number; details: { label: string; delay: number }[] } | null => {
+    const serverPortLabel = getServerPortLabel(tag);
+    const siteResult: NodeSiteCheckResult | undefined = siteCheckResults[tag] || (serverPortLabel ? siteCheckResults[serverPortLabel] : undefined);
+    if (!siteResult || !siteResult.sites) return null;
+    const entries = Object.entries(siteResult.sites);
+    if (entries.length === 0) return null;
+    const details = entries.map(([site, delay]) => ({ label: shortSiteLabel(site), delay }));
+    const alive = details.filter((d) => d.delay > 0);
+    const failed = details.filter((d) => d.delay <= 0).length;
+    const avg = alive.length > 0 ? Math.round(alive.reduce((sum, d) => sum + d.delay, 0) / alive.length) : 0;
+    return { avg, count: details.length, failed, details };
+  };
+
+  const siteChipColor = (summary: { avg: number; failed: number }): 'success' | 'warning' | 'danger' => {
+    if (summary.failed > 0) return 'danger';
+    if (summary.avg >= 800) return 'warning';
+    return 'success';
+  };
+
   const selectableMainProxyOptions = useMemo(() => {
     if (!mainProxyGroup) return [];
     return mainProxyGroup.all.filter((item) => !countryGroupTags.has(item) || item === mainProxyGroup.now);
@@ -280,50 +289,6 @@ export default function Dashboard() {
     }
     return matchedOptions;
   }, [mainProxyGroup, normalizedProxySearch, selectableMainProxyOptions]);
-
-  useEffect(() => {
-    if (!proxySelectOpen || !serviceStatus?.running || filteredMainProxyOptions.length === 0) {
-      setProxyDelaysRefreshing(false);
-      return;
-    }
-
-    const optionsToMeasure = filteredMainProxyOptions.slice(0, MAX_PROXY_DELAY_OPTIONS);
-    let cancelled = false;
-
-    const refreshProxyDelays = async () => {
-      if (cancelled) return;
-      setProxyDelaysRefreshing(true);
-
-      const measured = await Promise.all(optionsToMeasure.map(async (name) => {
-        try {
-          const res = await proxyApi.checkDelay(name);
-          const delay = Number(res.data?.data?.delay);
-          return [name, Number.isFinite(delay) ? delay : 0] as const;
-        } catch {
-          return [name, 0] as const;
-        }
-      }));
-
-      if (cancelled) return;
-      setProxyDelays((prev) => {
-        const next = { ...prev };
-        for (const [name, delay] of measured) {
-          next[name] = delay;
-        }
-        return next;
-      });
-      setProxyDelaysRefreshing(false);
-    };
-
-    refreshProxyDelays();
-    const intervalId = window.setInterval(refreshProxyDelays, PROXY_DELAY_REFRESH_INTERVAL_MS);
-
-    return () => {
-      cancelled = true;
-      window.clearInterval(intervalId);
-      setProxyDelaysRefreshing(false);
-    };
-  }, [proxySelectOpen, serviceStatus?.running, filteredMainProxyOptions]);
 
   const handleRefreshActiveProxy = async () => {
     const activeTag = resolvedActiveProxyTag;
@@ -589,40 +554,47 @@ export default function Dashboard() {
           <CardBody>
             <div className="space-y-4 p-4 bg-gray-50 dark:bg-gray-800 rounded-xl">
               <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
-                <div className="min-w-0 space-y-1">
-                  <div className="flex items-center gap-2 min-w-0">
-                    <span className="font-semibold text-base whitespace-nowrap">Main</span>
-                    <Chip size="sm" variant="flat">{mainProxyGroup.now}</Chip>
-                    {getServerPortLabel(mainProxyGroup.now) && (
-                      <span className="text-xs text-gray-500 truncate">{getServerPortLabel(mainProxyGroup.now)}</span>
+                <div className="min-w-0">
+                  <div className="flex items-center gap-2 flex-wrap min-w-0">
+                    <span className="font-semibold text-base truncate">{resolvedActiveProxyTag || mainProxyGroup.now}</span>
+                    {getServerPortLabel(resolvedActiveProxyTag || mainProxyGroup.now) && (
+                      <span className="text-xs text-gray-500 truncate">{getServerPortLabel(resolvedActiveProxyTag || mainProxyGroup.now)}</span>
                     )}
-                    {getLatestMeasuredDelay(mainProxyGroup.now) !== null && (
-                      <Chip
-                        size="sm"
-                        variant="flat"
-                        color={delayChipColor(getLatestMeasuredDelay(mainProxyGroup.now))}
-                      >
-                        {formatDelayLabel(getLatestMeasuredDelay(mainProxyGroup.now))}
+                    {getLatestMeasuredDelay(resolvedActiveProxyTag || mainProxyGroup.now) !== null && (
+                      <Chip size="sm" variant="flat" color={delayChipColor(getLatestMeasuredDelay(resolvedActiveProxyTag || mainProxyGroup.now))}>
+                        {formatDelayLabel(getLatestMeasuredDelay(resolvedActiveProxyTag || mainProxyGroup.now))}
                       </Chip>
                     )}
+                    {(() => {
+                      const summary = getSiteCheckSummary(resolvedActiveProxyTag || mainProxyGroup.now);
+                      if (!summary) return null;
+                      return (
+                        <Tooltip
+                          placement="top-start"
+                          showArrow
+                          delay={100}
+                          content={
+                            <div className="flex flex-col gap-1 py-1">
+                              {summary.details.map((d) => (
+                                <div key={d.label} className="flex items-center justify-between gap-4 text-xs min-w-[180px]">
+                                  <span className="text-default-600">{d.label}</span>
+                                  <span className={d.delay > 0 ? (d.delay < 800 ? 'text-success' : 'text-warning') : 'text-danger'}>
+                                    {d.delay > 0 ? `${d.delay}ms` : 'Fail'}
+                                  </span>
+                                </div>
+                              ))}
+                            </div>
+                          }
+                        >
+                          <Chip size="sm" variant="flat" color={siteChipColor(summary)} className="cursor-help">
+                            {summary.failed > 0 ? `Fail (${summary.failed}/${summary.count})` : `${summary.avg}ms (${summary.count})`}
+                          </Chip>
+                        </Tooltip>
+                      );
+                    })()}
                   </div>
                   {isAutoMode && resolvedActiveProxyTag && resolvedActiveProxyTag !== mainProxyGroup.now && (
-                    <div className="flex items-center gap-2 min-w-0">
-                      <span className="font-semibold text-sm whitespace-nowrap text-gray-500">Current</span>
-                      <Chip size="sm" variant="flat" color="primary">{resolvedActiveProxyTag}</Chip>
-                      {getServerPortLabel(resolvedActiveProxyTag) && (
-                        <span className="text-xs text-gray-500 truncate">{getServerPortLabel(resolvedActiveProxyTag)}</span>
-                      )}
-                      {getLatestMeasuredDelay(resolvedActiveProxyTag) !== null && (
-                        <Chip
-                          size="sm"
-                          variant="flat"
-                          color={delayChipColor(getLatestMeasuredDelay(resolvedActiveProxyTag))}
-                        >
-                          {formatDelayLabel(getLatestMeasuredDelay(resolvedActiveProxyTag))}
-                        </Chip>
-                      )}
-                    </div>
+                    <p className="text-xs text-gray-500 mt-1">via {mainProxyGroup.now}</p>
                   )}
                 </div>
                 <Button
@@ -638,35 +610,6 @@ export default function Dashboard() {
                 </Button>
               </div>
 
-              {/* Health & Site check results for active proxy */}
-              {(() => {
-                const activeTag = resolvedActiveProxyTag;
-                if (!activeTag) return null;
-                const serverPortLabel = getServerPortLabel(activeTag);
-                const health = healthResults[activeTag] || (serverPortLabel ? healthResults[serverPortLabel] : undefined);
-                const siteResult: NodeSiteCheckResult | undefined = siteCheckResults[activeTag] || (serverPortLabel ? siteCheckResults[serverPortLabel] : undefined);
-                if (!health && !siteResult) return null;
-                return (
-                  <div className="flex flex-wrap gap-1">
-                    {health && (
-                      <Chip size="sm" variant="flat" color={health.alive ? 'success' : 'danger'}>
-                        {health.alive ? (health.tcp_latency_ms > 0 ? `Health: ${health.tcp_latency_ms}ms` : 'Health: OK') : 'Health: Fail'}
-                      </Chip>
-                    )}
-                    {siteResult && Object.entries(siteResult.sites).map(([site, delay]) => (
-                      <Chip
-                        key={site}
-                        size="sm"
-                        variant="flat"
-                        color={delay > 0 ? (delay < 800 ? 'success' : 'warning') : 'danger'}
-                      >
-                        {shortSiteLabel(site)}: {delay > 0 ? `${delay}ms` : 'Fail'}
-                      </Chip>
-                    ))}
-                  </div>
-                );
-              })()}
-
               <Input
                 size="lg"
                 value={proxySearch}
@@ -680,7 +623,6 @@ export default function Dashboard() {
               <Select
                 size="lg"
                 selectedKeys={[mainProxyGroup.now]}
-                onOpenChange={setProxySelectOpen}
                 onChange={(e) => {
                   if (e.target.value) {
                     switchProxy(mainProxyGroup.name, e.target.value);
@@ -691,32 +633,52 @@ export default function Dashboard() {
                 aria-label="Select main proxy"
                 classNames={{ trigger: 'min-h-14', value: 'text-base' }}
               >
-                {filteredMainProxyOptions.map((item) => (
-                  <SelectItem key={item} textValue={item}>
-                    <div className="flex items-center justify-between gap-3">
-                      <div className="min-w-0">
-                        <p className="text-sm truncate">{item}</p>
-                        {getServerPortLabel(item) && (
-                          <p className="text-xs text-gray-500 truncate">{getServerPortLabel(item)}</p>
-                        )}
+                {filteredMainProxyOptions.map((item) => {
+                  const siteSummary = getSiteCheckSummary(item);
+                  return (
+                    <SelectItem key={item} textValue={item}>
+                      <div className="flex items-center justify-between gap-3">
+                        <div className="min-w-0">
+                          <p className="text-sm truncate">{item}</p>
+                          {getServerPortLabel(item) && (
+                            <p className="text-xs text-gray-500 truncate">{getServerPortLabel(item)}</p>
+                          )}
+                        </div>
+                        <div className="flex items-center gap-1 shrink-0">
+                          {getLatestMeasuredDelay(item) !== null && (
+                            <Chip size="sm" variant="flat" color={delayChipColor(getLatestMeasuredDelay(item))}>
+                              {formatDelayLabel(getLatestMeasuredDelay(item))}
+                            </Chip>
+                          )}
+                          {siteSummary && (
+                            <Tooltip
+                              placement="left"
+                              showArrow
+                              delay={100}
+                              content={
+                                <div className="flex flex-col gap-1 py-1">
+                                  {siteSummary.details.map((d) => (
+                                    <div key={d.label} className="flex items-center justify-between gap-4 text-xs min-w-[180px]">
+                                      <span className="text-default-600">{d.label}</span>
+                                      <span className={d.delay > 0 ? (d.delay < 800 ? 'text-success' : 'text-warning') : 'text-danger'}>
+                                        {d.delay > 0 ? `${d.delay}ms` : 'Fail'}
+                                      </span>
+                                    </div>
+                                  ))}
+                                </div>
+                              }
+                            >
+                              <Chip size="sm" variant="flat" color={siteChipColor(siteSummary)} className="cursor-help">
+                                {siteSummary.failed > 0 ? `Fail (${siteSummary.failed}/${siteSummary.count})` : `${siteSummary.avg}ms (${siteSummary.count})`}
+                              </Chip>
+                            </Tooltip>
+                          )}
+                        </div>
                       </div>
-                      {getLatestMeasuredDelay(item) !== null && (
-                        <Chip size="sm" variant="flat" color={delayChipColor(getLatestMeasuredDelay(item))}>
-                          {formatDelayLabel(getLatestMeasuredDelay(item))}
-                        </Chip>
-                      )}
-                    </div>
-                  </SelectItem>
-                ))}
+                    </SelectItem>
+                  );
+                })}
               </Select>
-
-              {proxySelectOpen && (
-                <p className="text-xs text-gray-500">
-                  {proxyDelaysRefreshing
-                    ? 'Refreshing ping...'
-                    : `Ping updates every ${Math.round(PROXY_DELAY_REFRESH_INTERVAL_MS / 1000)}s while selector is open`}
-                </p>
-              )}
 
               {!hasSearchMatches && (
                 <p className="text-sm text-gray-500">No proxies found for "{proxySearch.trim()}"</p>
