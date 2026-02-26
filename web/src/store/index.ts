@@ -316,6 +316,7 @@ interface AppState {
   ruleGroups: RuleGroup[];
   defaultRuleGroups: RuleGroup[];
   settings: Settings | null;
+  previousSettings: Settings | null;
   serviceStatus: ServiceStatus | null;
   probeStatus: ProbeStatus | null;
   systemInfo: SystemInfo | null;
@@ -470,6 +471,7 @@ export const useStore = create<AppState>((set, get) => ({
   ruleGroups: [],
   defaultRuleGroups: [],
   settings: null,
+  previousSettings: null,
   serviceStatus: null,
   probeStatus: null,
   systemInfo: null,
@@ -961,15 +963,18 @@ export const useStore = create<AppState>((set, get) => ({
 
   updateSettings: async (settings: Settings) => {
     try {
+      // Save current settings as previous before overwriting
+      const currentSettings = get().settings;
       const res = await settingsApi.update(settings);
       // Use backend-returned data (may contain auto-generated secret)
       if (res.data.data) {
-        set({ settings: res.data.data });
+        set({ settings: res.data.data, previousSettings: currentSettings });
       } else {
-        set({ settings });
+        set({ settings, previousSettings: currentSettings });
       }
     } catch (error) {
       console.error('Failed to update settings:', error);
+      throw error;
     }
   },
 
