@@ -1287,14 +1287,16 @@ export const useStore = create<AppState>((set, get) => ({
       const newHealthResults: Record<string, NodeHealthResult> = {};
       let healthMode: HealthCheckMode | null = state.healthMode;
 
-      for (const [_key, entry] of Object.entries(health)) {
-        const tag = entry.node_tag;
-        if (!tag) continue;
-        newHealthResults[tag] = {
+      for (const [serverPortKey, entry] of Object.entries(health)) {
+        const parsed: NodeHealthResult = {
           alive: entry.alive,
           tcp_latency_ms: entry.latency_ms,
           groups: {},
         };
+        newHealthResults[serverPortKey] = parsed;
+        if (entry.node_tag) {
+          newHealthResults[entry.node_tag] = parsed;
+        }
         if (entry.mode && !healthMode) {
           healthMode = entry.mode as HealthCheckMode;
         }
@@ -1303,10 +1305,12 @@ export const useStore = create<AppState>((set, get) => ({
       const newSiteResults: Record<string, NodeSiteCheckResult> = {};
       let siteMode: SiteCheckMode | null = state.siteCheckMode;
 
-      for (const [_key, entry] of Object.entries(sites)) {
-        const tag = entry.node_tag;
-        if (!tag) continue;
-        newSiteResults[tag] = { sites: entry.sites };
+      for (const [serverPortKey, entry] of Object.entries(sites)) {
+        const parsed: NodeSiteCheckResult = { sites: entry.sites };
+        newSiteResults[serverPortKey] = parsed;
+        if (entry.node_tag) {
+          newSiteResults[entry.node_tag] = parsed;
+        }
         if (entry.mode && !siteMode) {
           siteMode = entry.mode as SiteCheckMode;
         }
