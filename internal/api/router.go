@@ -3602,28 +3602,64 @@ func (s *Server) getDiagnostic(c *gin.Context) {
 	}
 	result["config"] = configData
 
-	// 8. Recent Logs
+	// 8. Recent Logs — grouped by inbound type
 	logsData := gin.H{}
-	logs, err := logger.ReadSingboxLogs(50)
+	logs, err := logger.ReadSingboxLogs(200)
 	if err != nil {
 		logsData["error"] = err.Error()
 		logsData["lines"] = []string{}
+		logsData["by_inbound"] = gin.H{}
 	} else {
-		// Filter for ERROR/WARN
-		var filtered []string
+		// Inbound types to track
+		inboundKeywords := map[string]string{
+			"inbound/socks":       "socks",
+			"inbound/http":        "http",
+			"inbound/shadowsocks": "shadowsocks",
+			"inbound/tun":         "tun",
+			"inbound/mixed":       "mixed",
+		}
+
+		byInbound := map[string][]string{}
+		var errorWarnLines []string
+
 		for _, line := range logs {
 			upper := strings.ToUpper(line)
+
+			// Classify by inbound type
+			for keyword, name := range inboundKeywords {
+				if strings.Contains(line, keyword) {
+					byInbound[name] = append(byInbound[name], line)
+					break
+				}
+			}
+
+			// Collect ERROR/WARN separately
 			if strings.Contains(upper, "ERROR") || strings.Contains(upper, "WARN") {
-				filtered = append(filtered, line)
+				errorWarnLines = append(errorWarnLines, line)
 			}
 		}
-		// Keep last 20
-		if len(filtered) > 20 {
-			filtered = filtered[len(filtered)-20:]
+
+		// Trim each inbound group to last 15 lines
+		byInboundResult := gin.H{}
+		for name, lines := range byInbound {
+			if len(lines) > 15 {
+				lines = lines[len(lines)-15:]
+			}
+			byInboundResult[name] = gin.H{
+				"lines": lines,
+				"count": len(byInbound[name]),
+			}
 		}
-		logsData["lines"] = filtered
+
+		// Trim error/warn to last 20
+		if len(errorWarnLines) > 20 {
+			errorWarnLines = errorWarnLines[len(errorWarnLines)-20:]
+		}
+
+		logsData["lines"] = errorWarnLines
 		logsData["total_recent"] = len(logs)
-		logsData["error_warn_count"] = len(filtered)
+		logsData["error_warn_count"] = len(errorWarnLines)
+		logsData["by_inbound"] = byInboundResult
 	}
 	result["logs"] = logsData
 

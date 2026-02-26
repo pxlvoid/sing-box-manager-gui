@@ -59,6 +59,7 @@ interface DiagnosticData {
     total_recent?: number;
     error_warn_count?: number;
     error?: string;
+    by_inbound?: Record<string, { lines: string[]; count: number }>;
   };
 }
 
@@ -359,6 +360,59 @@ export default function Diagnostics() {
           )}
         </SectionCard>
       </div>
+
+      {/* Logs by Inbound — full width */}
+      {data.logs.by_inbound && Object.keys(data.logs.by_inbound).length > 0 && (
+        <div className="space-y-4">
+          <h2 className="text-lg font-semibold text-gray-800 dark:text-white flex items-center gap-2">
+            <ScrollText className="w-5 h-5 text-gray-500" />
+            Logs by Inbound Type
+          </h2>
+          <div className="grid grid-cols-1 gap-4">
+            {Object.entries(data.logs.by_inbound).map(([inboundType, inboundData]) => {
+              const hasErrors = inboundData.lines.some((l: string) => l.toUpperCase().includes('ERROR'));
+              const color: StatusColor = hasErrors ? 'danger' : inboundData.count > 0 ? 'success' : 'default';
+              const label = `${inboundData.count} entries`;
+
+              return (
+                <Card key={inboundType} className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700">
+                  <CardHeader className="flex justify-between items-center pb-2">
+                    <div className="flex items-center gap-2">
+                      <Chip size="sm" variant="flat" color={inboundType === 'shadowsocks' ? 'secondary' : 'default'}
+                        classNames={{ content: 'text-xs font-mono font-medium' }}>
+                        {inboundType}
+                      </Chip>
+                      <span className="text-sm text-gray-600 dark:text-gray-400">inbound</span>
+                    </div>
+                    <StatusChip status={color} label={label} />
+                  </CardHeader>
+                  <CardBody className="pt-0">
+                    {inboundData.lines.length > 0 ? (
+                      <div className="max-h-56 overflow-y-auto">
+                        {inboundData.lines.map((line: string, i: number) => {
+                          const upper = line.toUpperCase();
+                          const lineColor = upper.includes('ERROR')
+                            ? 'text-danger-500'
+                            : upper.includes('WARN')
+                              ? 'text-warning-500'
+                              : 'text-gray-600 dark:text-gray-300';
+                          return (
+                            <div key={i} className={`text-xs font-mono py-0.5 break-all ${lineColor}`}>
+                              {line}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    ) : (
+                      <div className="text-xs text-gray-500 dark:text-gray-400">No recent activity</div>
+                    )}
+                  </CardBody>
+                </Card>
+              );
+            })}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
