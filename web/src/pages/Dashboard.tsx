@@ -799,13 +799,6 @@ export default function Dashboard() {
                   <Chip size="sm" variant="flat" color="warning" className="cursor-help">Probe: port {probeStatus.port}</Chip>
                 </Tooltip>
               )}
-              {(runCounters.promoted > 0 || runCounters.demoted > 0 || runCounters.archived > 0) && (
-                <>
-                  <Chip size="sm" variant="flat" color="success">+{runCounters.promoted}</Chip>
-                  <Chip size="sm" variant="flat" color="warning">-{runCounters.demoted}</Chip>
-                  <Chip size="sm" variant="flat" color="default">x{runCounters.archived}</Chip>
-                </>
-              )}
             </div>
             {verificationStatus?.scheduler_running && (
               <p className="text-xs text-gray-500 dark:text-gray-400">
@@ -816,6 +809,14 @@ export default function Dashboard() {
                 Verify: {verificationStatus.enabled
                   ? <>{verificationStatus.interval_min}min{verificationStatus.last_run_at && <> · last {formatTimeShort(verificationStatus.last_run_at)}</>}{verificationStatus.next_run_at && <> · next {formatTimeShort(verificationStatus.next_run_at)} ({formatTimeUntil(verificationStatus.next_run_at)})</>}</>
                   : 'disabled'}
+                {(runCounters.promoted > 0 || runCounters.demoted > 0 || runCounters.archived > 0) && (
+                  <>
+                    <span className="mx-2 text-gray-300 dark:text-gray-600">|</span>
+                    Last run: <span className="text-green-600 dark:text-green-400">+{runCounters.promoted}</span>
+                    {' '}<span className="text-yellow-600 dark:text-yellow-400">-{runCounters.demoted}</span>
+                    {' '}<span className="text-gray-400">x{runCounters.archived}</span>
+                  </>
+                )}
               </p>
             )}
           </div>
