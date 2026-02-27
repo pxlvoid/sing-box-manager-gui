@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Card, CardBody, CardHeader, Button, Chip, Input, Modal, ModalContent, ModalHeader, ModalBody, ModalFooter, Tooltip, Select, SelectItem, Spinner, Progress } from '@nextui-org/react';
-import { Play, Square, RefreshCw, Cpu, HardDrive, Wifi, Info, Activity, Copy, ClipboardCheck, Link, Globe, QrCode, Search, Stethoscope, ShieldCheck, Network, ArrowUp, ArrowDown, Users, Cable } from 'lucide-react';
+import { Play, Square, RefreshCw, Cpu, HardDrive, Wifi, Activity, Copy, ClipboardCheck, Link, Globe, QrCode, Search, Stethoscope, ShieldCheck, Network, ArrowUp, ArrowDown, Users, Cable } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useStore } from '../store';
 import { nodeDisplayTag, nodeInternalTag, nodeSourceTag } from '../store';
