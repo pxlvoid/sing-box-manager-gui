@@ -1,8 +1,8 @@
 import { useState, useRef, useEffect, useMemo } from 'react';
-import { Card, CardBody, Button, Chip, Tooltip, Popover, PopoverTrigger, PopoverContent, ScrollShadow } from '@nextui-org/react';
-import { Globe, RefreshCw, Search, ChevronDown, Check, X, ArrowUp, ArrowDown } from 'lucide-react';
+import { Card, CardBody, Button, Chip, Tooltip, Popover, PopoverTrigger, PopoverContent, ScrollShadow, Modal, ModalContent, ModalHeader, ModalBody, ModalFooter, Checkbox, CheckboxGroup } from '@nextui-org/react';
+import { Globe, RefreshCw, Search, ChevronDown, Check, X, ArrowUp, ArrowDown, ShieldBan } from 'lucide-react';
 import type { ActiveProxyProps } from './ActiveProxyTypes';
-import { siteErrorLabel } from '../features/nodes/types';
+import { siteErrorLabel, countryOptions } from '../features/nodes/types';
 
 type SortField = 'delay' | 'site';
 type SortDir = 'asc' | 'desc';
@@ -16,10 +16,13 @@ export default function ActiveProxyBlock({
   getProxyDisplayTag, getProxySourceTag, getServerPortLabel,
   getLatestMeasuredDelay, getSiteCheckSummary, getGeoLabel,
   delayChipColor, siteChipColor, formatDelayLabel,
+  settings, updateSettings,
 }: ActiveProxyProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [sort, setSort] = useState<SortState>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
+  const [blockModalOpen, setBlockModalOpen] = useState(false);
+  const [blockedDraft, setBlockedDraft] = useState<string[]>([]);
 
   useEffect(() => {
     if (isOpen) {
@@ -57,6 +60,19 @@ export default function ActiveProxyBlock({
     });
     return list;
   }, [filteredMainProxyOptions, sort, getLatestMeasuredDelay, getSiteCheckSummary]);
+
+  const blockedCount = settings?.blocked_countries?.length ?? 0;
+
+  const openBlockModal = () => {
+    setBlockedDraft(settings?.blocked_countries ?? []);
+    setBlockModalOpen(true);
+  };
+
+  const saveBlocked = async () => {
+    if (!settings) return;
+    await updateSettings({ ...settings, blocked_countries: blockedDraft });
+    setBlockModalOpen(false);
+  };
 
   if (!mainProxyGroup) {
     return (
@@ -158,18 +174,34 @@ export default function ActiveProxyBlock({
               <span className="text-gray-400 dark:text-gray-500">via {getProxyDisplayTag(mainProxyGroup.now)}</span>
             )}
           </div>
-          <Button
-            size="sm"
-            color="primary"
-            variant="flat"
-            className="shrink-0 h-7 min-w-0 px-2.5"
-            startContent={!activeProxyRefreshing ? <RefreshCw className="w-3 h-3" /> : undefined}
-            isLoading={activeProxyRefreshing}
-            isDisabled={!resolvedActiveProxyTag || verificationRunning}
-            onPress={handleRefreshActiveProxy}
-          >
-            <span className="hidden sm:inline">Pipeline</span>
-          </Button>
+          <div className="flex items-center gap-1.5 shrink-0">
+            <Tooltip content={blockedCount > 0 ? `${blockedCount} blocked countries` : 'Block countries'}>
+              <Button
+                size="sm"
+                color={blockedCount > 0 ? 'danger' : 'default'}
+                variant="flat"
+                className="shrink-0 h-7 min-w-0 px-2"
+                onPress={openBlockModal}
+              >
+                <ShieldBan className="w-3.5 h-3.5" />
+                {blockedCount > 0 && (
+                  <span className="text-[11px] font-semibold">{blockedCount}</span>
+                )}
+              </Button>
+            </Tooltip>
+            <Button
+              size="sm"
+              color="primary"
+              variant="flat"
+              className="shrink-0 h-7 min-w-0 px-2.5"
+              startContent={!activeProxyRefreshing ? <RefreshCw className="w-3 h-3" /> : undefined}
+              isLoading={activeProxyRefreshing}
+              isDisabled={!resolvedActiveProxyTag || verificationRunning}
+              onPress={handleRefreshActiveProxy}
+            >
+              <span className="hidden sm:inline">Pipeline</span>
+            </Button>
+          </div>
         </div>
 
         {/* Row 2: Custom proxy picker */}
@@ -313,6 +345,38 @@ export default function ActiveProxyBlock({
           </PopoverContent>
         </Popover>
       </CardBody>
+
+      {/* Block Countries Modal */}
+      <Modal isOpen={blockModalOpen} onClose={() => setBlockModalOpen(false)} size="sm">
+        <ModalContent>
+          <ModalHeader className="flex items-center gap-2">
+            <ShieldBan className="w-5 h-5" />
+            Block Countries
+          </ModalHeader>
+          <ModalBody>
+            <p className="text-sm text-default-500 mb-2">
+              Nodes from blocked countries will be excluded from Auto, country groups and Proxy selector.
+            </p>
+            <CheckboxGroup value={blockedDraft} onChange={(v) => setBlockedDraft(v as string[])}>
+              <div className="grid grid-cols-2 gap-1">
+                {countryOptions.filter(c => c.code !== 'UNKNOWN').map((c) => (
+                  <Checkbox key={c.code} value={c.code} size="sm">
+                    <span className="text-sm">{c.emoji} {c.name}</span>
+                  </Checkbox>
+                ))}
+              </div>
+            </CheckboxGroup>
+          </ModalBody>
+          <ModalFooter>
+            <Button size="sm" variant="flat" onPress={() => setBlockModalOpen(false)}>
+              Cancel
+            </Button>
+            <Button size="sm" color="primary" onPress={saveBlocked}>
+              Save
+            </Button>
+          </ModalFooter>
+        </ModalContent>
+      </Modal>
     </Card>
   );
 }

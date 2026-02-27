@@ -1186,6 +1186,8 @@ export default function Dashboard() {
         delayChipColor={delayChipColor}
         siteChipColor={siteChipColor}
         formatDelayLabel={formatDelayLabel}
+        settings={settings}
+        updateSettings={useStore.getState().updateSettings}
       />
 
       {/* Proxy Links Modal */}

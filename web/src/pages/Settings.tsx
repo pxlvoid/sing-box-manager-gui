@@ -1,10 +1,11 @@
 import { useEffect, useState, useRef, useCallback } from 'react';
-import { Accordion, AccordionItem, Input, Button, Switch, Chip, Modal, ModalContent, ModalHeader, ModalBody, ModalFooter, Select, SelectItem, Progress, Textarea, useDisclosure } from '@nextui-org/react';
-import { Download, Upload, Terminal, CheckCircle, AlertCircle, Plus, Pencil, Trash2, Server, Eye, EyeOff, Copy, RefreshCw, Wifi, Undo2, Loader2, Check, Database, HardDriveDownload, HardDriveUpload } from 'lucide-react';
+import { Accordion, AccordionItem, Input, Button, Switch, Chip, Modal, ModalContent, ModalHeader, ModalBody, ModalFooter, Select, SelectItem, Progress, Textarea, useDisclosure, Checkbox, CheckboxGroup } from '@nextui-org/react';
+import { Download, Upload, Terminal, CheckCircle, AlertCircle, Plus, Pencil, Trash2, Server, Eye, EyeOff, Copy, RefreshCw, Wifi, Undo2, Loader2, Check, Database, HardDriveDownload, HardDriveUpload, ShieldBan } from 'lucide-react';
 import { useStore } from '../store';
 import type { Settings as SettingsType, HostEntry } from '../store';
 import { daemonApi, databaseApi, kernelApi, settingsApi } from '../api';
 import { toast } from '../components/Toast';
+import { countryOptions } from '../features/nodes/types';
 
 // Section definitions for navigation
 const SECTIONS = [
@@ -1124,6 +1125,28 @@ export default function Settings() {
                   className="flex-1"
                 />
                 <UndoButton field="final_outbound" formData={formData} previousSettings={previousSettings} settings={settings} onUndo={handleUndo} />
+              </div>
+              <div>
+                <div className="flex items-center gap-2 mb-2">
+                  <ShieldBan className="w-4 h-4 text-default-500" />
+                  <p className="font-medium text-sm">Blocked Countries</p>
+                  {(formData.blocked_countries?.length ?? 0) > 0 && (
+                    <Chip size="sm" variant="flat" color="danger">{formData.blocked_countries.length}</Chip>
+                  )}
+                </div>
+                <p className="text-xs text-default-400 mb-2">Nodes from blocked countries are excluded from Auto, country groups and Proxy selector.</p>
+                <CheckboxGroup
+                  value={formData.blocked_countries ?? []}
+                  onChange={(v) => setFormData({ ...formData, blocked_countries: v as string[] })}
+                >
+                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-1">
+                    {countryOptions.filter(c => c.code !== 'UNKNOWN').map((c) => (
+                      <Checkbox key={c.code} value={c.code} size="sm">
+                        <span className="text-sm">{c.emoji} {c.name}</span>
+                      </Checkbox>
+                    ))}
+                  </div>
+                </CheckboxGroup>
               </div>
             </div>
           </AccordionItem>

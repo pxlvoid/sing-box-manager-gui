@@ -1,3 +1,5 @@
+import type { Settings } from '../store';
+
 export interface ActiveProxyProps {
   mainProxyGroup: { name: string; type: string; now: string; all: string[] } | null;
   resolvedActiveProxyTag: string;
@@ -19,4 +21,6 @@ export interface ActiveProxyProps {
   delayChipColor: (delay: number | null) => 'default' | 'success' | 'warning' | 'danger';
   siteChipColor: (summary: { avg: number; failed: number }) => 'success' | 'warning' | 'danger';
   formatDelayLabel: (delay: number | null) => string;
+  settings: Settings | null;
+  updateSettings: (settings: Settings) => Promise<void>;
 }

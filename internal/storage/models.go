@@ -463,6 +463,9 @@ type Settings struct {
 
 	// Proxy mode
 	ProxyMode string `json:"proxy_mode"` // rule, global, direct
+
+	// GeoIP blocking
+	BlockedCountries []string `json:"blocked_countries"` // country codes excluded from Auto/Proxy
 }
 
 // DefaultSettings returns default settings
@@ -491,6 +494,7 @@ func DefaultSettings() *Settings {
 		VerificationInterval: 30,   // default 30 minutes
 		ArchiveThreshold:     10,   // default 10 consecutive failures
 		ProxyMode:            ProxyModeRule,
+		BlockedCountries:     []string{},
 	}
 }
 

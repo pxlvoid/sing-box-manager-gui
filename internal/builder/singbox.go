@@ -491,10 +491,20 @@ func (b *ConfigBuilder) buildOutboundsWithMap() ([]Outbound, map[int]string) {
 	nodeTagSet := make(map[string]bool)
 	countryNodes := make(map[string][]string) // Country code -> node tag list
 
-	// Add all nodes (skip duplicates and excluded tags)
+	// Build blocked countries set for fast lookup
+	blockedCountrySet := make(map[string]bool, len(b.settings.BlockedCountries))
+	for _, code := range b.settings.BlockedCountries {
+		blockedCountrySet[code] = true
+	}
+
+	// Add all nodes (skip duplicates, excluded tags and blocked countries)
 	for _, node := range b.nodes {
 		routingTag := node.RoutingTag()
 		if shouldExcludeNode(node, b.excludeTags) {
+			continue
+		}
+		// Skip nodes from blocked countries
+		if blockedCountrySet[node.Country] {
 			continue
 		}
 		// Skip duplicate tags — sing-box doesn't allow duplicate outbound tags
@@ -529,6 +539,9 @@ func (b *ConfigBuilder) buildOutboundsWithMap() ([]Outbound, map[int]string) {
 		var filteredTags []string
 		for _, node := range b.nodes {
 			if shouldExcludeNode(node, b.excludeTags) {
+				continue
+			}
+			if blockedCountrySet[node.Country] {
 				continue
 			}
 			if b.matchFilter(node, filter) {

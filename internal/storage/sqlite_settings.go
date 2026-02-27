@@ -17,11 +17,13 @@ func (s *SQLiteStore) GetSettings() *Settings {
 		auto_apply, subscription_interval,
 		github_proxy, debug_api_enabled,
 		verification_interval, archive_threshold,
-		proxy_mode
+		proxy_mode,
+		blocked_countries_json
 		FROM settings WHERE id = 1`)
 
 	settings := &Settings{}
 	var tunEnabled, allowLAN, socksAuth, httpAuth, autoApply, debugAPI int
+	var blockedCountriesJSON string
 	err := row.Scan(
 		&settings.SingBoxPath, &settings.ConfigPath,
 		&settings.MixedPort, &settings.MixedAddress, &tunEnabled, &allowLAN,
@@ -35,6 +37,7 @@ func (s *SQLiteStore) GetSettings() *Settings {
 		&settings.GithubProxy, &debugAPI,
 		&settings.VerificationInterval, &settings.ArchiveThreshold,
 		&settings.ProxyMode,
+		&blockedCountriesJSON,
 	)
 	if err != nil {
 		return DefaultSettings()
@@ -47,6 +50,14 @@ func (s *SQLiteStore) GetSettings() *Settings {
 	settings.AutoApply = autoApply != 0
 	settings.DebugAPIEnabled = debugAPI != 0
 	settings.ProxyMode = NormalizeProxyMode(settings.ProxyMode)
+
+	// Deserialize blocked countries
+	if blockedCountriesJSON != "" {
+		json.Unmarshal([]byte(blockedCountriesJSON), &settings.BlockedCountries)
+	}
+	if settings.BlockedCountries == nil {
+		settings.BlockedCountries = []string{}
+	}
 
 	// Load host entries
 	settings.Hosts = s.getHostEntries()
@@ -61,6 +72,11 @@ func (s *SQLiteStore) UpdateSettings(settings *Settings) error {
 	}
 	defer tx.Rollback()
 
+	blockedJSON, _ := json.Marshal(settings.BlockedCountries)
+	if settings.BlockedCountries == nil {
+		blockedJSON = []byte("[]")
+	}
+
 	_, err = tx.Exec(`INSERT OR REPLACE INTO settings (id,
 		singbox_path, config_path,
 		mixed_port, mixed_address, tun_enabled, allow_lan,
@@ -73,8 +89,9 @@ func (s *SQLiteStore) UpdateSettings(settings *Settings) error {
 		auto_apply, subscription_interval,
 		github_proxy, debug_api_enabled,
 		verification_interval, archive_threshold,
-		proxy_mode)
-		VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		proxy_mode,
+		blocked_countries_json)
+		VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		settings.SingBoxPath, settings.ConfigPath,
 		settings.MixedPort, settings.MixedAddress, boolToInt(settings.TunEnabled), boolToInt(settings.AllowLAN),
 		settings.SocksPort, settings.SocksAddress, boolToInt(settings.SocksAuth), settings.SocksUsername, settings.SocksPassword,
@@ -86,7 +103,8 @@ func (s *SQLiteStore) UpdateSettings(settings *Settings) error {
 		boolToInt(settings.AutoApply), settings.SubscriptionInterval,
 		settings.GithubProxy, boolToInt(settings.DebugAPIEnabled),
 		settings.VerificationInterval, settings.ArchiveThreshold,
-		NormalizeProxyMode(settings.ProxyMode))
+		NormalizeProxyMode(settings.ProxyMode),
+		string(blockedJSON))
 	if err != nil {
 		return err
 	}

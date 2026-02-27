@@ -281,6 +281,7 @@ export interface Settings {
   github_proxy: string;          // GitHub proxy address
   debug_api_enabled: boolean;    // Enable debug API for remote diagnostics
   proxy_mode: ProxyMode;         // Proxy mode: rule, global, direct
+  blocked_countries: string[];   // Country codes excluded from Auto/Proxy
 }
 
 export type ProxyMode = 'rule' | 'global' | 'direct';
