@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Card, CardBody, CardHeader, Chip, Button, ButtonGroup, Spinner } from '@nextui-org/react';
-import { Activity, ArrowDownToLine, ArrowUpToLine, Clock, Network, Users, HardDrive, Database } from 'lucide-react';
+import { Activity, ArrowDownToLine, ArrowUpToLine, Clock, Network, Users, Database } from 'lucide-react';
 import { Area, AreaChart, CartesianGrid, Legend, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import { monitoringApi } from '../api';
 
