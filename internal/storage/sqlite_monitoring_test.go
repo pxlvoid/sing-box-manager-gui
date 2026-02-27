@@ -64,3 +64,19 @@ func TestGetTrafficLifetimeStats_AggregateTimestampString(t *testing.T) {
 		t.Fatalf("last sample mismatch: got %s, want %s", stats.LastSampleAt.UTC().Format(time.RFC3339Nano), lastExpected.UTC().Format(time.RFC3339Nano))
 	}
 }
+
+func TestParseSQLiteTimestampString_UTCZoneFormat(t *testing.T) {
+	input := "2026-02-27 08:10:36.386381756 +0000 UTC"
+	got, ok, err := parseSQLiteTimestampString(input)
+	if err != nil {
+		t.Fatalf("parse timestamp: %v", err)
+	}
+	if !ok {
+		t.Fatalf("expected timestamp to be parsed")
+	}
+
+	want := time.Date(2026, 2, 27, 8, 10, 36, 386381756, time.UTC)
+	if !got.Equal(want) {
+		t.Fatalf("timestamp mismatch: got %s, want %s", got.UTC().Format(time.RFC3339Nano), want.UTC().Format(time.RFC3339Nano))
+	}
+}
