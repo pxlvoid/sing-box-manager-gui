@@ -11,6 +11,16 @@ import ActiveProxyVariantA from '../components/ActiveProxyVariantA';
 import ActiveProxyVariantB from '../components/ActiveProxyVariantB';
 import ActiveProxyVariantC from '../components/ActiveProxyVariantC';
 import ActiveProxyVariantD from '../components/ActiveProxyVariantD';
+import ActiveProxyVariantE from '../components/ActiveProxyVariantE';
+import ActiveProxyVariantF from '../components/ActiveProxyVariantF';
+import ActiveProxyVariantG from '../components/ActiveProxyVariantG';
+import ActiveProxyVariantH from '../components/ActiveProxyVariantH';
+import ActiveProxyVariantI from '../components/ActiveProxyVariantI';
+import ActiveProxyVariantJ from '../components/ActiveProxyVariantJ';
+import ActiveProxyVariantK from '../components/ActiveProxyVariantK';
+import ActiveProxyVariantL from '../components/ActiveProxyVariantL';
+import ActiveProxyVariantM from '../components/ActiveProxyVariantM';
+import ActiveProxyVariantN from '../components/ActiveProxyVariantN';
 import { toast } from '../components/Toast';
 
 interface WSTrafficPayload {
@@ -1139,6 +1149,16 @@ export default function Dashboard() {
             <ActiveProxyVariantB {...variantProps} />
             <ActiveProxyVariantC {...variantProps} />
             <ActiveProxyVariantD {...variantProps} />
+            <ActiveProxyVariantE {...variantProps} />
+            <ActiveProxyVariantF {...variantProps} />
+            <ActiveProxyVariantG {...variantProps} />
+            <ActiveProxyVariantH {...variantProps} />
+            <ActiveProxyVariantI {...variantProps} />
+            <ActiveProxyVariantJ {...variantProps} />
+            <ActiveProxyVariantK {...variantProps} />
+            <ActiveProxyVariantL {...variantProps} />
+            <ActiveProxyVariantM {...variantProps} />
+            <ActiveProxyVariantN {...variantProps} />
           </>
         );
       })()}
