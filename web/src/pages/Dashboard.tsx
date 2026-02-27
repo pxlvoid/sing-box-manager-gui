@@ -773,8 +773,8 @@ export default function Dashboard() {
                     labelFormatter={(ts) => `Time: ${new Date(Number(ts)).toLocaleTimeString([], { hour12: false })}`}
                   />
                   <Legend formatter={(value) => (value === 'up_kbps' ? 'Upload' : 'Download')} />
-                  <Area type="monotone" dataKey="up_kbps" stroke="#16a34a" fill="#16a34a33" strokeWidth={2} />
-                  <Area type="monotone" dataKey="down_kbps" stroke="#2563eb" fill="#2563eb33" strokeWidth={2} />
+                  <Area type="monotone" dataKey="up_kbps" stroke="#16a34a" fill="#16a34a33" strokeWidth={2} isAnimationActive={false} />
+                  <Area type="monotone" dataKey="down_kbps" stroke="#2563eb" fill="#2563eb33" strokeWidth={2} isAnimationActive={false} />
                 </AreaChart>
               </ResponsiveContainer>
             </div>
