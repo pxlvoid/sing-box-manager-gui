@@ -809,14 +809,19 @@ export default function Dashboard() {
                 Verify: {verificationStatus.enabled
                   ? <>{verificationStatus.interval_min}min{verificationStatus.last_run_at && <> · last {formatTimeShort(verificationStatus.last_run_at)}</>}{verificationStatus.next_run_at && <> · next {formatTimeShort(verificationStatus.next_run_at)} ({formatTimeUntil(verificationStatus.next_run_at)})</>}</>
                   : 'disabled'}
-                {(runCounters.promoted > 0 || runCounters.demoted > 0 || runCounters.archived > 0) && (
-                  <>
-                    <span className="mx-2 text-gray-300 dark:text-gray-600">|</span>
-                    Last run: <span className="text-green-600 dark:text-green-400">+{runCounters.promoted}</span>
-                    {' '}<span className="text-yellow-600 dark:text-yellow-400">-{runCounters.demoted}</span>
-                    {' '}<span className="text-gray-400">x{runCounters.archived}</span>
-                  </>
-                )}
+                {(() => {
+                  const r = (runCounters.promoted > 0 || runCounters.demoted > 0 || runCounters.archived > 0)
+                    ? runCounters
+                    : verificationStatus?.last_run_results;
+                  return r && (r.promoted > 0 || r.demoted > 0 || r.archived > 0) ? (
+                    <>
+                      <span className="mx-2 text-gray-300 dark:text-gray-600">|</span>
+                      Last run: <span className="text-green-600 dark:text-green-400">+{r.promoted}</span>
+                      {' '}<span className="text-yellow-600 dark:text-yellow-400">-{r.demoted}</span>
+                      {' '}<span className="text-gray-400">x{r.archived}</span>
+                    </>
+                  ) : null;
+                })()}
               </p>
             )}
           </div>

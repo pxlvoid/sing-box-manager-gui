@@ -3109,6 +3109,14 @@ func (s *Server) getVerificationStatus(c *gin.Context) {
 		"sub_next_update_at":      s.scheduler.GetNextUpdateTime(),
 		"auto_apply":              settings.AutoApply,
 	}
+	if logs := s.store.GetVerificationLogs(1); len(logs) > 0 {
+		log := logs[0]
+		result["last_run_results"] = gin.H{
+			"promoted": log.PendingPromoted,
+			"demoted":  log.VerifiedDemoted,
+			"archived": log.PendingArchived,
+		}
+	}
 	c.JSON(http.StatusOK, gin.H{"data": result})
 }
 

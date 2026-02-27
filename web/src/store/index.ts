@@ -150,6 +150,11 @@ export interface VerificationStatus {
   sub_update_interval_min: number;
   sub_next_update_at?: string;
   auto_apply: boolean;
+  last_run_results?: {
+    promoted: number;
+    demoted: number;
+    archived: number;
+  };
 }
 
 export interface Subscription {
