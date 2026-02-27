@@ -50,10 +50,12 @@ interface TrafficHistoryPoint {
 }
 
 const CHART_PERIODS = [
-  { key: '1m', label: '1 мин', seconds: 60, throttleMs: 1000 },
-  { key: '5m', label: '5 мин', seconds: 300, throttleMs: 3000 },
-  { key: '15m', label: '15 мин', seconds: 900, throttleMs: 8000 },
-  { key: '1h', label: '1 час', seconds: 3600, throttleMs: 20000 },
+  { key: '1m', label: '1 мин', seconds: 60, throttleMs: 1000, hours: 0 },
+  { key: '1h', label: '1 час', seconds: 3600, throttleMs: 20000, hours: 0 },
+  { key: '12h', label: '12 ч', seconds: 43200, throttleMs: 0, hours: 12 },
+  { key: '24h', label: '24 ч', seconds: 86400, throttleMs: 0, hours: 24 },
+  { key: '1w', label: '1 нед', seconds: 604800, throttleMs: 0, hours: 168 },
+  { key: '30d', label: '30 дн', seconds: 2592000, throttleMs: 0, hours: 720 },
 ] as const;
 
 const MAX_HISTORY_POINTS = 3600;
@@ -103,7 +105,7 @@ export default function Dashboard() {
   });
   const [trafficLifetime, setTrafficLifetime] = useState<MonitoringLifetimeStats>(defaultMonitoringLifetime);
   const [chartExpanded, setChartExpanded] = useState(false);
-  const [chartPeriod, setChartPeriod] = useState<string>('5m');
+  const [chartPeriod, setChartPeriod] = useState<string>('1h');
   const historyRef = useRef<TrafficHistoryPoint[]>([]);
   const [displayHistory, setDisplayHistory] = useState<TrafficHistoryPoint[]>([]);
   const lastChartFlushRef = useRef(0);
@@ -153,8 +155,9 @@ export default function Dashboard() {
     [chartPeriod],
   );
 
-  // Flush chart display on throttle interval
+  // Flush chart display on throttle interval (only for real-time periods)
   useEffect(() => {
+    if (selectedPeriod.hours > 0) return; // long periods use API fetch
     const flush = () => {
       setDisplayHistory([...historyRef.current]);
       lastChartFlushRef.current = Date.now();
@@ -162,6 +165,22 @@ export default function Dashboard() {
     flush();
     const timer = window.setInterval(flush, selectedPeriod.throttleMs);
     return () => window.clearInterval(timer);
+  }, [selectedPeriod]);
+
+  // Fetch historical data from API for long periods (12h+)
+  useEffect(() => {
+    if (selectedPeriod.hours <= 0) return;
+    let cancelled = false;
+    const fetchLongHistory = () => {
+      monitoringApi.getHistory(500, selectedPeriod.hours).then((res) => {
+        if (cancelled) return;
+        setDisplayHistory(res.data?.data || []);
+      }).catch((err) => console.error('Failed to fetch long history:', err));
+    };
+    fetchLongHistory();
+    // Refresh every 30 seconds for long periods
+    const timer = window.setInterval(fetchLongHistory, 30000);
+    return () => { cancelled = true; window.clearInterval(timer); };
   }, [selectedPeriod]);
 
   const appendHistory = useCallback((point: TrafficHistoryPoint) => {
@@ -177,12 +196,23 @@ export default function Dashboard() {
   }, []);
 
   const chartData = useMemo(() => {
-    const now = Date.now();
-    const cutoff = now - selectedPeriod.seconds * 1000;
-    const filtered = displayHistory.filter((p) => {
-      const ts = Date.parse(p.timestamp);
-      return !Number.isNaN(ts) && ts >= cutoff;
-    });
+    // For long periods (API-fetched), data is already time-filtered and averaged
+    const isLongPeriod = selectedPeriod.hours > 0;
+    let filtered: TrafficHistoryPoint[];
+
+    if (isLongPeriod) {
+      filtered = displayHistory.filter((p) => {
+        const ts = Date.parse(p.timestamp);
+        return !Number.isNaN(ts);
+      });
+    } else {
+      const now = Date.now();
+      const cutoff = now - selectedPeriod.seconds * 1000;
+      filtered = displayHistory.filter((p) => {
+        const ts = Date.parse(p.timestamp);
+        return !Number.isNaN(ts) && ts >= cutoff;
+      });
+    }
 
     let emaUp = 0;
     let emaDown = 0;
@@ -190,6 +220,16 @@ export default function Dashboard() {
     return filtered.map((point, idx) => {
       const rawUp = Math.max(0, toNumber(point.up_bps));
       const rawDown = Math.max(0, toNumber(point.down_bps));
+
+      if (isLongPeriod) {
+        // Backend already averaged the data, no EMA needed
+        return {
+          ...point,
+          epoch: Date.parse(point.timestamp),
+          up_kbps: rawUp / 1024,
+          down_kbps: rawDown / 1024,
+        };
+      }
 
       if (idx === 0) {
         emaUp = rawUp;
@@ -212,13 +252,18 @@ export default function Dashboard() {
     if (chartData.length < 2) return [];
     const start = chartData[0].epoch;
     const end = chartData[chartData.length - 1].epoch;
-    const interval = selectedPeriod.seconds <= 60
+    const sec = selectedPeriod.seconds;
+    const interval = sec <= 60
       ? timeSecond.every(10)
-      : selectedPeriod.seconds <= 300
-        ? timeMinute.every(1)
-        : selectedPeriod.seconds <= 900
-          ? timeMinute.every(3)
-          : timeMinute.every(10);
+      : sec <= 3600
+        ? timeMinute.every(10)
+        : sec <= 43200
+          ? timeMinute.every(60)        // 12h → every hour
+          : sec <= 86400
+            ? timeMinute.every(120)      // 24h → every 2 hours
+            : sec <= 604800
+              ? timeMinute.every(720)    // 1w → every 12 hours
+              : timeMinute.every(1440);  // 30d → every day
     if (!interval) return [];
     return interval.range(new Date(start), new Date(end)).map((d) => d.getTime());
   }, [chartData, selectedPeriod]);
@@ -759,8 +804,17 @@ export default function Dashboard() {
                     scale="time"
                     domain={['dataMin', 'dataMax']}
                     ticks={chartXTicks}
-                    tickFormatter={(ts) => new Date(ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: selectedPeriod.seconds <= 60 ? '2-digit' : undefined, hour12: false })}
-                    minTickGap={24}
+                    tickFormatter={(ts) => {
+                      const d = new Date(ts);
+                      if (selectedPeriod.seconds <= 60) {
+                        return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false });
+                      }
+                      if (selectedPeriod.seconds <= 86400) {
+                        return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false });
+                      }
+                      return d.toLocaleDateString([], { day: '2-digit', month: '2-digit' }) + ' ' + d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false });
+                    }}
+                    minTickGap={40}
                   />
                   <YAxis tickFormatter={(value) => `${Math.round(value)} KB/s`} />
                   <RechartsTooltip
@@ -770,7 +824,13 @@ export default function Dashboard() {
                       const bytesPerSecond = Number.isFinite(numeric) ? numeric * 1024 : 0;
                       return [formatRate(Math.round(bytesPerSecond)), name === 'up_kbps' ? 'Upload' : 'Download'];
                     }}
-                    labelFormatter={(ts) => `Time: ${new Date(Number(ts)).toLocaleTimeString([], { hour12: false })}`}
+                    labelFormatter={(ts) => {
+                      const d = new Date(Number(ts));
+                      if (selectedPeriod.seconds >= 86400) {
+                        return d.toLocaleDateString([], { day: '2-digit', month: '2-digit', year: 'numeric' }) + ' ' + d.toLocaleTimeString([], { hour12: false });
+                      }
+                      return `Time: ${d.toLocaleTimeString([], { hour12: false })}`;
+                    }}
                   />
                   <Legend formatter={(value) => (value === 'up_kbps' ? 'Upload' : 'Download')} />
                   <Area type="monotone" dataKey="up_kbps" stroke="#16a34a" fill="#16a34a33" strokeWidth={2} isAnimationActive={false} />

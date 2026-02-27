@@ -619,6 +619,31 @@ func (s *Server) getMonitoringLifetimeStats(c *gin.Context) {
 }
 
 func (s *Server) getMonitoringHistory(c *gin.Context) {
+	// If hours is specified, use time-range based query with downsampling.
+	if raw := strings.TrimSpace(c.Query("hours")); raw != "" {
+		hours, err := strconv.Atoi(raw)
+		if err != nil || hours <= 0 {
+			hours = 1
+		}
+		if hours > 24*30 {
+			hours = 24 * 30
+		}
+		maxPoints := 500
+		if raw := strings.TrimSpace(c.Query("max_points")); raw != "" {
+			if parsed, err := strconv.Atoi(raw); err == nil && parsed > 0 {
+				maxPoints = parsed
+			}
+		}
+		since := time.Now().Add(-time.Duration(hours) * time.Hour)
+		samples, err := s.store.GetTrafficSamplesByTimeRange(since, maxPoints)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		c.JSON(http.StatusOK, gin.H{"data": samples})
+		return
+	}
+
 	limit := 120
 	if raw := strings.TrimSpace(c.Query("limit")); raw != "" {
 		if parsed, err := strconv.Atoi(raw); err == nil && parsed > 0 {

@@ -157,6 +157,66 @@ func (s *SQLiteStore) GetTrafficSamples(limit int) ([]TrafficSample, error) {
 	return samples, nil
 }
 
+// GetTrafficSamplesByTimeRange returns traffic samples within the given time range,
+// downsampled to approximately maxPoints data points using time-bucket averaging.
+func (s *SQLiteStore) GetTrafficSamplesByTimeRange(since time.Time, maxPoints int) ([]TrafficSample, error) {
+	if maxPoints <= 0 {
+		maxPoints = 500
+	}
+	if maxPoints > 5000 {
+		maxPoints = 5000
+	}
+
+	duration := time.Since(since)
+	bucketSeconds := int(duration.Seconds()) / maxPoints
+	if bucketSeconds < 1 {
+		bucketSeconds = 1
+	}
+
+	query := `SELECT
+		MIN(id),
+		datetime(CAST(strftime('%%s', timestamp) AS INTEGER) / ? * ?, 'unixepoch') AS bucket_ts,
+		AVG(up_bps), AVG(down_bps),
+		MAX(upload_total), MAX(download_total),
+		CAST(AVG(active_connections) AS INTEGER), CAST(AVG(client_count) AS INTEGER),
+		AVG(memory_inuse), MAX(memory_oslimit)
+		FROM traffic_samples
+		WHERE timestamp >= ?
+		GROUP BY CAST(strftime('%%s', timestamp) AS INTEGER) / ?
+		ORDER BY bucket_ts ASC`
+
+	rows, err := s.db.Query(query, bucketSeconds, bucketSeconds, since, bucketSeconds)
+	if err != nil {
+		return nil, fmt.Errorf("query traffic samples by time range: %w", err)
+	}
+	defer rows.Close()
+
+	samples := make([]TrafficSample, 0, maxPoints)
+	for rows.Next() {
+		var sample TrafficSample
+		if err := rows.Scan(
+			&sample.ID,
+			&sample.Timestamp,
+			&sample.UpBps,
+			&sample.DownBps,
+			&sample.UploadTotal,
+			&sample.DownloadTotal,
+			&sample.ActiveConnections,
+			&sample.ClientCount,
+			&sample.MemoryInuse,
+			&sample.MemoryOSLimit,
+		); err != nil {
+			return nil, fmt.Errorf("scan traffic sample bucket row: %w", err)
+		}
+		samples = append(samples, sample)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate traffic sample bucket rows: %w", err)
+	}
+
+	return samples, nil
+}
+
 func (s *SQLiteStore) GetLatestTrafficSample() (*TrafficSample, error) {
 	var sample TrafficSample
 	err := s.db.QueryRow(`SELECT

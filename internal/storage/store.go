@@ -83,6 +83,7 @@ type Store interface {
 	GetLatestSiteMeasurements() ([]SiteMeasurement, error)
 	AddTrafficSample(sample TrafficSample, clients []ClientTrafficSnapshot, resources []ClientResourceSnapshot) (int64, error)
 	GetTrafficSamples(limit int) ([]TrafficSample, error)
+	GetTrafficSamplesByTimeRange(since time.Time, maxPoints int) ([]TrafficSample, error)
 	GetLatestTrafficSample() (*TrafficSample, error)
 	GetLatestTrafficClients(limit int) ([]ClientTrafficSnapshot, error)
 	GetRecentTrafficClients(limit int, lookback time.Duration) ([]TrafficClientRecent, error)

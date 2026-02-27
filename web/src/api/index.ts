@@ -181,7 +181,7 @@ export const proxyModeApi = {
 export const monitoringApi = {
   getOverview: () => api.get('/monitoring/overview'),
   getLifetime: () => api.get('/monitoring/lifetime'),
-  getHistory: (limit: number = 120) => api.get('/monitoring/history', { params: { limit } }),
+  getHistory: (limit: number = 120, hours?: number) => api.get('/monitoring/history', { params: { limit, hours: hours || undefined } }),
   getClients: (limit: number = 200) => api.get('/monitoring/clients', { params: { limit } }),
   getRecentClients: (limit: number = 300, hours: number = 24) =>
     api.get('/monitoring/clients/recent', { params: { limit, hours } }),
