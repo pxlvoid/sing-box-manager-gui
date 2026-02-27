@@ -2,6 +2,20 @@
 
 A modern web-based management panel for [sing-box](https://github.com/SagerNet/sing-box), providing an intuitive interface to manage subscriptions, rules, filters, and more.
 
+### UI/Logic Roadmap
+
+We maintain a dedicated UI/logic stabilization plan here:
+
+- [UI/Logic Improvement Roadmap](docs/UI_LOGIC_ROADMAP.md)
+
+<details>
+<summary>Why this is a separate file</summary>
+
+GitHub does not support true tabbed sections inside `README.md`.  
+To keep the main page clean and still make the plan easy to find, the roadmap is linked as a standalone markdown document.
+
+</details>
+
 ### Features
 
 - **Subscription Management**
