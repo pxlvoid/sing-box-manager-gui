@@ -2095,9 +2095,11 @@ func (s *Server) restartDaemon(c *gin.Context) {
 
 // ProcessStats represents process resource statistics
 type ProcessStats struct {
-	PID        int     `json:"pid"`
-	CPUPercent float64 `json:"cpu_percent"`
-	MemoryMB   float64 `json:"memory_mb"`
+	PID           int     `json:"pid"`
+	CPUPercent    float64 `json:"cpu_percent"`
+	MemoryMB      float64 `json:"memory_mb"`
+	UptimeSeconds int64   `json:"uptime_seconds"`
+	NumThreads    int32   `json:"num_threads"`
 }
 
 func (s *Server) getSystemInfo(c *gin.Context) {
@@ -2111,11 +2113,18 @@ func (s *Server) getSystemInfo(c *gin.Context) {
 		if memInfo, err := sbmProc.MemoryInfo(); err == nil && memInfo != nil {
 			memoryMB = float64(memInfo.RSS) / 1024 / 1024
 		}
+		var uptimeSeconds int64
+		if createTime, err := sbmProc.CreateTime(); err == nil {
+			uptimeSeconds = (time.Now().UnixMilli() - createTime) / 1000
+		}
+		numThreads, _ := sbmProc.NumThreads()
 
 		result["sbm"] = ProcessStats{
-			PID:        int(sbmPid),
-			CPUPercent: cpuPercent,
-			MemoryMB:   memoryMB,
+			PID:           int(sbmPid),
+			CPUPercent:    cpuPercent,
+			MemoryMB:      memoryMB,
+			UptimeSeconds: uptimeSeconds,
+			NumThreads:    numThreads,
 		}
 	}
 
@@ -2128,11 +2137,18 @@ func (s *Server) getSystemInfo(c *gin.Context) {
 			if memInfo, err := singboxProc.MemoryInfo(); err == nil && memInfo != nil {
 				memoryMB = float64(memInfo.RSS) / 1024 / 1024
 			}
+			var uptimeSeconds int64
+			if createTime, err := singboxProc.CreateTime(); err == nil {
+				uptimeSeconds = (time.Now().UnixMilli() - createTime) / 1000
+			}
+			numThreads, _ := singboxProc.NumThreads()
 
 			result["singbox"] = ProcessStats{
-				PID:        int(singboxPid),
-				CPUPercent: cpuPercent,
-				MemoryMB:   memoryMB,
+				PID:           int(singboxPid),
+				CPUPercent:    cpuPercent,
+				MemoryMB:      memoryMB,
+				UptimeSeconds: uptimeSeconds,
+				NumThreads:    numThreads,
 			}
 		}
 	}
@@ -2148,11 +2164,18 @@ func (s *Server) getSystemInfo(c *gin.Context) {
 				if memInfo, err := probeProc.MemoryInfo(); err == nil && memInfo != nil {
 					memoryMB = float64(memInfo.RSS) / 1024 / 1024
 				}
+				var uptimeSeconds int64
+				if createTime, err := probeProc.CreateTime(); err == nil {
+					uptimeSeconds = (time.Now().UnixMilli() - createTime) / 1000
+				}
+				numThreads, _ := probeProc.NumThreads()
 
 				result["probe"] = ProcessStats{
-					PID:        int(probePid),
-					CPUPercent: cpuPercent,
-					MemoryMB:   memoryMB,
+					PID:           int(probePid),
+					CPUPercent:    cpuPercent,
+					MemoryMB:      memoryMB,
+					UptimeSeconds: uptimeSeconds,
+					NumThreads:    numThreads,
 				}
 			}
 		}

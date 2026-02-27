@@ -305,6 +305,8 @@ export interface ProcessStats {
   pid: number;
   cpu_percent: number;
   memory_mb: number;
+  uptime_seconds: number;
+  num_threads: number;
 }
 
 export interface SystemInfo {
