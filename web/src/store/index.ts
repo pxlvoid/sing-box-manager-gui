@@ -10,6 +10,7 @@ export interface NodeHealthResult {
 
 export interface NodeSiteCheckResult {
   sites: Record<string, number>;
+  errors?: Record<string, string>;
 }
 
 export type HealthCheckMode = 'clash_api' | 'clash_api_temp' | 'probe';
@@ -1303,7 +1304,7 @@ export const useStore = create<AppState>((set, get) => ({
       const res = await measurementApi.getLatest();
       const { health, sites } = res.data as {
         health: Record<string, { alive: boolean; latency_ms: number; timestamp: string; mode: string; node_tag: string }>;
-        sites: Record<string, { sites: Record<string, number>; timestamp: string; mode: string; node_tag: string }>;
+        sites: Record<string, { sites: Record<string, number>; errors?: Record<string, string>; timestamp: string; mode: string; node_tag: string }>;
       };
 
       const state = get();
@@ -1329,7 +1330,7 @@ export const useStore = create<AppState>((set, get) => ({
       let siteMode: SiteCheckMode | null = state.siteCheckMode;
 
       for (const [serverPortKey, entry] of Object.entries(sites)) {
-        const parsed: NodeSiteCheckResult = { sites: entry.sites };
+        const parsed: NodeSiteCheckResult = { sites: entry.sites, errors: entry.errors || {} };
         newSiteResults[serverPortKey] = parsed;
         if (entry.node_tag) {
           newSiteResults[entry.node_tag] = parsed;

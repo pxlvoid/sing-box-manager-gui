@@ -219,6 +219,7 @@ type SiteMeasurement struct {
 	Timestamp  time.Time `json:"timestamp"`
 	Site       string    `json:"site"`
 	DelayMs    int       `json:"delay_ms"`
+	ErrorType  string    `json:"error_type,omitempty"` // timeout/dns/tls/http/network/unknown
 	Mode       string    `json:"mode"`
 }
 

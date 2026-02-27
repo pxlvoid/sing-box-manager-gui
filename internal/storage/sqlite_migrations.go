@@ -33,6 +33,7 @@ func (s *SQLiteStore) migrate() error {
 		s.migrateV6,
 		s.migrateV7,
 		s.migrateV8,
+		s.migrateV9,
 	}
 
 	for i, m := range migrations {
@@ -224,15 +225,16 @@ func (s *SQLiteStore) migrateV1() error {
 
 		// Site measurements
 		`CREATE TABLE IF NOT EXISTS site_measurements (
-			id INTEGER PRIMARY KEY AUTOINCREMENT,
-			server TEXT NOT NULL,
-			server_port INTEGER NOT NULL,
-			node_tag TEXT NOT NULL DEFAULT '',
-			timestamp TIMESTAMP,
-			site TEXT NOT NULL DEFAULT '',
-			delay_ms INTEGER NOT NULL DEFAULT 0,
-			mode TEXT NOT NULL DEFAULT ''
-		)`,
+				id INTEGER PRIMARY KEY AUTOINCREMENT,
+				server TEXT NOT NULL,
+				server_port INTEGER NOT NULL,
+				node_tag TEXT NOT NULL DEFAULT '',
+				timestamp TIMESTAMP,
+				site TEXT NOT NULL DEFAULT '',
+				delay_ms INTEGER NOT NULL DEFAULT 0,
+				error_type TEXT NOT NULL DEFAULT '',
+				mode TEXT NOT NULL DEFAULT ''
+			)`,
 
 		// Indices
 		`CREATE INDEX IF NOT EXISTS idx_sub_nodes_sub_id ON subscription_nodes(subscription_id)`,
@@ -746,6 +748,27 @@ func (s *SQLiteStore) migrateV8() error {
 	for _, stmt := range stmts {
 		if _, err := tx.Exec(stmt); err != nil {
 			return fmt.Errorf("exec migration v8 statement failed: %w", err)
+		}
+	}
+
+	return tx.Commit()
+}
+
+// migrateV9 adds site_measurements.error_type for richer site-check diagnostics.
+func (s *SQLiteStore) migrateV9() error {
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	hasErrorType, err := tableHasColumn(tx, "site_measurements", "error_type")
+	if err != nil {
+		return err
+	}
+	if !hasErrorType {
+		if _, err := tx.Exec(`ALTER TABLE site_measurements ADD COLUMN error_type TEXT NOT NULL DEFAULT ''`); err != nil {
+			return fmt.Errorf("add site_measurements.error_type: %w", err)
 		}
 	}
 

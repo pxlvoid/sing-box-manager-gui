@@ -84,6 +84,10 @@ type Server struct {
 	lastTrafficSampleAt    time.Time
 	lastTrafficUploadTotal int64
 	lastTrafficDownTotal   int64
+
+	watchdogMu           sync.Mutex
+	watchdogFailStreak   map[string]int
+	watchdogCooldownTill map[string]time.Time
 }
 
 // NewServer creates an API server
@@ -98,20 +102,22 @@ func NewServer(store storage.Store, processManager *daemon.ProcessManager, probe
 	eventBus := events.NewBus()
 
 	s := &Server{
-		store:            store,
-		subService:       subService,
-		processManager:   processManager,
-		probeManager:     probeManager,
-		launchdManager:   launchdManager,
-		systemdManager:   systemdManager,
-		kernelManager:    kernelManager,
-		scheduler:        service.NewScheduler(store, subService),
-		router:           gin.Default(),
-		sbmPath:          sbmPath,
-		port:             port,
-		version:          version,
-		eventBus:         eventBus,
-		unsupportedNodes: make(map[string]UnsupportedNodeInfo),
+		store:                store,
+		subService:           subService,
+		processManager:       processManager,
+		probeManager:         probeManager,
+		launchdManager:       launchdManager,
+		systemdManager:       systemdManager,
+		kernelManager:        kernelManager,
+		scheduler:            service.NewScheduler(store, subService),
+		router:               gin.Default(),
+		sbmPath:              sbmPath,
+		port:                 port,
+		version:              version,
+		eventBus:             eventBus,
+		unsupportedNodes:     make(map[string]UnsupportedNodeInfo),
+		watchdogFailStreak:   make(map[string]int),
+		watchdogCooldownTill: make(map[string]time.Time),
 	}
 
 	// Wire event bus to services
@@ -128,6 +134,7 @@ func NewServer(store storage.Store, processManager *daemon.ProcessManager, probe
 
 	s.setupRoutes()
 	s.startTrafficAggregator()
+	s.startActiveProxyWatchdog()
 	return s
 }
 
@@ -2333,7 +2340,8 @@ type NodeHealthResult struct {
 // NodeSiteCheckResult represents site reachability check result for a single node.
 // Sites map value is delay in ms; 0 means timeout/failure.
 type NodeSiteCheckResult struct {
-	Sites map[string]int `json:"sites"`
+	Sites  map[string]int    `json:"sites"`
+	Errors map[string]string `json:"errors,omitempty"` // per-site error type when delay is 0
 }
 
 // matchFilter checks if a node matches a filter (duplicated from builder for API layer)
@@ -2388,6 +2396,8 @@ var defaultSiteCheckTargets = []string{
 	"https://i.ytimg.com/generate_204",
 	"https://instagram.com",
 }
+
+const siteCheckProbeAttempts = 3
 
 func normalizeSiteTarget(site string) string {
 	site = strings.TrimSpace(site)
@@ -2461,9 +2471,46 @@ func normalizeSiteCheckURL(site string) string {
 	return "https://" + site
 }
 
-func (s *Server) clashProxyDelayWithURL(port int, secret, nodeTag, targetURL string, timeoutMs int) int {
+type proxyDelayResult struct {
+	Delay       int
+	ErrorType   string
+	ErrorDetail string
+}
+
+func classifyDelayError(raw string) string {
+	msg := strings.ToLower(strings.TrimSpace(raw))
+	if msg == "" {
+		return ""
+	}
+	switch {
+	case strings.Contains(msg, "timeout"),
+		strings.Contains(msg, "deadline exceeded"):
+		return "timeout"
+	case strings.Contains(msg, "no such host"),
+		strings.Contains(msg, "dns"):
+		return "dns"
+	case strings.Contains(msg, "tls"),
+		strings.Contains(msg, "x509"),
+		strings.Contains(msg, "certificate"):
+		return "tls"
+	case strings.Contains(msg, "refused"),
+		strings.Contains(msg, "reset"),
+		strings.Contains(msg, "unreachable"),
+		strings.Contains(msg, "no route"):
+		return "network"
+	case strings.Contains(msg, "http"),
+		strings.Contains(msg, "status"),
+		strings.Contains(msg, "forbidden"),
+		strings.Contains(msg, "unauthorized"):
+		return "http"
+	default:
+		return "unknown"
+	}
+}
+
+func (s *Server) clashProxyDelayWithURLDetailed(port int, secret, nodeTag, targetURL string, timeoutMs int) proxyDelayResult {
 	if strings.TrimSpace(targetURL) == "" {
-		return 0
+		return proxyDelayResult{ErrorType: "invalid_target", ErrorDetail: "empty target url"}
 	}
 	if timeoutMs <= 0 {
 		timeoutMs = 5000
@@ -2480,7 +2527,7 @@ func (s *Server) clashProxyDelayWithURL(port int, secret, nodeTag, targetURL str
 
 	req, err := http.NewRequest("GET", apiURL, nil)
 	if err != nil {
-		return 0
+		return proxyDelayResult{ErrorType: "request", ErrorDetail: err.Error()}
 	}
 	if secret != "" {
 		req.Header.Set("Authorization", "Bearer "+secret)
@@ -2488,22 +2535,86 @@ func (s *Server) clashProxyDelayWithURL(port int, secret, nodeTag, targetURL str
 
 	resp, err := client.Do(req)
 	if err != nil {
-		return 0
+		return proxyDelayResult{ErrorType: classifyDelayError(err.Error()), ErrorDetail: err.Error()}
 	}
 	defer resp.Body.Close()
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return 0
+		return proxyDelayResult{ErrorType: "read", ErrorDetail: err.Error()}
 	}
 
 	var result struct {
 		Delay int `json:"delay"`
 	}
 	if err := json.Unmarshal(body, &result); err != nil {
+		if resp.StatusCode != http.StatusOK {
+			msg := fmt.Sprintf("http status %d: %s", resp.StatusCode, strings.TrimSpace(string(body)))
+			return proxyDelayResult{ErrorType: classifyDelayError(msg), ErrorDetail: msg}
+		}
+		return proxyDelayResult{ErrorType: "parse", ErrorDetail: err.Error()}
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		msg := fmt.Sprintf("http status %d: %s", resp.StatusCode, strings.TrimSpace(string(body)))
+		return proxyDelayResult{ErrorType: classifyDelayError(msg), ErrorDetail: msg}
+	}
+
+	if result.Delay <= 0 {
+		return proxyDelayResult{Delay: 0, ErrorType: "unknown", ErrorDetail: "zero delay"}
+	}
+	return proxyDelayResult{Delay: result.Delay}
+}
+
+func medianInt(values []int) int {
+	if len(values) == 0 {
 		return 0
 	}
-	return result.Delay
+	sorted := append([]int(nil), values...)
+	sort.Ints(sorted)
+	return sorted[len(sorted)/2]
+}
+
+func (s *Server) probeDelayMedianWithRetries(port int, secret, nodeTag, targetURL string, timeoutMs, attempts int) (int, string) {
+	if attempts <= 0 {
+		attempts = 1
+	}
+	series := make([]int, 0, attempts)
+	errorCount := make(map[string]int)
+
+	for i := 0; i < attempts; i++ {
+		res := s.clashProxyDelayWithURLDetailed(port, secret, nodeTag, targetURL, timeoutMs)
+		if res.Delay > 0 {
+			series = append(series, res.Delay)
+			continue
+		}
+		series = append(series, 0)
+		et := strings.TrimSpace(res.ErrorType)
+		if et == "" {
+			et = "unknown"
+		}
+		errorCount[et]++
+	}
+
+	median := medianInt(series)
+	if median > 0 {
+		return median, ""
+	}
+
+	bestType := "unknown"
+	bestCount := -1
+	for errType, cnt := range errorCount {
+		if cnt > bestCount {
+			bestType = errType
+			bestCount = cnt
+		}
+	}
+	return 0, bestType
+}
+
+func (s *Server) clashProxyDelayWithURL(port int, secret, nodeTag, targetURL string, timeoutMs int) int {
+	res := s.clashProxyDelayWithURLDetailed(port, secret, nodeTag, targetURL, timeoutMs)
+	return res.Delay
 }
 
 func (s *Server) clashProxyDelay(port int, secret, nodeTag string) int {
@@ -2726,10 +2837,22 @@ func (s *Server) performSiteCheck(nodes []storage.Node, targets []string) (map[s
 			}
 
 			result := &NodeSiteCheckResult{
-				Sites: make(map[string]int, len(targets)),
+				Sites:  make(map[string]int, len(targets)),
+				Errors: make(map[string]string, len(targets)),
 			}
 			for _, target := range targets {
-				result.Sites[target] = s.clashProxyDelayWithURL(port, "", probeTag, normalizeSiteCheckURL(target), 5000)
+				delay, errType := s.probeDelayMedianWithRetries(
+					port,
+					"",
+					probeTag,
+					normalizeSiteCheckURL(target),
+					5000,
+					siteCheckProbeAttempts,
+				)
+				result.Sites[target] = delay
+				if errType != "" {
+					result.Errors[target] = errType
+				}
 			}
 
 			mu.Lock()
@@ -2753,6 +2876,10 @@ func (s *Server) performSiteCheck(nodes []storage.Node, targets []string) (map[s
 		key := fmt.Sprintf("%s:%d", n.Server, n.ServerPort)
 		if r, ok := results[key]; ok {
 			for site, delay := range r.Sites {
+				errType := ""
+				if r.Errors != nil {
+					errType = r.Errors[site]
+				}
 				measurements = append(measurements, storage.SiteMeasurement{
 					Server:     n.Server,
 					ServerPort: n.ServerPort,
@@ -2760,6 +2887,7 @@ func (s *Server) performSiteCheck(nodes []storage.Node, targets []string) (map[s
 					Timestamp:  now,
 					Site:       site,
 					DelayMs:    delay,
+					ErrorType:  errType,
 					Mode:       "probe",
 				})
 			}
@@ -3861,10 +3989,11 @@ func (s *Server) getLatestMeasurements(c *gin.Context) {
 
 	// Build site map: "server:port" -> { sites: { site: delay_ms }, timestamp, mode, node_tag }
 	type SiteEntry struct {
-		Sites     map[string]int `json:"sites"`
-		Timestamp string         `json:"timestamp"`
-		Mode      string         `json:"mode"`
-		NodeTag   string         `json:"node_tag"`
+		Sites     map[string]int    `json:"sites"`
+		Errors    map[string]string `json:"errors,omitempty"`
+		Timestamp string            `json:"timestamp"`
+		Mode      string            `json:"mode"`
+		NodeTag   string            `json:"node_tag"`
 	}
 	siteMap := make(map[string]SiteEntry)
 	for _, m := range siteMeasurements {
@@ -3873,12 +4002,16 @@ func (s *Server) getLatestMeasurements(c *gin.Context) {
 		if !ok {
 			entry = SiteEntry{
 				Sites:     make(map[string]int),
+				Errors:    make(map[string]string),
 				Timestamp: m.Timestamp.Format(time.RFC3339),
 				Mode:      m.Mode,
 				NodeTag:   m.NodeTag,
 			}
 		}
 		entry.Sites[m.Site] = m.DelayMs
+		if strings.TrimSpace(m.ErrorType) != "" {
+			entry.Errors[m.Site] = m.ErrorType
+		}
 		siteMap[key] = entry
 	}
 

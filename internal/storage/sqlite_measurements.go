@@ -151,8 +151,8 @@ func (s *SQLiteStore) AddSiteMeasurements(measurements []SiteMeasurement) error 
 	}
 	defer tx.Rollback()
 
-	stmt, err := tx.Prepare(`INSERT INTO site_measurements (server, server_port, node_tag, timestamp, site, delay_ms, mode)
-		VALUES (?, ?, ?, ?, ?, ?, ?)`)
+	stmt, err := tx.Prepare(`INSERT INTO site_measurements (server, server_port, node_tag, timestamp, site, delay_ms, error_type, mode)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?)`)
 	if err != nil {
 		return err
 	}
@@ -162,7 +162,7 @@ func (s *SQLiteStore) AddSiteMeasurements(measurements []SiteMeasurement) error 
 		if m.Timestamp.IsZero() {
 			m.Timestamp = time.Now()
 		}
-		if _, err := stmt.Exec(m.Server, m.ServerPort, m.NodeTag, m.Timestamp, m.Site, m.DelayMs, m.Mode); err != nil {
+		if _, err := stmt.Exec(m.Server, m.ServerPort, m.NodeTag, m.Timestamp, m.Site, m.DelayMs, m.ErrorType, m.Mode); err != nil {
 			return err
 		}
 	}
@@ -200,7 +200,7 @@ func (s *SQLiteStore) GetLatestHealthMeasurements() ([]HealthMeasurement, error)
 }
 
 func (s *SQLiteStore) GetLatestSiteMeasurements() ([]SiteMeasurement, error) {
-	rows, err := s.db.Query(`SELECT sm.id, sm.server, sm.server_port, sm.node_tag, sm.timestamp, sm.site, sm.delay_ms, sm.mode
+	rows, err := s.db.Query(`SELECT sm.id, sm.server, sm.server_port, sm.node_tag, sm.timestamp, sm.site, sm.delay_ms, sm.error_type, sm.mode
 		FROM site_measurements sm
 		INNER JOIN (
 			SELECT server, server_port, MAX(timestamp) as max_ts
@@ -215,7 +215,7 @@ func (s *SQLiteStore) GetLatestSiteMeasurements() ([]SiteMeasurement, error) {
 	var measurements []SiteMeasurement
 	for rows.Next() {
 		var m SiteMeasurement
-		if err := rows.Scan(&m.ID, &m.Server, &m.ServerPort, &m.NodeTag, &m.Timestamp, &m.Site, &m.DelayMs, &m.Mode); err != nil {
+		if err := rows.Scan(&m.ID, &m.Server, &m.ServerPort, &m.NodeTag, &m.Timestamp, &m.Site, &m.DelayMs, &m.ErrorType, &m.Mode); err != nil {
 			return nil, fmt.Errorf("scanning latest site measurement row: %w", err)
 		}
 		measurements = append(measurements, m)
@@ -231,7 +231,7 @@ func (s *SQLiteStore) GetSiteMeasurements(server string, port int, limit int) ([
 		limit = 50
 	}
 
-	rows, err := s.db.Query(`SELECT id, server, server_port, node_tag, timestamp, site, delay_ms, mode
+	rows, err := s.db.Query(`SELECT id, server, server_port, node_tag, timestamp, site, delay_ms, error_type, mode
 		FROM site_measurements WHERE server = ? AND server_port = ?
 		ORDER BY timestamp DESC LIMIT ?`, server, port, limit)
 	if err != nil {
@@ -242,7 +242,7 @@ func (s *SQLiteStore) GetSiteMeasurements(server string, port int, limit int) ([
 	var measurements []SiteMeasurement
 	for rows.Next() {
 		var m SiteMeasurement
-		if err := rows.Scan(&m.ID, &m.Server, &m.ServerPort, &m.NodeTag, &m.Timestamp, &m.Site, &m.DelayMs, &m.Mode); err != nil {
+		if err := rows.Scan(&m.ID, &m.Server, &m.ServerPort, &m.NodeTag, &m.Timestamp, &m.Site, &m.DelayMs, &m.ErrorType, &m.Mode); err != nil {
 			return nil, fmt.Errorf("scanning site measurement row: %w", err)
 		}
 		measurements = append(measurements, m)
