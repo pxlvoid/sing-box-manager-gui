@@ -2,6 +2,7 @@ package service
 
 import (
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -157,8 +158,17 @@ func (s *SubscriptionService) syncToUnifiedNodes(sub *storage.Subscription) (int
 
 	var unified []storage.UnifiedNode
 	for _, n := range sub.Nodes {
+		sourceTag := strings.TrimSpace(n.Tag)
+		prefix := "NODE"
+		if cc := strings.ToUpper(strings.TrimSpace(n.Country)); cc != "" {
+			prefix = cc
+		}
+		displayName := fmt.Sprintf("%s %s:%d", prefix, n.Server, n.ServerPort)
+
 		unified = append(unified, storage.UnifiedNode{
-			Tag:          n.Tag,
+			Tag:          displayName,
+			DisplayName:  displayName,
+			SourceTag:    sourceTag,
 			Type:         n.Type,
 			Server:       n.Server,
 			ServerPort:   n.ServerPort,

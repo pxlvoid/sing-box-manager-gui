@@ -1,6 +1,7 @@
 import { Chip, Button, Checkbox } from '@nextui-org/react';
 import { Activity, Trash2, ArrowUpCircle, ArrowDownCircle, Archive, Pencil, RotateCcw } from 'lucide-react';
 import type { UnifiedNode, NodeHealthResult, HealthCheckMode, NodeSiteCheckResult, GeoData } from '../../../store';
+import { nodeDisplayTag, nodeInternalTag, nodeSourceTag } from '../../../store';
 import { spKey, SITE_CHECK_TARGETS } from '../types';
 import NodeHealthChips from './NodeHealthChips';
 import GeoChip from './GeoChip';
@@ -73,7 +74,12 @@ export default function MobileNodeCard({
           />
         )}
         <span className="text-lg shrink-0">{countryEmoji}</span>
-        <span className="font-medium text-sm truncate flex-1 min-w-0">{node.tag}</span>
+        <div className="flex-1 min-w-0">
+          <span className="font-medium text-sm truncate block">{nodeDisplayTag(node)}</span>
+          {nodeSourceTag(node) && nodeSourceTag(node) !== nodeDisplayTag(node) && (
+            <span className="text-xs text-gray-500 truncate block">{nodeSourceTag(node)}</span>
+          )}
+        </div>
         <Chip size="sm" variant="flat" className="shrink-0">{node.type}</Chip>
       </div>
 
@@ -122,8 +128,8 @@ export default function MobileNodeCard({
               isIconOnly
               size="sm"
               variant="light"
-              isLoading={healthCheckingNodes?.includes(node.tag)}
-              onPress={() => onHealthCheck(node.tag)}
+              isLoading={healthCheckingNodes?.includes(nodeInternalTag(node))}
+              onPress={() => onHealthCheck(nodeInternalTag(node))}
             >
               <Activity className="w-3.5 h-3.5" />
             </Button>

@@ -15,13 +15,7 @@ func (s *Server) RunVerification() {
 
 // RunVerificationForTags performs a verification cycle only for selected tags.
 func (s *Server) RunVerificationForTags(tags []string) {
-	tagSet := make(map[string]struct{}, len(tags))
-	for _, tag := range tags {
-		if tag == "" {
-			continue
-		}
-		tagSet[tag] = struct{}{}
-	}
+	tagSet := parseTagSet(tags)
 	if len(tagSet) == 0 {
 		return
 	}
@@ -80,12 +74,16 @@ func (s *Server) runVerificationWithTagFilter(tagSet map[string]struct{}) {
 
 	for i := range pendingNodes {
 		n := &pendingNodes[i]
-		tagToUnified[n.Tag] = n
+		for _, candidate := range unifiedNodeTagCandidates(*n) {
+			tagToUnified[candidate] = n
+		}
 		allCheckNodes = append(allCheckNodes, n.ToNode())
 	}
 	for i := range verifiedNodes {
 		n := &verifiedNodes[i]
-		tagToUnified[n.Tag] = n
+		for _, candidate := range unifiedNodeTagCandidates(*n) {
+			tagToUnified[candidate] = n
+		}
 		allCheckNodes = append(allCheckNodes, n.ToNode())
 	}
 
@@ -193,9 +191,12 @@ func (s *Server) runVerificationWithTagFilter(tagSet map[string]struct{}) {
 			vlog.PendingPromoted++
 			configChanged = true
 			s.eventBus.Publish("verify:node_promoted", map[string]interface{}{
-				"tag":         pn.Tag,
-				"server":      pn.Server,
-				"server_port": pn.ServerPort,
+				"tag":          unifiedDisplayName(pn),
+				"internal_tag": unifiedRoutingTag(pn),
+				"display_name": unifiedDisplayName(pn),
+				"source_tag":   unifiedSourceTag(pn),
+				"server":       pn.Server,
+				"server_port":  pn.ServerPort,
 			})
 		} else {
 			// Increment failures
@@ -211,21 +212,27 @@ func (s *Server) runVerificationWithTagFilter(tagSet map[string]struct{}) {
 				}
 				vlog.PendingArchived++
 				s.eventBus.Publish("verify:node_archived", map[string]interface{}{
-					"tag":         pn.Tag,
-					"server":      pn.Server,
-					"server_port": pn.ServerPort,
-					"failures":    failures,
+					"tag":          unifiedDisplayName(pn),
+					"internal_tag": unifiedRoutingTag(pn),
+					"display_name": unifiedDisplayName(pn),
+					"source_tag":   unifiedSourceTag(pn),
+					"server":       pn.Server,
+					"server_port":  pn.ServerPort,
+					"failures":     failures,
 				})
 			}
 		}
 
 		s.eventBus.Publish("verify:progress", map[string]interface{}{
-			"phase":    "pending",
-			"current":  i + 1,
-			"total":    len(pendingNodes),
-			"tag":      pn.Tag,
-			"alive":    alive,
-			"sites_ok": sitesOk,
+			"phase":        "pending",
+			"current":      i + 1,
+			"total":        len(pendingNodes),
+			"tag":          unifiedDisplayName(pn),
+			"internal_tag": unifiedRoutingTag(pn),
+			"display_name": unifiedDisplayName(pn),
+			"source_tag":   unifiedSourceTag(pn),
+			"alive":        alive,
+			"sites_ok":     sitesOk,
 		})
 	}
 
@@ -262,9 +269,12 @@ func (s *Server) runVerificationWithTagFilter(tagSet map[string]struct{}) {
 			vlog.VerifiedDemoted++
 			configChanged = true
 			s.eventBus.Publish("verify:node_demoted", map[string]interface{}{
-				"tag":         vn.Tag,
-				"server":      vn.Server,
-				"server_port": vn.ServerPort,
+				"tag":          unifiedDisplayName(vn),
+				"internal_tag": unifiedRoutingTag(vn),
+				"display_name": unifiedDisplayName(vn),
+				"source_tag":   unifiedSourceTag(vn),
+				"server":       vn.Server,
+				"server_port":  vn.ServerPort,
 			})
 		} else {
 			// Reset failures counter
@@ -272,12 +282,15 @@ func (s *Server) runVerificationWithTagFilter(tagSet map[string]struct{}) {
 		}
 
 		s.eventBus.Publish("verify:progress", map[string]interface{}{
-			"phase":    "verified",
-			"current":  i + 1,
-			"total":    len(verifiedNodes),
-			"tag":      vn.Tag,
-			"alive":    alive,
-			"sites_ok": sitesOk,
+			"phase":        "verified",
+			"current":      i + 1,
+			"total":        len(verifiedNodes),
+			"tag":          unifiedDisplayName(vn),
+			"internal_tag": unifiedRoutingTag(vn),
+			"display_name": unifiedDisplayName(vn),
+			"source_tag":   unifiedSourceTag(vn),
+			"alive":        alive,
+			"sites_ok":     sitesOk,
 		})
 	}
 
@@ -318,12 +331,15 @@ func (s *Server) archiveThresholdExceededPendingNodes(
 		*configChanged = true
 
 		s.eventBus.Publish("verify:node_archived", map[string]interface{}{
-			"tag":         pn.Tag,
-			"server":      pn.Server,
-			"server_port": pn.ServerPort,
-			"failures":    pn.ConsecutiveFailures,
-			"reason":      "threshold exceeded before check",
-			"timestamp":   time.Now().Format(time.RFC3339),
+			"tag":          unifiedDisplayName(pn),
+			"internal_tag": unifiedRoutingTag(pn),
+			"display_name": unifiedDisplayName(pn),
+			"source_tag":   unifiedSourceTag(pn),
+			"server":       pn.Server,
+			"server_port":  pn.ServerPort,
+			"failures":     pn.ConsecutiveFailures,
+			"reason":       "threshold exceeded before check",
+			"timestamp":    time.Now().Format(time.RFC3339),
 		})
 	}
 
@@ -340,14 +356,14 @@ func (s *Server) collectVerificationNodes(tagSet map[string]struct{}) ([]storage
 
 	filteredPending := make([]storage.UnifiedNode, 0, len(pendingNodes))
 	for _, n := range pendingNodes {
-		if _, ok := tagSet[n.Tag]; ok {
+		if unifiedNodeMatchesAnyTag(n, tagSet) {
 			filteredPending = append(filteredPending, n)
 		}
 	}
 
 	filteredVerified := make([]storage.UnifiedNode, 0, len(verifiedNodes))
 	for _, n := range verifiedNodes {
-		if _, ok := tagSet[n.Tag]; ok {
+		if unifiedNodeMatchesAnyTag(n, tagSet) {
 			filteredVerified = append(filteredVerified, n)
 		}
 	}
@@ -406,16 +422,19 @@ func (s *Server) archiveBrokenNodes(
 		*configChanged = true
 
 		s.eventBus.Publish("verify:node_archived", map[string]interface{}{
-			"tag":         bn.Tag,
-			"server":      un.Server,
-			"server_port": un.ServerPort,
-			"reason":      fmt.Sprintf("broken config: %s", bn.Error),
+			"tag":          unifiedDisplayName(*un),
+			"internal_tag": unifiedRoutingTag(*un),
+			"display_name": unifiedDisplayName(*un),
+			"source_tag":   unifiedSourceTag(*un),
+			"server":       un.Server,
+			"server_port":  un.ServerPort,
+			"reason":       fmt.Sprintf("broken config: %s", bn.Error),
 		})
 		logger.Printf("[verifier] Archived broken node: %s — %s", bn.Tag, bn.Error)
 
 		// Also record as unsupported node for visibility
 		unsup := storage.UnsupportedNode{
-			NodeTag:    bn.Tag,
+			NodeTag:    unifiedRoutingTag(*un),
 			Error:      bn.Error,
 			Server:     un.Server,
 			ServerPort: un.ServerPort,

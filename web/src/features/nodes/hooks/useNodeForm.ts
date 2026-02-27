@@ -26,8 +26,13 @@ export function useNodeForm() {
 
   const handleOpenEdit = (node: UnifiedNode) => {
     setEditingNode(node);
+    const displayName = node.display_name || node.tag;
+    const sourceTag = node.source_tag || node.tag;
     setNodeForm({
-      tag: node.tag,
+      tag: displayName,
+      display_name: displayName,
+      source_tag: sourceTag,
+      internal_tag: node.internal_tag,
       type: node.type,
       server: node.server,
       server_port: node.server_port,
@@ -49,7 +54,14 @@ export function useNodeForm() {
     try {
       const response = await nodeApi.parse(nodeUrl.trim());
       const parsedNode = response.data.data as Node;
-      setNodeForm(parsedNode);
+      const sourceTag = parsedNode.source_tag || parsedNode.tag;
+      const displayName = parsedNode.display_name || parsedNode.tag;
+      setNodeForm({
+        ...parsedNode,
+        source_tag: sourceTag,
+        display_name: displayName,
+        tag: displayName,
+      });
     } catch (error: any) {
       const message = error.response?.data?.error || 'Failed to parse, please check the link format';
       setParseError(message);
@@ -64,8 +76,13 @@ export function useNodeForm() {
     setIsSubmitting(true);
     try {
       const country = countryOptions.find(c => c.code === nodeForm.country);
+      const displayName = (nodeForm.display_name || nodeForm.tag || '').trim();
+      const sourceTag = (nodeForm.source_tag || nodeForm.tag || '').trim();
       const nodeData = {
-        tag: nodeForm.tag,
+        tag: displayName,
+        display_name: displayName,
+        source_tag: sourceTag,
+        internal_tag: nodeForm.internal_tag || editingNode?.internal_tag,
         type: nodeForm.type,
         server: nodeForm.server,
         server_port: nodeForm.server_port,

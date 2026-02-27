@@ -17,6 +17,7 @@ import {
 import { Search, Activity, Trash2, ArrowDownCircle, Pencil } from 'lucide-react';
 import type { UnifiedNode, GeoData } from '../../../store';
 import type { NodeHealthResult, HealthCheckMode, NodeSiteCheckResult } from '../../../store';
+import { nodeDisplayTag, nodeInternalTag, nodeSourceTag } from '../../../store';
 import { SITE_CHECK_TARGETS } from '../types';
 import NodeHealthChips from '../components/NodeHealthChips';
 import GeoChip from '../components/GeoChip';
@@ -71,7 +72,8 @@ export default function VerifiedNodesTab({
     const q = searchQuery.toLowerCase();
     return nodes.filter(
       (n) =>
-        n.tag.toLowerCase().includes(q) ||
+        nodeDisplayTag(n).toLowerCase().includes(q) ||
+        nodeSourceTag(n).toLowerCase().includes(q) ||
         n.server.toLowerCase().includes(q)
     );
   }, [nodes, searchQuery]);
@@ -111,7 +113,7 @@ export default function VerifiedNodesTab({
       <div className="flex flex-wrap gap-2 items-center">
         <Input
           size="sm"
-          placeholder="Search by tag or server..."
+          placeholder="Search by name, original tag or server..."
           value={searchQuery}
           onChange={(e) => {
             setSearchQuery(e.target.value);
@@ -208,9 +210,14 @@ export default function VerifiedNodesTab({
                     </Tooltip>
                   </TableCell>
                   <TableCell>
-                    <span className="font-medium truncate block max-w-[180px] sm:max-w-[300px]">
-                      {node.tag}
-                    </span>
+                    <div className="max-w-[180px] sm:max-w-[300px]">
+                      <span className="font-medium truncate block">{nodeDisplayTag(node)}</span>
+                      {nodeSourceTag(node) && nodeSourceTag(node) !== nodeDisplayTag(node) && (
+                        <span className="text-xs text-gray-500 truncate block" title={nodeSourceTag(node)}>
+                          {nodeSourceTag(node)}
+                        </span>
+                      )}
+                    </div>
                   </TableCell>
                   <TableCell>
                     <Chip size="sm" variant="flat">
@@ -246,8 +253,8 @@ export default function VerifiedNodesTab({
                           isIconOnly
                           size="sm"
                           variant="light"
-                          isLoading={healthCheckingNodes.includes(node.tag)}
-                          onPress={() => checkSingleNodeHealth(node.tag)}
+                          isLoading={healthCheckingNodes.includes(nodeInternalTag(node))}
+                          onPress={() => checkSingleNodeHealth(nodeInternalTag(node))}
                         >
                           <Activity className="w-4 h-4" />
                         </Button>

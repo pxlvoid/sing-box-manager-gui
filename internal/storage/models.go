@@ -18,6 +18,9 @@ const (
 type UnifiedNode struct {
 	ID                  int64                  `json:"id"`
 	Tag                 string                 `json:"tag"`
+	InternalTag         string                 `json:"internal_tag"`
+	DisplayName         string                 `json:"display_name,omitempty"`
+	SourceTag           string                 `json:"source_tag,omitempty"`
 	Type                string                 `json:"type"`
 	Server              string                 `json:"server"`
 	ServerPort          int                    `json:"server_port"`
@@ -37,7 +40,10 @@ type UnifiedNode struct {
 // ToNode converts UnifiedNode to the basic Node type used by config builder
 func (u *UnifiedNode) ToNode() Node {
 	return Node{
-		Tag:          u.Tag,
+		Tag:          u.DisplayOrTag(),
+		InternalTag:  u.RoutingTag(),
+		DisplayName:  u.DisplayOrTag(),
+		SourceTag:    u.SourceOrTag(),
 		Type:         u.Type,
 		Server:       u.Server,
 		ServerPort:   u.ServerPort,
@@ -98,12 +104,83 @@ type Traffic struct {
 // Node represents a proxy node
 type Node struct {
 	Tag          string                 `json:"tag"`
+	InternalTag  string                 `json:"internal_tag,omitempty"`
+	DisplayName  string                 `json:"display_name,omitempty"`
+	SourceTag    string                 `json:"source_tag,omitempty"`
 	Type         string                 `json:"type"` // shadowsocks/vmess/vless/trojan/hysteria2/tuic
 	Server       string                 `json:"server"`
 	ServerPort   int                    `json:"server_port"`
 	Extra        map[string]interface{} `json:"extra,omitempty"`         // protocol-specific fields
 	Country      string                 `json:"country,omitempty"`       // country code
 	CountryEmoji string                 `json:"country_emoji,omitempty"` // country emoji
+}
+
+// RoutingTag returns the stable sing-box/runtime tag for the node.
+func (u *UnifiedNode) RoutingTag() string {
+	tag := strings.TrimSpace(u.InternalTag)
+	if tag != "" {
+		return tag
+	}
+	return strings.TrimSpace(u.Tag)
+}
+
+// DisplayOrTag returns the display name with safe fallbacks.
+func (u *UnifiedNode) DisplayOrTag() string {
+	if name := strings.TrimSpace(u.DisplayName); name != "" {
+		return name
+	}
+	if name := strings.TrimSpace(u.Tag); name != "" {
+		return name
+	}
+	if name := strings.TrimSpace(u.SourceTag); name != "" {
+		return name
+	}
+	return ""
+}
+
+// SourceOrTag returns the original/source name with safe fallbacks.
+func (u *UnifiedNode) SourceOrTag() string {
+	if name := strings.TrimSpace(u.SourceTag); name != "" {
+		return name
+	}
+	if name := strings.TrimSpace(u.Tag); name != "" {
+		return name
+	}
+	return strings.TrimSpace(u.DisplayName)
+}
+
+// RoutingTag returns the stable sing-box/runtime tag for the node.
+func (n *Node) RoutingTag() string {
+	tag := strings.TrimSpace(n.InternalTag)
+	if tag != "" {
+		return tag
+	}
+	return strings.TrimSpace(n.Tag)
+}
+
+// DisplayOrTag returns the display name with safe fallbacks.
+func (n *Node) DisplayOrTag() string {
+	if name := strings.TrimSpace(n.DisplayName); name != "" {
+		return name
+	}
+	if name := strings.TrimSpace(n.Tag); name != "" {
+		return name
+	}
+	if name := strings.TrimSpace(n.SourceTag); name != "" {
+		return name
+	}
+	return ""
+}
+
+// SourceOrTag returns the original/source name with safe fallbacks.
+func (n *Node) SourceOrTag() string {
+	if name := strings.TrimSpace(n.SourceTag); name != "" {
+		return name
+	}
+	if name := strings.TrimSpace(n.Tag); name != "" {
+		return name
+	}
+	return strings.TrimSpace(n.DisplayName)
 }
 
 // UnsupportedNode represents a node that failed sing-box config validation (persisted)

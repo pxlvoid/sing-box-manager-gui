@@ -32,6 +32,7 @@ func (s *SQLiteStore) migrate() error {
 		s.migrateV5,
 		s.migrateV6,
 		s.migrateV7,
+		s.migrateV8,
 	}
 
 	for i, m := range migrations {
@@ -597,4 +598,182 @@ func (s *SQLiteStore) migrateV7() error {
 	}
 
 	return tx.Commit()
+}
+
+// migrateV8 introduces stable internal tags and display/source names for unified nodes.
+func (s *SQLiteStore) migrateV8() error {
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	hasInternalTag, err := tableHasColumn(tx, "nodes", "internal_tag")
+	if err != nil {
+		return err
+	}
+	if !hasInternalTag {
+		if _, err := tx.Exec(`ALTER TABLE nodes ADD COLUMN internal_tag TEXT NOT NULL DEFAULT ''`); err != nil {
+			return fmt.Errorf("add nodes.internal_tag: %w", err)
+		}
+	}
+
+	hasDisplayName, err := tableHasColumn(tx, "nodes", "display_name")
+	if err != nil {
+		return err
+	}
+	if !hasDisplayName {
+		if _, err := tx.Exec(`ALTER TABLE nodes ADD COLUMN display_name TEXT NOT NULL DEFAULT ''`); err != nil {
+			return fmt.Errorf("add nodes.display_name: %w", err)
+		}
+	}
+
+	hasSourceTag, err := tableHasColumn(tx, "nodes", "source_tag")
+	if err != nil {
+		return err
+	}
+	if !hasSourceTag {
+		if _, err := tx.Exec(`ALTER TABLE nodes ADD COLUMN source_tag TEXT NOT NULL DEFAULT ''`); err != nil {
+			return fmt.Errorf("add nodes.source_tag: %w", err)
+		}
+	}
+
+	stmts := []string{
+		`CREATE TABLE IF NOT EXISTS node_tag_aliases (
+			alias_tag TEXT PRIMARY KEY,
+			internal_tag TEXT NOT NULL,
+			created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+		)`,
+		`CREATE INDEX IF NOT EXISTS idx_node_tag_aliases_internal ON node_tag_aliases(internal_tag)`,
+		`UPDATE nodes
+			SET source_tag = CASE
+				WHEN TRIM(source_tag) = '' THEN TRIM(tag)
+				ELSE source_tag
+			END`,
+		`UPDATE nodes
+			SET display_name = CASE
+				WHEN TRIM(display_name) = '' THEN
+					CASE
+						WHEN TRIM(country) <> '' THEN printf('%s-%04d', UPPER(SUBSTR(country, 1, 2)), id)
+						ELSE printf('NODE-%04d', id)
+					END
+				ELSE display_name
+			END`,
+		`UPDATE nodes
+			SET internal_tag = CASE
+				WHEN TRIM(internal_tag) = '' THEN printf('node_%08X', id)
+				ELSE internal_tag
+			END`,
+		`UPDATE nodes
+			SET tag = display_name
+			WHERE TRIM(display_name) <> ''`,
+		`UPDATE unsupported_nodes
+			SET node_tag = (
+				SELECT n.internal_tag
+				FROM nodes n
+				WHERE n.server = unsupported_nodes.server
+				  AND n.server_port = unsupported_nodes.server_port
+				LIMIT 1
+			)
+			WHERE EXISTS (
+				SELECT 1
+				FROM nodes n
+				WHERE n.server = unsupported_nodes.server
+				  AND n.server_port = unsupported_nodes.server_port
+				  AND TRIM(n.internal_tag) <> ''
+			)`,
+		`UPDATE health_measurements
+			SET node_tag = (
+				SELECT n.internal_tag
+				FROM nodes n
+				WHERE n.server = health_measurements.server
+				  AND n.server_port = health_measurements.server_port
+				LIMIT 1
+			)
+			WHERE EXISTS (
+				SELECT 1
+				FROM nodes n
+				WHERE n.server = health_measurements.server
+				  AND n.server_port = health_measurements.server_port
+				  AND TRIM(n.internal_tag) <> ''
+			)`,
+		`UPDATE site_measurements
+			SET node_tag = (
+				SELECT n.internal_tag
+				FROM nodes n
+				WHERE n.server = site_measurements.server
+				  AND n.server_port = site_measurements.server_port
+				LIMIT 1
+			)
+			WHERE EXISTS (
+				SELECT 1
+				FROM nodes n
+				WHERE n.server = site_measurements.server
+				  AND n.server_port = site_measurements.server_port
+				  AND TRIM(n.internal_tag) <> ''
+			)`,
+		`UPDATE geo_data
+			SET node_tag = (
+				SELECT n.internal_tag
+				FROM nodes n
+				WHERE n.server = geo_data.server
+				  AND n.server_port = geo_data.server_port
+				LIMIT 1
+			)
+			WHERE EXISTS (
+				SELECT 1
+				FROM nodes n
+				WHERE n.server = geo_data.server
+				  AND n.server_port = geo_data.server_port
+				  AND TRIM(n.internal_tag) <> ''
+			)`,
+		`CREATE UNIQUE INDEX IF NOT EXISTS idx_nodes_internal_tag_uniq
+			ON nodes(internal_tag)
+			WHERE TRIM(internal_tag) <> ''`,
+		`CREATE UNIQUE INDEX IF NOT EXISTS idx_nodes_display_name_uniq
+			ON nodes(display_name)
+			WHERE TRIM(display_name) <> ''`,
+		`INSERT OR REPLACE INTO node_tag_aliases(alias_tag, internal_tag)
+			SELECT TRIM(source_tag), internal_tag
+			FROM nodes
+			WHERE TRIM(source_tag) <> '' AND TRIM(internal_tag) <> ''`,
+		`INSERT OR REPLACE INTO node_tag_aliases(alias_tag, internal_tag)
+			SELECT TRIM(display_name), internal_tag
+			FROM nodes
+			WHERE TRIM(display_name) <> '' AND TRIM(internal_tag) <> ''`,
+	}
+
+	for _, stmt := range stmts {
+		if _, err := tx.Exec(stmt); err != nil {
+			return fmt.Errorf("exec migration v8 statement failed: %w", err)
+		}
+	}
+
+	return tx.Commit()
+}
+
+func tableHasColumn(tx *sql.Tx, tableName, columnName string) (bool, error) {
+	rows, err := tx.Query("PRAGMA table_info(" + tableName + ")")
+	if err != nil {
+		return false, fmt.Errorf("pragma table_info(%s): %w", tableName, err)
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var cid int
+		var name, typ string
+		var notnull int
+		var dfltValue sql.NullString
+		var pk int
+		if err := rows.Scan(&cid, &name, &typ, &notnull, &dfltValue, &pk); err != nil {
+			return false, fmt.Errorf("scan table_info(%s): %w", tableName, err)
+		}
+		if name == columnName {
+			return true, nil
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return false, fmt.Errorf("iterate table_info(%s): %w", tableName, err)
+	}
+	return false, nil
 }

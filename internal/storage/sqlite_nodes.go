@@ -4,11 +4,48 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"time"
+
+	"github.com/google/uuid"
 )
 
-const nodeColumns = `id, tag, type, server, server_port, country, country_emoji, extra_json,
+const nodeColumns = `id, tag, internal_tag, display_name, source_tag, type, server, server_port, country, country_emoji, extra_json,
 	status, source, group_tag, consecutive_failures, last_checked_at, created_at, promoted_at, archived_at`
+
+func normalizeUnifiedNodeForPersistence(node *UnifiedNode) {
+	node.Tag = strings.TrimSpace(node.Tag)
+	node.InternalTag = strings.TrimSpace(node.InternalTag)
+	node.DisplayName = strings.TrimSpace(node.DisplayName)
+	node.SourceTag = strings.TrimSpace(node.SourceTag)
+
+	if node.SourceTag == "" {
+		if node.Tag != "" {
+			node.SourceTag = node.Tag
+		} else if node.DisplayName != "" {
+			node.SourceTag = node.DisplayName
+		}
+	}
+
+	if node.DisplayName == "" {
+		if node.Tag != "" {
+			node.DisplayName = node.Tag
+		} else if node.SourceTag != "" {
+			node.DisplayName = node.SourceTag
+		} else if node.Server != "" && node.ServerPort > 0 {
+			node.DisplayName = fmt.Sprintf("%s:%d", node.Server, node.ServerPort)
+		} else {
+			node.DisplayName = "Node"
+		}
+	}
+
+	// Keep legacy `tag` in sync with UI display name for compatibility.
+	node.Tag = node.DisplayName
+
+	if node.InternalTag == "" {
+		node.InternalTag = "node_" + strings.ReplaceAll(uuid.NewString(), "-", "")
+	}
+}
 
 func (s *SQLiteStore) GetNodes(status NodeStatus) []UnifiedNode {
 	rows, err := s.db.Query("SELECT "+nodeColumns+" FROM nodes WHERE status = ? ORDER BY id", string(status))
@@ -39,6 +76,8 @@ func (s *SQLiteStore) GetNodesBySource(source string) []UnifiedNode {
 }
 
 func (s *SQLiteStore) AddNode(node UnifiedNode) (int64, error) {
+	normalizeUnifiedNodeForPersistence(&node)
+
 	extraJSON := marshalJSON(node.Extra)
 	if node.CreatedAt.IsZero() {
 		node.CreatedAt = time.Now()
@@ -50,10 +89,10 @@ func (s *SQLiteStore) AddNode(node UnifiedNode) (int64, error) {
 		node.Source = "manual"
 	}
 
-	res, err := s.db.Exec(`INSERT INTO nodes (tag, type, server, server_port, country, country_emoji, extra_json,
+	res, err := s.db.Exec(`INSERT INTO nodes (tag, internal_tag, display_name, source_tag, type, server, server_port, country, country_emoji, extra_json,
 		status, source, group_tag, consecutive_failures, last_checked_at, created_at, promoted_at, archived_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		node.Tag, node.Type, node.Server, node.ServerPort, node.Country, node.CountryEmoji, extraJSON,
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		node.Tag, node.InternalTag, node.DisplayName, node.SourceTag, node.Type, node.Server, node.ServerPort, node.Country, node.CountryEmoji, extraJSON,
 		string(node.Status), node.Source, node.GroupTag, node.ConsecutiveFailures,
 		node.LastCheckedAt, node.CreatedAt, node.PromotedAt, node.ArchivedAt)
 	if err != nil {
@@ -69,15 +108,18 @@ func (s *SQLiteStore) AddNodesBulk(nodes []UnifiedNode) (added int, err error) {
 	}
 	defer tx.Rollback()
 
-	stmt, err := tx.Prepare(`INSERT OR IGNORE INTO nodes (tag, type, server, server_port, country, country_emoji, extra_json,
-		status, source, group_tag, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+	stmt, err := tx.Prepare(`INSERT OR IGNORE INTO nodes (tag, internal_tag, display_name, source_tag, type, server, server_port, country, country_emoji, extra_json,
+		status, source, group_tag, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
 	if err != nil {
 		return 0, err
 	}
 	defer stmt.Close()
 
 	now := time.Now()
-	for _, n := range nodes {
+	for i := range nodes {
+		n := nodes[i]
+		normalizeUnifiedNodeForPersistence(&n)
+
 		extraJSON := marshalJSON(n.Extra)
 		status := string(n.Status)
 		if status == "" {
@@ -87,7 +129,7 @@ func (s *SQLiteStore) AddNodesBulk(nodes []UnifiedNode) (added int, err error) {
 		if source == "" {
 			source = "manual"
 		}
-		res, err := stmt.Exec(n.Tag, n.Type, n.Server, n.ServerPort, n.Country, n.CountryEmoji, extraJSON,
+		res, err := stmt.Exec(n.Tag, n.InternalTag, n.DisplayName, n.SourceTag, n.Type, n.Server, n.ServerPort, n.Country, n.CountryEmoji, extraJSON,
 			status, source, n.GroupTag, now)
 		if err != nil {
 			continue
@@ -99,11 +141,32 @@ func (s *SQLiteStore) AddNodesBulk(nodes []UnifiedNode) (added int, err error) {
 }
 
 func (s *SQLiteStore) UpdateNode(node UnifiedNode) error {
+	current := s.GetNodeByID(node.ID)
+	if current == nil {
+		return fmt.Errorf("node not found: %d", node.ID)
+	}
+
+	if strings.TrimSpace(node.InternalTag) == "" {
+		node.InternalTag = current.InternalTag
+	}
+	if strings.TrimSpace(node.SourceTag) == "" {
+		node.SourceTag = current.SourceTag
+	}
+	if strings.TrimSpace(node.DisplayName) == "" {
+		if strings.TrimSpace(node.Tag) != "" {
+			node.DisplayName = strings.TrimSpace(node.Tag)
+		} else {
+			node.DisplayName = current.DisplayName
+		}
+	}
+
+	normalizeUnifiedNodeForPersistence(&node)
+
 	extraJSON := marshalJSON(node.Extra)
-	res, err := s.db.Exec(`UPDATE nodes SET tag=?, type=?, server=?, server_port=?, country=?, country_emoji=?,
+	res, err := s.db.Exec(`UPDATE nodes SET tag=?, display_name=?, source_tag=?, type=?, server=?, server_port=?, country=?, country_emoji=?,
 		extra_json=?, status=?, source=?, group_tag=?, consecutive_failures=?,
 		last_checked_at=?, promoted_at=?, archived_at=? WHERE id=?`,
-		node.Tag, node.Type, node.Server, node.ServerPort, node.Country, node.CountryEmoji, extraJSON,
+		node.Tag, node.DisplayName, node.SourceTag, node.Type, node.Server, node.ServerPort, node.Country, node.CountryEmoji, extraJSON,
 		string(node.Status), node.Source, node.GroupTag, node.ConsecutiveFailures,
 		node.LastCheckedAt, node.PromotedAt, node.ArchivedAt, node.ID)
 	if err != nil {
@@ -265,7 +328,7 @@ func scanUnifiedNodeFromRows(rows *sql.Rows) (UnifiedNode, error) {
 	var lastCheckedAt, promotedAt, archivedAt sql.NullTime
 	var createdAt time.Time
 
-	err := rows.Scan(&n.ID, &n.Tag, &n.Type, &n.Server, &n.ServerPort, &n.Country, &n.CountryEmoji,
+	err := rows.Scan(&n.ID, &n.Tag, &n.InternalTag, &n.DisplayName, &n.SourceTag, &n.Type, &n.Server, &n.ServerPort, &n.Country, &n.CountryEmoji,
 		&extraJSON, &status, &n.Source, &n.GroupTag, &n.ConsecutiveFailures,
 		&lastCheckedAt, &createdAt, &promotedAt, &archivedAt)
 	if err != nil {
@@ -296,7 +359,7 @@ func scanUnifiedNodeRow(row *sql.Row) *UnifiedNode {
 	var lastCheckedAt, promotedAt, archivedAt sql.NullTime
 	var createdAt time.Time
 
-	err := row.Scan(&n.ID, &n.Tag, &n.Type, &n.Server, &n.ServerPort, &n.Country, &n.CountryEmoji,
+	err := row.Scan(&n.ID, &n.Tag, &n.InternalTag, &n.DisplayName, &n.SourceTag, &n.Type, &n.Server, &n.ServerPort, &n.Country, &n.CountryEmoji,
 		&extraJSON, &status, &n.Source, &n.GroupTag, &n.ConsecutiveFailures,
 		&lastCheckedAt, &createdAt, &promotedAt, &archivedAt)
 	if err != nil {

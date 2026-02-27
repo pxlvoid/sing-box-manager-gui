@@ -2,7 +2,9 @@ import { useEffect, useRef } from 'react';
 import { useStore } from '../store';
 
 function formatNodeIdentity(data: Record<string, unknown>): string {
-  const tag = typeof data.tag === 'string' ? data.tag : '';
+  const displayName = typeof data.display_name === 'string' ? data.display_name : '';
+  const sourceTag = typeof data.source_tag === 'string' ? data.source_tag : '';
+  const tag = displayName || (typeof data.tag === 'string' ? data.tag : '');
   const server = typeof data.server === 'string' ? data.server : '';
   const portRaw = data.server_port;
   const port = typeof portRaw === 'number'
@@ -13,6 +15,9 @@ function formatNodeIdentity(data: Record<string, unknown>): string {
 
   if (server && Number.isFinite(port) && port > 0) {
     if (tag) {
+      if (sourceTag && sourceTag !== tag) {
+        return `${tag} / ${sourceTag} (${server}:${port})`;
+      }
       return `${tag} (${server}:${port})`;
     }
     return `${server}:${port}`;

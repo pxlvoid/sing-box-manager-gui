@@ -12,6 +12,7 @@ import {
 import { Plus, List, Filter as FilterIcon, Download, ClipboardPaste, Network } from 'lucide-react';
 import { useStore } from '../store';
 import type { Subscription, UnifiedNode } from '../store';
+import { nodeDisplayTag, nodeInternalTag, nodeSourceTag } from '../store';
 import { monitoringApi } from '../api';
 
 // Hooks
@@ -41,6 +42,8 @@ import ImportModal from '../features/nodes/modals/ImportModal';
 
 interface NodeTrafficRow {
   node_tag: string;
+  display_name?: string;
+  source_tag?: string;
   last_seen?: string;
   upload_bytes: number;
   download_bytes: number;
@@ -114,9 +117,17 @@ export default function Subscriptions() {
 
   const nodeStatusByTag = useMemo(() => {
     const map = new Map<string, 'pending' | 'verified' | 'archived'>();
-    for (const node of pendingNodes) map.set(node.tag, 'pending');
-    for (const node of verifiedNodes) map.set(node.tag, 'verified');
-    for (const node of archivedNodes) map.set(node.tag, 'archived');
+    for (const node of pendingNodes) map.set(nodeInternalTag(node), 'pending');
+    for (const node of verifiedNodes) map.set(nodeInternalTag(node), 'verified');
+    for (const node of archivedNodes) map.set(nodeInternalTag(node), 'archived');
+    return map;
+  }, [pendingNodes, verifiedNodes, archivedNodes]);
+
+  const nodeByInternalTag = useMemo(() => {
+    const map = new Map<string, UnifiedNode>();
+    for (const node of [...pendingNodes, ...verifiedNodes, ...archivedNodes]) {
+      map.set(nodeInternalTag(node), node);
+    }
     return map;
   }, [pendingNodes, verifiedNodes, archivedNodes]);
 
@@ -274,9 +285,17 @@ export default function Subscriptions() {
                   {nodeTraffic.slice(0, 40).map((item) => {
                     const status = nodeStatusByTag.get(item.node_tag);
                     const statusColor = status === 'verified' ? 'success' : status === 'pending' ? 'warning' : status === 'archived' ? 'default' : 'danger';
+                    const knownNode = nodeByInternalTag.get(item.node_tag);
+                    const displayName = (item.display_name || (knownNode ? nodeDisplayTag(knownNode) : item.node_tag)).trim();
+                    const sourceTag = (item.source_tag || (knownNode ? nodeSourceTag(knownNode) : '')).trim();
                     return (
                       <tr key={item.node_tag} className="border-b border-gray-100 dark:border-gray-800">
-                        <td className="py-2 pr-3 font-medium max-w-[240px] truncate" title={item.node_tag}>{item.node_tag}</td>
+                        <td className="py-2 pr-3 font-medium max-w-[240px]">
+                          <div className="truncate" title={displayName}>{displayName}</div>
+                          {sourceTag && sourceTag !== displayName && (
+                            <div className="text-xs text-gray-500 truncate" title={sourceTag}>{sourceTag}</div>
+                          )}
+                        </td>
                         <td className="py-2 pr-3">
                           <Chip size="sm" variant="flat" color={statusColor}>
                             {status || 'missing'}

@@ -29,6 +29,9 @@ export interface TimedSiteMeasurement {
 
 export interface UnsupportedNodeInfo {
   tag: string;
+  internal_tag?: string;
+  display_name?: string;
+  source_tag?: string;
   error: string;
   detected_at: string;
 }
@@ -99,6 +102,9 @@ export type NodeStatus = 'pending' | 'verified' | 'archived';
 export interface UnifiedNode {
   id: number;
   tag: string;
+  internal_tag?: string;
+  display_name?: string;
+  source_tag?: string;
   type: string;
   server: string;
   server_port: number;
@@ -164,6 +170,9 @@ export interface Subscription {
 
 export interface Node {
   tag: string;
+  internal_tag?: string;
+  display_name?: string;
+  source_tag?: string;
   type: string;
   server: string;
   server_port: number;
@@ -487,6 +496,18 @@ interface AppState {
 // Helper: server:port key for a node
 export function nodeServerPortKey(node: { server: string; server_port: number }): string {
   return `${node.server}:${node.server_port}`;
+}
+
+export function nodeInternalTag(node: { internal_tag?: string; tag: string }): string {
+  return (node.internal_tag || node.tag || '').trim();
+}
+
+export function nodeDisplayTag(node: { display_name?: string; tag: string; source_tag?: string }): string {
+  return (node.display_name || node.tag || node.source_tag || '').trim();
+}
+
+export function nodeSourceTag(node: { source_tag?: string; tag: string; display_name?: string }): string {
+  return (node.source_tag || node.tag || node.display_name || '').trim();
 }
 
 export const useStore = create<AppState>((set, get) => ({

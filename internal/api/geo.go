@@ -114,7 +114,7 @@ func (s *Server) performGeoCheck(nodes []storage.Node) (map[string]*storage.GeoD
 		key := fmt.Sprintf("%s:%d", node.Server, node.ServerPort)
 
 		// Find probe tag for this node
-		probeTag := node.Tag
+		probeTag := nodeRoutingTag(node)
 		if tagMap != nil {
 			if pt, ok := tagMap.KeyToProbe[key]; ok {
 				probeTag = pt
@@ -127,7 +127,7 @@ func (s *Server) performGeoCheck(nodes []storage.Node) (map[string]*storage.GeoD
 			failData := storage.GeoData{
 				Server:      node.Server,
 				ServerPort:  node.ServerPort,
-				NodeTag:     node.Tag,
+				NodeTag:     nodeRoutingTag(node),
 				Timestamp:   time.Now(),
 				Status:      "fail",
 				Country:     geoUnknownCountryName,
@@ -141,11 +141,14 @@ func (s *Server) performGeoCheck(nodes []storage.Node) (map[string]*storage.GeoD
 			}
 			results[key] = &failData
 			s.eventBus.Publish("verify:geo_progress", map[string]interface{}{
-				"current": i + 1,
-				"total":   total,
-				"tag":     node.Tag,
-				"country": geoUnknownCountryCode,
-				"status":  "fail",
+				"current":      i + 1,
+				"total":        total,
+				"tag":          nodeDisplayName(node),
+				"internal_tag": nodeRoutingTag(node),
+				"display_name": nodeDisplayName(node),
+				"source_tag":   nodeSourceTag(node),
+				"country":      geoUnknownCountryCode,
+				"status":       "fail",
 			})
 			continue
 		}
@@ -156,11 +159,11 @@ func (s *Server) performGeoCheck(nodes []storage.Node) (map[string]*storage.GeoD
 		// Make HTTP request to ip-api.com through the proxy
 		geoData, err := s.fetchGeoIP(proxyURL, node)
 		if err != nil {
-			logger.Printf("[geo] GeoIP lookup failed for %s (%s): %v", node.Tag, key, err)
+			logger.Printf("[geo] GeoIP lookup failed for %s (%s): %v", nodeDisplayName(node), key, err)
 			failData := storage.GeoData{
 				Server:      node.Server,
 				ServerPort:  node.ServerPort,
-				NodeTag:     node.Tag,
+				NodeTag:     nodeRoutingTag(node),
 				Timestamp:   time.Now(),
 				Status:      "fail",
 				Country:     geoUnknownCountryName,
@@ -174,11 +177,14 @@ func (s *Server) performGeoCheck(nodes []storage.Node) (map[string]*storage.GeoD
 			}
 			results[key] = &failData
 			s.eventBus.Publish("verify:geo_progress", map[string]interface{}{
-				"current": i + 1,
-				"total":   total,
-				"tag":     node.Tag,
-				"country": geoUnknownCountryCode,
-				"status":  "fail",
+				"current":      i + 1,
+				"total":        total,
+				"tag":          nodeDisplayName(node),
+				"internal_tag": nodeRoutingTag(node),
+				"display_name": nodeDisplayName(node),
+				"source_tag":   nodeSourceTag(node),
+				"country":      geoUnknownCountryCode,
+				"status":       "fail",
 			})
 			continue
 		}
@@ -200,13 +206,16 @@ func (s *Server) performGeoCheck(nodes []storage.Node) (map[string]*storage.GeoD
 
 		// Publish progress
 		s.eventBus.Publish("verify:geo_progress", map[string]interface{}{
-			"current": i + 1,
-			"total":   total,
-			"tag":     node.Tag,
-			"country": geoData.CountryCode,
-			"city":    geoData.City,
-			"ip":      geoData.QueryIP,
-			"status":  "success",
+			"current":      i + 1,
+			"total":        total,
+			"tag":          nodeDisplayName(node),
+			"internal_tag": nodeRoutingTag(node),
+			"display_name": nodeDisplayName(node),
+			"source_tag":   nodeSourceTag(node),
+			"country":      geoData.CountryCode,
+			"city":         geoData.City,
+			"ip":           geoData.QueryIP,
+			"status":       "success",
 		})
 
 		// Rate limit: wait between requests (except after the last one)
@@ -279,7 +288,7 @@ func (s *Server) fetchGeoIP(proxyURL string, node storage.Node) (*storage.GeoDat
 	return &storage.GeoData{
 		Server:      node.Server,
 		ServerPort:  node.ServerPort,
-		NodeTag:     node.Tag,
+		NodeTag:     nodeRoutingTag(node),
 		Timestamp:   time.Now(),
 		Status:      "success",
 		Country:     apiResp.Country,
@@ -339,12 +348,9 @@ func (s *Server) geoCheckNodes(c *gin.Context) {
 
 	var nodes []storage.Node
 	if len(req.Tags) > 0 {
-		tagSet := make(map[string]bool)
-		for _, t := range req.Tags {
-			tagSet[t] = true
-		}
+		tagSet := parseTagSet(req.Tags)
 		for _, n := range allNodes {
-			if tagSet[n.Tag] {
+			if nodeMatchesAnyTag(n, tagSet) {
 				nodes = append(nodes, n)
 			}
 		}

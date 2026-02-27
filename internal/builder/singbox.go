@@ -41,22 +41,22 @@ type DNSConfig struct {
 // DNSServer represents a DNS server (new format, supports FakeIP and hosts)
 type DNSServer struct {
 	Tag        string         `json:"tag"`
-	Type       string         `json:"type"`                   // udp, tcp, https, tls, quic, h3, fakeip, rcode, hosts
-	Server     string         `json:"server,omitempty"`       // Server address
-	Detour     string         `json:"detour,omitempty"`       // Outbound proxy
-	Inet4Range string         `json:"inet4_range,omitempty"`  // FakeIP IPv4 address pool
-	Inet6Range string         `json:"inet6_range,omitempty"`  // FakeIP IPv6 address pool
-	Predefined map[string]any `json:"predefined,omitempty"`   // hosts type only: predefined domain mappings
+	Type       string         `json:"type"`                  // udp, tcp, https, tls, quic, h3, fakeip, rcode, hosts
+	Server     string         `json:"server,omitempty"`      // Server address
+	Detour     string         `json:"detour,omitempty"`      // Outbound proxy
+	Inet4Range string         `json:"inet4_range,omitempty"` // FakeIP IPv4 address pool
+	Inet6Range string         `json:"inet6_range,omitempty"` // FakeIP IPv6 address pool
+	Predefined map[string]any `json:"predefined,omitempty"`  // hosts type only: predefined domain mappings
 }
 
 // DNSRule represents a DNS rule
 type DNSRule struct {
-	Outbound  string   `json:"outbound,omitempty"`   // Match outbound DNS queries, e.g. "any" for proxy server address resolution
+	Outbound  string   `json:"outbound,omitempty"` // Match outbound DNS queries, e.g. "any" for proxy server address resolution
 	RuleSet   []string `json:"rule_set,omitempty"`
 	QueryType []string `json:"query_type,omitempty"`
-	Domain    []string `json:"domain,omitempty"`     // Full domain match
+	Domain    []string `json:"domain,omitempty"` // Full domain match
 	Server    string   `json:"server,omitempty"`
-	Action    string   `json:"action,omitempty"`     // route, reject, etc.
+	Action    string   `json:"action,omitempty"` // route, reject, etc.
 }
 
 // NTPConfig represents NTP configuration
@@ -73,20 +73,20 @@ type InboundUser struct {
 
 // Inbound represents inbound configuration
 type Inbound struct {
-	Type           string        `json:"type"`
-	Tag            string        `json:"tag"`
-	Listen         string        `json:"listen,omitempty"`
-	ListenPort     int           `json:"listen_port,omitempty"`
-	Address        []string      `json:"address,omitempty"`
-	AutoRoute      bool          `json:"auto_route,omitempty"`
-	StrictRoute    bool          `json:"strict_route,omitempty"`
-	Stack          string        `json:"stack,omitempty"`
-	Sniff          bool          `json:"sniff,omitempty"`
-	SniffOverrideDestination bool `json:"sniff_override_destination,omitempty"`
-	Users          []InboundUser `json:"users,omitempty"`
-	Method         string        `json:"method,omitempty"`
-	Password       string        `json:"password,omitempty"`
-	Network        []string      `json:"network,omitempty"`
+	Type                     string        `json:"type"`
+	Tag                      string        `json:"tag"`
+	Listen                   string        `json:"listen,omitempty"`
+	ListenPort               int           `json:"listen_port,omitempty"`
+	Address                  []string      `json:"address,omitempty"`
+	AutoRoute                bool          `json:"auto_route,omitempty"`
+	StrictRoute              bool          `json:"strict_route,omitempty"`
+	Stack                    string        `json:"stack,omitempty"`
+	Sniff                    bool          `json:"sniff,omitempty"`
+	SniffOverrideDestination bool          `json:"sniff_override_destination,omitempty"`
+	Users                    []InboundUser `json:"users,omitempty"`
+	Method                   string        `json:"method,omitempty"`
+	Password                 string        `json:"password,omitempty"`
+	Network                  []string      `json:"network,omitempty"`
 }
 
 // Outbound represents outbound configuration
@@ -121,7 +121,7 @@ type RuleSet struct {
 
 // ExperimentalConfig represents experimental configuration
 type ExperimentalConfig struct {
-	ClashAPI *ClashAPIConfig `json:"clash_api,omitempty"`
+	ClashAPI  *ClashAPIConfig  `json:"clash_api,omitempty"`
 	CacheFile *CacheFileConfig `json:"cache_file,omitempty"`
 }
 
@@ -400,11 +400,11 @@ func (b *ConfigBuilder) buildInbounds() []Inbound {
 	// Mixed inbound (HTTP+SOCKS5 on one port)
 	if b.settings.MixedPort > 0 {
 		inbounds = append(inbounds, Inbound{
-			Type:       "mixed",
-			Tag:        "mixed-in",
-			Listen:     listenAddr,
-			ListenPort: b.settings.MixedPort,
-			Sniff:      true,
+			Type:                     "mixed",
+			Tag:                      "mixed-in",
+			Listen:                   listenAddr,
+			ListenPort:               b.settings.MixedPort,
+			Sniff:                    true,
 			SniffOverrideDestination: true,
 		})
 	}
@@ -412,11 +412,11 @@ func (b *ConfigBuilder) buildInbounds() []Inbound {
 	// SOCKS5 inbound
 	if b.settings.SocksPort > 0 {
 		socks := Inbound{
-			Type:       "socks",
-			Tag:        "socks-in",
-			Listen:     listenAddr,
-			ListenPort: b.settings.SocksPort,
-			Sniff:      true,
+			Type:                     "socks",
+			Tag:                      "socks-in",
+			Listen:                   listenAddr,
+			ListenPort:               b.settings.SocksPort,
+			Sniff:                    true,
 			SniffOverrideDestination: true,
 		}
 		if b.settings.SocksAuth && b.settings.SocksUsername != "" {
@@ -430,11 +430,11 @@ func (b *ConfigBuilder) buildInbounds() []Inbound {
 	// HTTP inbound
 	if b.settings.HttpPort > 0 {
 		http := Inbound{
-			Type:       "http",
-			Tag:        "http-in",
-			Listen:     listenAddr,
-			ListenPort: b.settings.HttpPort,
-			Sniff:      true,
+			Type:                     "http",
+			Tag:                      "http-in",
+			Listen:                   listenAddr,
+			ListenPort:               b.settings.HttpPort,
+			Sniff:                    true,
 			SniffOverrideDestination: true,
 		}
 		if b.settings.HttpAuth && b.settings.HttpUsername != "" {
@@ -448,28 +448,28 @@ func (b *ConfigBuilder) buildInbounds() []Inbound {
 	// Shadowsocks inbound
 	if b.settings.ShadowsocksPort > 0 && b.settings.ShadowsocksMethod != "" {
 		inbounds = append(inbounds, Inbound{
-			Type:       "shadowsocks",
-			Tag:        "shadowsocks-in",
-			Listen:     listenAddr,
-			ListenPort: b.settings.ShadowsocksPort,
-			Sniff:      true,
+			Type:                     "shadowsocks",
+			Tag:                      "shadowsocks-in",
+			Listen:                   listenAddr,
+			ListenPort:               b.settings.ShadowsocksPort,
+			Sniff:                    true,
 			SniffOverrideDestination: true,
-			Method:     b.settings.ShadowsocksMethod,
-			Password:   b.settings.ShadowsocksPassword,
-			Network:    []string{"tcp", "udp"},
+			Method:                   b.settings.ShadowsocksMethod,
+			Password:                 b.settings.ShadowsocksPassword,
+			Network:                  []string{"tcp", "udp"},
 		})
 	}
 
 	// TUN inbound
 	if b.settings.TunEnabled {
 		inbounds = append(inbounds, Inbound{
-			Type:        "tun",
-			Tag:         "tun-in",
-			Address:     []string{"172.19.0.1/30", "fdfe:dcba:9876::1/126"},
-			AutoRoute:   true,
-			StrictRoute: true,
-			Stack:       "system",
-			Sniff:       true,
+			Type:                     "tun",
+			Tag:                      "tun-in",
+			Address:                  []string{"172.19.0.1/30", "fdfe:dcba:9876::1/126"},
+			AutoRoute:                true,
+			StrictRoute:              true,
+			Stack:                    "system",
+			Sniff:                    true,
 			SniffOverrideDestination: true,
 		})
 	}
@@ -493,25 +493,26 @@ func (b *ConfigBuilder) buildOutboundsWithMap() ([]Outbound, map[int]string) {
 
 	// Add all nodes (skip duplicates and excluded tags)
 	for _, node := range b.nodes {
-		if b.excludeTags != nil && b.excludeTags[node.Tag] {
+		routingTag := node.RoutingTag()
+		if shouldExcludeNode(node, b.excludeTags) {
 			continue
 		}
 		// Skip duplicate tags — sing-box doesn't allow duplicate outbound tags
-		if nodeTagSet[node.Tag] {
+		if nodeTagSet[routingTag] {
 			continue
 		}
-		indexToTag[len(outbounds)] = node.Tag
+		indexToTag[len(outbounds)] = routingTag
 		outbound := b.nodeToOutbound(node)
 		outbounds = append(outbounds, outbound)
-		allNodeTags = append(allNodeTags, node.Tag)
-		nodeTagSet[node.Tag] = true
+		allNodeTags = append(allNodeTags, routingTag)
+		nodeTagSet[routingTag] = true
 
 		// Group by country
 		if node.Country != "" {
-			countryNodes[node.Country] = append(countryNodes[node.Country], node.Tag)
+			countryNodes[node.Country] = append(countryNodes[node.Country], routingTag)
 		} else {
 			// Unrecognized country nodes go into "OTHER" group
-			countryNodes["OTHER"] = append(countryNodes["OTHER"], node.Tag)
+			countryNodes["OTHER"] = append(countryNodes["OTHER"], routingTag)
 		}
 	}
 
@@ -527,11 +528,11 @@ func (b *ConfigBuilder) buildOutboundsWithMap() ([]Outbound, map[int]string) {
 		// Filter nodes based on filter criteria
 		var filteredTags []string
 		for _, node := range b.nodes {
-			if b.excludeTags != nil && b.excludeTags[node.Tag] {
+			if shouldExcludeNode(node, b.excludeTags) {
 				continue
 			}
 			if b.matchFilter(node, filter) {
-				filteredTags = append(filteredTags, node.Tag)
+				filteredTags = append(filteredTags, node.RoutingTag())
 			}
 		}
 
@@ -672,7 +673,7 @@ func (b *ConfigBuilder) nodeToOutbound(node storage.Node) Outbound {
 // NodeToOutbound converts a storage.Node to an Outbound config entry.
 func NodeToOutbound(node storage.Node) Outbound {
 	outbound := Outbound{
-		"tag":         node.Tag,
+		"tag":         node.RoutingTag(),
 		"type":        node.Type,
 		"server":      node.Server,
 		"server_port": node.ServerPort,
@@ -693,7 +694,7 @@ func NodeToOutbound(node storage.Node) Outbound {
 
 // matchFilter checks if a node matches a filter
 func (b *ConfigBuilder) matchFilter(node storage.Node, filter storage.Filter) bool {
-	name := strings.ToLower(node.Tag)
+	name := strings.ToLower(strings.TrimSpace(node.DisplayOrTag() + " " + node.SourceOrTag()))
 
 	// 1. Check country include conditions
 	if len(filter.IncludeCountries) > 0 {
@@ -738,6 +739,27 @@ func (b *ConfigBuilder) matchFilter(node storage.Node, filter storage.Filter) bo
 	}
 
 	return true
+}
+
+func shouldExcludeNode(node storage.Node, excludeTags map[string]bool) bool {
+	if excludeTags == nil {
+		return false
+	}
+
+	routingTag := strings.TrimSpace(node.RoutingTag())
+	if routingTag != "" && excludeTags[routingTag] {
+		return true
+	}
+	displayName := strings.TrimSpace(node.DisplayOrTag())
+	if displayName != "" && excludeTags[displayName] {
+		return true
+	}
+	sourceTag := strings.TrimSpace(node.SourceOrTag())
+	if sourceTag != "" && excludeTags[sourceTag] {
+		return true
+	}
+	legacyTag := strings.TrimSpace(node.Tag)
+	return legacyTag != "" && excludeTags[legacyTag]
 }
 
 // buildRoute builds route configuration
@@ -994,10 +1016,10 @@ func (b *ConfigBuilder) buildExperimental() *ExperimentalConfig {
 
 	return &ExperimentalConfig{
 		ClashAPI: &ClashAPIConfig{
-			ExternalController:    fmt.Sprintf("%s:%d", listenAddr, b.settings.ClashAPIPort),
-			ExternalUI:            b.settings.ClashUIPath,
-			Secret:                secret,
-			DefaultMode:           storage.NormalizeProxyMode(b.settings.ProxyMode),
+			ExternalController: fmt.Sprintf("%s:%d", listenAddr, b.settings.ClashAPIPort),
+			ExternalUI:         b.settings.ClashUIPath,
+			Secret:             secret,
+			DefaultMode:        storage.NormalizeProxyMode(b.settings.ProxyMode),
 		},
 		CacheFile: &CacheFileConfig{
 			Enabled:     true,

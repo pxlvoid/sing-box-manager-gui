@@ -12,6 +12,7 @@ import {
   Chip,
 } from '@nextui-org/react';
 import type { Node } from '../../../store';
+import { nodeDisplayTag, nodeSourceTag } from '../../../store';
 
 interface BulkAddModalProps {
   isOpen: boolean;
@@ -91,7 +92,10 @@ export default function BulkAddModal({
                           <div className="flex items-center gap-3">
                             <span className="text-xl">{result.node.country_emoji || '🌐'}</span>
                             <div className="flex-1 min-w-0">
-                              <h4 className="font-medium text-sm truncate">{result.node.tag}</h4>
+                              <h4 className="font-medium text-sm truncate">{nodeDisplayTag(result.node)}</h4>
+                              {nodeSourceTag(result.node) && nodeSourceTag(result.node) !== nodeDisplayTag(result.node) && (
+                                <p className="text-xs text-gray-500 truncate">{nodeSourceTag(result.node)}</p>
+                              )}
                               <p className="text-xs text-gray-500 truncate">
                                 {result.node.type} · {result.node.server}:{result.node.server_port}
                               </p>

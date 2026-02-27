@@ -109,6 +109,11 @@ export default function NodeModal({
                     <span className="text-2xl">{nodeForm.country_emoji || '🌐'}</span>
                     <div className="flex-1">
                       <h4 className="font-medium">{nodeForm.tag}</h4>
+                      {nodeForm.source_tag && nodeForm.source_tag !== nodeForm.tag && (
+                        <p className="text-xs text-gray-500 truncate" title={nodeForm.source_tag}>
+                          Original: {nodeForm.source_tag}
+                        </p>
+                      )}
                       <p className="text-sm text-gray-500">
                         {nodeForm.type} · {nodeForm.server}:{nodeForm.server_port}
                       </p>
@@ -126,7 +131,14 @@ export default function NodeModal({
                     label="Node Name"
                     placeholder="e.g.: Hong Kong-01"
                     value={nodeForm.tag}
-                    onChange={(e) => setNodeForm({ ...nodeForm, tag: e.target.value })}
+                    onChange={(e) => setNodeForm({ ...nodeForm, tag: e.target.value, display_name: e.target.value })}
+                  />
+
+                  <Input
+                    label="Original Name (source)"
+                    placeholder="Original name from subscription/link"
+                    value={nodeForm.source_tag || ''}
+                    onChange={(e) => setNodeForm({ ...nodeForm, source_tag: e.target.value })}
                   />
 
                   <div className="grid grid-cols-2 gap-4">

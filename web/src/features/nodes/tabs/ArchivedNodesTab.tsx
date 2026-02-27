@@ -16,6 +16,7 @@ import {
 } from '@nextui-org/react';
 import { Search, Trash2, RotateCcw, Archive } from 'lucide-react';
 import type { UnifiedNode, GeoData } from '../../../store';
+import { nodeDisplayTag, nodeSourceTag } from '../../../store';
 import MobileNodeCard from '../components/MobileNodeCard';
 import useIsMobile from '../../../hooks/useIsMobile';
 
@@ -46,7 +47,10 @@ export default function ArchivedNodesTab({ nodes, geoData, onUnarchive, onDelete
     if (!searchQuery.trim()) return nodes;
     const q = searchQuery.toLowerCase();
     return nodes.filter(
-      (n) => n.tag.toLowerCase().includes(q) || n.server.toLowerCase().includes(q)
+      (n) =>
+        nodeDisplayTag(n).toLowerCase().includes(q) ||
+        nodeSourceTag(n).toLowerCase().includes(q) ||
+        n.server.toLowerCase().includes(q)
     );
   }, [nodes, searchQuery]);
 
@@ -167,7 +171,14 @@ export default function ArchivedNodesTab({ nodes, geoData, onUnarchive, onDelete
                   </Tooltip>
                 </TableCell>
                 <TableCell>
-                  <span className="font-medium truncate block max-w-[180px] sm:max-w-[300px]">{node.tag}</span>
+                  <div className="max-w-[180px] sm:max-w-[300px]">
+                    <span className="font-medium truncate block">{nodeDisplayTag(node)}</span>
+                    {nodeSourceTag(node) && nodeSourceTag(node) !== nodeDisplayTag(node) && (
+                      <span className="text-xs text-gray-500 truncate block" title={nodeSourceTag(node)}>
+                        {nodeSourceTag(node)}
+                      </span>
+                    )}
+                  </div>
                 </TableCell>
                 <TableCell>
                   <Chip size="sm" variant="flat">{node.type}</Chip>

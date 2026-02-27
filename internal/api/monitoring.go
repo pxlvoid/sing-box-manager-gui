@@ -69,10 +69,17 @@ type resourceAccumulator struct {
 
 type monitoringNodeTrafficItem struct {
 	NodeTag       string    `json:"node_tag"`
+	DisplayName   string    `json:"display_name,omitempty"`
+	SourceTag     string    `json:"source_tag,omitempty"`
 	LastSeen      time.Time `json:"last_seen"`
 	UploadBytes   int64     `json:"upload_bytes"`
 	DownloadBytes int64     `json:"download_bytes"`
 	TotalBytes    int64     `json:"total_bytes"`
+}
+
+type monitoringNodeMeta struct {
+	DisplayName string
+	SourceTag   string
 }
 
 func (s *Server) startTrafficAggregator() {
@@ -93,15 +100,19 @@ func (s *Server) collectAndPersistTrafficSample() {
 	s.storeSwapMu.RLock()
 	defer s.storeSwapMu.RUnlock()
 
-	if !s.processManager.IsRunning() {
+	running := s.processManager.IsRunning()
+
+	snapshot, err := s.fetchConnectionsSnapshot()
+	if err != nil {
+		if running {
+			logger.Printf("[monitoring] failed to fetch connections snapshot: %v", err)
+		}
 		s.resetTrafficRateState()
 		return
 	}
 
-	snapshot, err := s.fetchConnectionsSnapshot()
-	if err != nil {
-		s.resetTrafficRateState()
-		return
+	if !running {
+		logger.Printf("[monitoring] sing-box not tracked by process manager but Clash API responded, collecting sample anyway")
 	}
 
 	now := time.Now().UTC()
@@ -366,8 +377,8 @@ func maxI64(v, min int64) int64 {
 	return v
 }
 
-func collectKnownNodeTags(store storage.Store) map[string]struct{} {
-	knownTags := make(map[string]struct{})
+func collectKnownNodeTags(store storage.Store) map[string]string {
+	knownTags := make(map[string]string)
 	statuses := []storage.NodeStatus{
 		storage.NodeStatusPending,
 		storage.NodeStatusVerified,
@@ -375,11 +386,13 @@ func collectKnownNodeTags(store storage.Store) map[string]struct{} {
 	}
 	for _, status := range statuses {
 		for _, node := range store.GetNodes(status) {
-			tag := strings.TrimSpace(node.Tag)
-			if tag == "" {
+			canonical := unifiedRoutingTag(node)
+			if canonical == "" {
 				continue
 			}
-			knownTags[tag] = struct{}{}
+			for _, alias := range unifiedNodeTagCandidates(node) {
+				knownTags[alias] = canonical
+			}
 		}
 	}
 	if len(knownTags) > 0 {
@@ -387,16 +400,59 @@ func collectKnownNodeTags(store storage.Store) map[string]struct{} {
 	}
 
 	for _, node := range store.GetAllNodes() {
-		tag := strings.TrimSpace(node.Tag)
-		if tag == "" {
+		canonical := nodeRoutingTag(node)
+		if canonical == "" {
 			continue
 		}
-		knownTags[tag] = struct{}{}
+		for _, alias := range nodeTagCandidates(node) {
+			knownTags[alias] = canonical
+		}
 	}
 	return knownTags
 }
 
-func selectNodeTagFromChain(proxyChain string, knownTags map[string]struct{}) (string, bool) {
+func collectKnownNodeMeta(store storage.Store) map[string]monitoringNodeMeta {
+	meta := make(map[string]monitoringNodeMeta)
+	statuses := []storage.NodeStatus{
+		storage.NodeStatusPending,
+		storage.NodeStatusVerified,
+		storage.NodeStatusArchived,
+	}
+	for _, status := range statuses {
+		for _, node := range store.GetNodes(status) {
+			canonical := unifiedRoutingTag(node)
+			if canonical == "" {
+				continue
+			}
+			if _, exists := meta[canonical]; exists {
+				continue
+			}
+			meta[canonical] = monitoringNodeMeta{
+				DisplayName: unifiedDisplayName(node),
+				SourceTag:   unifiedSourceTag(node),
+			}
+		}
+	}
+	if len(meta) > 0 {
+		return meta
+	}
+	for _, node := range store.GetAllNodes() {
+		canonical := nodeRoutingTag(node)
+		if canonical == "" {
+			continue
+		}
+		if _, exists := meta[canonical]; exists {
+			continue
+		}
+		meta[canonical] = monitoringNodeMeta{
+			DisplayName: nodeDisplayName(node),
+			SourceTag:   nodeSourceTag(node),
+		}
+	}
+	return meta
+}
+
+func selectNodeTagFromChain(proxyChain string, knownTags map[string]string) (string, bool) {
 	parts := splitProxyChain(proxyChain)
 	if len(parts) == 0 {
 		return "", false
@@ -405,8 +461,8 @@ func selectNodeTagFromChain(proxyChain string, knownTags map[string]struct{}) (s
 		return parts[0], true
 	}
 	for _, part := range parts {
-		if _, ok := knownTags[part]; ok {
-			return part, true
+		if canonical, ok := knownTags[part]; ok {
+			return canonical, true
 		}
 	}
 	return "", false
@@ -591,6 +647,7 @@ func (s *Server) getMonitoringNodesTraffic(c *gin.Context) {
 	}
 
 	knownTags := collectKnownNodeTags(s.store)
+	knownMeta := collectKnownNodeMeta(s.store)
 	agg := make(map[string]*monitoringNodeTrafficItem, len(chainStats))
 
 	for _, chainStat := range chainStats {
@@ -602,6 +659,10 @@ func (s *Server) getMonitoringNodesTraffic(c *gin.Context) {
 		item, exists := agg[nodeTag]
 		if !exists {
 			item = &monitoringNodeTrafficItem{NodeTag: nodeTag}
+			if meta, ok := knownMeta[nodeTag]; ok {
+				item.DisplayName = meta.DisplayName
+				item.SourceTag = meta.SourceTag
+			}
 			agg[nodeTag] = item
 		}
 		item.UploadBytes += maxI64(chainStat.UploadBytes, 0)

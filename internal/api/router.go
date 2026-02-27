@@ -49,9 +49,12 @@ func generateRandomSecret(length int) string {
 
 // UnsupportedNodeInfo represents a node that failed sing-box config validation
 type UnsupportedNodeInfo struct {
-	Tag   string    `json:"tag"`
-	Error string    `json:"error"`
-	Time  time.Time `json:"detected_at"`
+	Tag         string    `json:"tag"` // legacy alias of internal_tag
+	InternalTag string    `json:"internal_tag,omitempty"`
+	DisplayName string    `json:"display_name,omitempty"`
+	SourceTag   string    `json:"source_tag,omitempty"`
+	Error       string    `json:"error"`
+	Time        time.Time `json:"detected_at"`
 }
 
 // Server represents the API server
@@ -156,10 +159,26 @@ func (s *Server) reloadUnsupportedNodesFromStore() {
 	s.unsupportedNodesMu.Lock()
 	s.unsupportedNodes = make(map[string]UnsupportedNodeInfo, len(persisted))
 	for _, un := range persisted {
-		s.unsupportedNodes[un.NodeTag] = UnsupportedNodeInfo{
-			Tag:   un.NodeTag,
-			Error: un.Error,
-			Time:  un.DetectedAt,
+		internalTag := strings.TrimSpace(un.NodeTag)
+		if internalTag == "" && un.Server != "" && un.ServerPort > 0 {
+			internalTag = fmt.Sprintf("%s:%d", un.Server, un.ServerPort)
+		}
+		if internalTag == "" {
+			continue
+		}
+		displayName := ""
+		sourceTag := ""
+		if node := s.store.GetNodeByServerPort(un.Server, un.ServerPort); node != nil {
+			displayName = node.DisplayOrTag()
+			sourceTag = node.SourceOrTag()
+		}
+		s.unsupportedNodes[internalTag] = UnsupportedNodeInfo{
+			Tag:         internalTag,
+			InternalTag: internalTag,
+			DisplayName: displayName,
+			SourceTag:   sourceTag,
+			Error:       un.Error,
+			Time:        un.DetectedAt,
 		}
 	}
 	s.unsupportedNodesMu.Unlock()
@@ -1227,7 +1246,11 @@ func (s *Server) applyConfig(c *gin.Context) {
 	if len(newUnsupported) > 0 {
 		tags := make([]string, len(newUnsupported))
 		for i, u := range newUnsupported {
-			tags[i] = u.Tag
+			if strings.TrimSpace(u.DisplayName) != "" {
+				tags[i] = u.DisplayName
+			} else {
+				tags[i] = u.Tag
+			}
 		}
 		response["warning"] = fmt.Sprintf("%d unsupported node(s) excluded: %s", len(newUnsupported), strings.Join(tags, ", "))
 		response["unsupported_nodes"] = newUnsupported
@@ -1275,6 +1298,13 @@ func (s *Server) buildAndValidateConfig() (string, []UnsupportedNodeInfo, error)
 		if err != nil {
 			return "", nil, err
 		}
+		// Build tag→Node map to resolve metadata for unsupported tags.
+		tagToNode := make(map[string]storage.Node, len(nodes))
+		for _, n := range nodes {
+			for _, candidate := range nodeTagCandidates(n) {
+				tagToNode[candidate] = n
+			}
+		}
 
 		// Write to temp file for validation
 		tmpFile, err := os.CreateTemp("", "sbm-validate-*.json")
@@ -1298,12 +1328,6 @@ func (s *Server) buildAndValidateConfig() (string, []UnsupportedNodeInfo, error)
 		if checkErr == nil {
 			// Config is valid — store new unsupported nodes
 			if len(newUnsupported) > 0 {
-				// Build tag→Node map to resolve server:port
-				tagToNode := make(map[string]storage.Node)
-				for _, n := range nodes {
-					tagToNode[n.Tag] = n
-				}
-
 				s.unsupportedNodesMu.Lock()
 				for _, info := range newUnsupported {
 					s.unsupportedNodes[info.Tag] = info
@@ -1329,7 +1353,11 @@ func (s *Server) buildAndValidateConfig() (string, []UnsupportedNodeInfo, error)
 				// Log excluded nodes
 				tags := make([]string, len(newUnsupported))
 				for i, u := range newUnsupported {
-					tags[i] = u.Tag
+					if strings.TrimSpace(u.DisplayName) != "" {
+						tags[i] = u.DisplayName
+					} else {
+						tags[i] = u.Tag
+					}
 				}
 				logger.Printf("[config] Excluded %d unsupported node(s): %s", len(newUnsupported), strings.Join(tags, ", "))
 			}
@@ -1360,10 +1388,19 @@ func (s *Server) buildAndValidateConfig() (string, []UnsupportedNodeInfo, error)
 			}
 			if !excludeTags[tag] {
 				excludeTags[tag] = true
+				displayName := tag
+				sourceTag := ""
+				if n, exists := tagToNode[tag]; exists {
+					displayName = nodeDisplayName(n)
+					sourceTag = nodeSourceTag(n)
+				}
 				info := UnsupportedNodeInfo{
-					Tag:   tag,
-					Error: oe.Message,
-					Time:  time.Now(),
+					Tag:         tag,
+					InternalTag: tag,
+					DisplayName: displayName,
+					SourceTag:   sourceTag,
+					Error:       oe.Message,
+					Time:        time.Now(),
 				}
 				newUnsupported = append(newUnsupported, info)
 				foundNew = true
@@ -1378,10 +1415,19 @@ func (s *Server) buildAndValidateConfig() (string, []UnsupportedNodeInfo, error)
 			if _, isNodeTag := tagToIndices[dte.Tag]; isNodeTag {
 				if !excludeTags[dte.Tag] {
 					excludeTags[dte.Tag] = true
+					displayName := dte.Tag
+					sourceTag := ""
+					if n, exists := tagToNode[dte.Tag]; exists {
+						displayName = nodeDisplayName(n)
+						sourceTag = nodeSourceTag(n)
+					}
 					info := UnsupportedNodeInfo{
-						Tag:   dte.Tag,
-						Error: fmt.Sprintf("duplicate outbound tag: %s", dte.Tag),
-						Time:  time.Now(),
+						Tag:         dte.Tag,
+						InternalTag: dte.Tag,
+						DisplayName: displayName,
+						SourceTag:   sourceTag,
+						Error:       fmt.Sprintf("duplicate outbound tag: %s", dte.Tag),
+						Time:        time.Now(),
 					}
 					newUnsupported = append(newUnsupported, info)
 					foundNew = true
@@ -1511,6 +1557,26 @@ func (s *Server) deleteUnsupportedNodes(c *gin.Context) {
 		return
 	}
 
+	requestedTagSet := parseTagSet(req.Tags)
+	matchedUnsupportedKeys := make([]string, 0, len(requestedTagSet))
+	s.unsupportedNodesMu.RLock()
+	for key, info := range s.unsupportedNodes {
+		candidates := dedupeNonEmptyStrings([]string{
+			key,
+			strings.TrimSpace(info.Tag),
+			strings.TrimSpace(info.InternalTag),
+			strings.TrimSpace(info.DisplayName),
+			strings.TrimSpace(info.SourceTag),
+		})
+		for _, candidate := range candidates {
+			if _, ok := requestedTagSet[candidate]; ok {
+				matchedUnsupportedKeys = append(matchedUnsupportedKeys, key)
+				break
+			}
+		}
+	}
+	s.unsupportedNodesMu.RUnlock()
+
 	removed, err := s.store.RemoveNodesByTags(req.Tags)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
@@ -1522,8 +1588,16 @@ func (s *Server) deleteUnsupportedNodes(c *gin.Context) {
 	for _, tag := range req.Tags {
 		delete(s.unsupportedNodes, tag)
 	}
+	for _, key := range matchedUnsupportedKeys {
+		delete(s.unsupportedNodes, key)
+	}
 	s.unsupportedNodesMu.Unlock()
-	if err := s.store.DeleteUnsupportedNodesByTags(req.Tags); err != nil {
+
+	tagsToDeleteFromStore := matchedUnsupportedKeys
+	if len(tagsToDeleteFromStore) == 0 {
+		tagsToDeleteFromStore = req.Tags
+	}
+	if err := s.store.DeleteUnsupportedNodesByTags(tagsToDeleteFromStore); err != nil {
 		logger.Printf("[unsupported] Failed to delete from store: %v", err)
 	}
 
@@ -2171,7 +2245,7 @@ type NodeSiteCheckResult struct {
 
 // matchFilter checks if a node matches a filter (duplicated from builder for API layer)
 func matchFilter(node storage.Node, filter storage.Filter) bool {
-	name := strings.ToLower(node.Tag)
+	name := strings.ToLower(strings.TrimSpace(node.DisplayOrTag() + " " + node.SourceOrTag()))
 
 	if len(filter.IncludeCountries) > 0 {
 		matched := false
@@ -2363,7 +2437,7 @@ func (s *Server) performHealthCheck(nodes []storage.Node) (map[string]*NodeHealt
 
 			// Use probe tag (unique) instead of original tag (may have duplicates)
 			key := fmt.Sprintf("%s:%d", n.Server, n.ServerPort)
-			probeTag := n.Tag
+			probeTag := nodeRoutingTag(n)
 			if tagMap != nil {
 				if pt, ok := tagMap.KeyToProbe[key]; ok {
 					probeTag = pt
@@ -2407,7 +2481,7 @@ func (s *Server) performHealthCheck(nodes []storage.Node) (map[string]*NodeHealt
 			measurements = append(measurements, storage.HealthMeasurement{
 				Server:     n.Server,
 				ServerPort: n.ServerPort,
-				NodeTag:    n.Tag,
+				NodeTag:    nodeRoutingTag(n),
 				Timestamp:  now,
 				Alive:      r.Alive,
 				LatencyMs:  latency,
@@ -2434,12 +2508,9 @@ func (s *Server) healthCheckNodes(c *gin.Context) {
 
 	var nodes []storage.Node
 	if len(req.Tags) > 0 {
-		tagSet := make(map[string]bool)
-		for _, t := range req.Tags {
-			tagSet[t] = true
-		}
+		tagSet := parseTagSet(req.Tags)
 		for _, n := range allNodes {
-			if tagSet[n.Tag] {
+			if nodeMatchesAnyTag(n, tagSet) {
 				nodes = append(nodes, n)
 			}
 		}
@@ -2465,18 +2536,28 @@ func (s *Server) healthCheckNodes(c *gin.Context) {
 
 func (s *Server) healthCheckSingleNode(c *gin.Context) {
 	var req struct {
-		Tag string `json:"tag" binding:"required"`
+		Tag         string `json:"tag"`
+		InternalTag string `json:"internal_tag"`
 	}
 
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
+	targetTag := strings.TrimSpace(req.InternalTag)
+	if targetTag == "" {
+		targetTag = strings.TrimSpace(req.Tag)
+	}
+	if targetTag == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "tag or internal_tag is required"})
+		return
+	}
 
 	allNodes := s.store.GetAllNodesIncludeDisabled()
 	var nodes []storage.Node
+	tagSet := parseTagSet([]string{targetTag})
 	for _, n := range allNodes {
-		if n.Tag == req.Tag {
+		if nodeMatchesAnyTag(n, tagSet) {
 			nodes = append(nodes, n)
 			break
 		}
@@ -2527,7 +2608,7 @@ func (s *Server) performSiteCheck(nodes []storage.Node, targets []string) (map[s
 			defer func() { <-sem }()
 
 			key := fmt.Sprintf("%s:%d", n.Server, n.ServerPort)
-			probeTag := n.Tag
+			probeTag := nodeRoutingTag(n)
 			if tagMap != nil {
 				if pt, ok := tagMap.KeyToProbe[key]; ok {
 					probeTag = pt
@@ -2565,7 +2646,7 @@ func (s *Server) performSiteCheck(nodes []storage.Node, targets []string) (map[s
 				measurements = append(measurements, storage.SiteMeasurement{
 					Server:     n.Server,
 					ServerPort: n.ServerPort,
-					NodeTag:    n.Tag,
+					NodeTag:    nodeRoutingTag(n),
 					Timestamp:  now,
 					Site:       site,
 					DelayMs:    delay,
@@ -2598,12 +2679,9 @@ func (s *Server) siteCheckNodes(c *gin.Context) {
 	allNodes := s.store.GetAllNodesIncludeDisabled()
 	var nodes []storage.Node
 	if len(req.Tags) > 0 {
-		tagSet := make(map[string]bool, len(req.Tags))
-		for _, t := range req.Tags {
-			tagSet[t] = true
-		}
+		tagSet := parseTagSet(req.Tags)
 		for _, n := range allNodes {
-			if tagSet[n.Tag] {
+			if nodeMatchesAnyTag(n, tagSet) {
 				nodes = append(nodes, n)
 			}
 		}
@@ -2879,14 +2957,7 @@ func (s *Server) runVerificationByTags(c *gin.Context) {
 		return
 	}
 
-	tagSet := make(map[string]struct{}, len(req.Tags))
-	for _, tag := range req.Tags {
-		tag = strings.TrimSpace(tag)
-		if tag == "" {
-			continue
-		}
-		tagSet[tag] = struct{}{}
-	}
+	tagSet := parseTagSet(req.Tags)
 	if len(tagSet) == 0 {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "tags must contain at least one non-empty tag"})
 		return
@@ -2895,12 +2966,12 @@ func (s *Server) runVerificationByTags(c *gin.Context) {
 	// Validate that at least one tag exists in pending/verified nodes.
 	matched := 0
 	for _, n := range s.store.GetNodes(storage.NodeStatusPending) {
-		if _, ok := tagSet[n.Tag]; ok {
+		if unifiedNodeMatchesAnyTag(n, tagSet) {
 			matched++
 		}
 	}
 	for _, n := range s.store.GetNodes(storage.NodeStatusVerified) {
-		if _, ok := tagSet[n.Tag]; ok {
+		if unifiedNodeMatchesAnyTag(n, tagSet) {
 			matched++
 		}
 	}
@@ -2914,7 +2985,10 @@ func (s *Server) runVerificationByTags(c *gin.Context) {
 		tags = append(tags, tag)
 	}
 
-	go s.RunVerificationForTags(tags)
+	go func(tags []string) {
+		s.RunVerificationForTags(tags)
+		s.scheduler.MarkManualVerificationRun()
+	}(tags)
 	c.JSON(http.StatusOK, gin.H{
 		"message":        "Verification started for selected tags",
 		"matched_nodes":  matched,

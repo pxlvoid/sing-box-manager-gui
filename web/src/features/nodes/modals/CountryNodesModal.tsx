@@ -10,6 +10,7 @@ import {
 } from '@nextui-org/react';
 import { Activity, Globe } from 'lucide-react';
 import type { Node, NodeHealthResult, HealthCheckMode, NodeSiteCheckResult } from '../../../store';
+import { nodeDisplayTag, nodeInternalTag, nodeSourceTag } from '../../../store';
 import { spKey, SITE_CHECK_TARGETS } from '../types';
 import NodeHealthChips from '../components/NodeHealthChips';
 
@@ -71,7 +72,10 @@ export default function CountryNodesModal({
                   className="flex flex-wrap items-center gap-2 p-2 bg-gray-50 dark:bg-gray-800 rounded text-sm"
                 >
                   <span className="truncate flex-1 min-w-0">
-                    <span className="block truncate">{node.tag}</span>
+                    <span className="block truncate">{nodeDisplayTag(node)}</span>
+                    {nodeSourceTag(node) && nodeSourceTag(node) !== nodeDisplayTag(node) && (
+                      <span className="block truncate text-xs text-gray-500">{nodeSourceTag(node)}</span>
+                    )}
                     <NodeHealthChips
                       tag={spKey(node)}
                       healthResults={healthResults}
@@ -89,10 +93,10 @@ export default function CountryNodesModal({
                     size="sm"
                     variant="light"
                     color="warning"
-                    onPress={() => onHealthCheck(node.tag)}
-                    isDisabled={healthCheckingNodes.includes(node.tag)}
+                    onPress={() => onHealthCheck(nodeInternalTag(node))}
+                    isDisabled={healthCheckingNodes.includes(nodeInternalTag(node))}
                   >
-                    {healthCheckingNodes.includes(node.tag) ? (
+                    {healthCheckingNodes.includes(nodeInternalTag(node)) ? (
                       <Spinner size="sm" />
                     ) : (
                       <Activity className="w-3 h-3" />
@@ -103,10 +107,10 @@ export default function CountryNodesModal({
                     size="sm"
                     variant="light"
                     color="warning"
-                    onPress={() => onSiteCheck(node.tag)}
-                    isDisabled={siteCheckingNodes.includes(node.tag)}
+                    onPress={() => onSiteCheck(nodeInternalTag(node))}
+                    isDisabled={siteCheckingNodes.includes(nodeInternalTag(node))}
                   >
-                    {siteCheckingNodes.includes(node.tag) ? (
+                    {siteCheckingNodes.includes(nodeInternalTag(node)) ? (
                       <Spinner size="sm" />
                     ) : (
                       <Globe className="w-3 h-3" />

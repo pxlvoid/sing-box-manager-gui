@@ -142,7 +142,21 @@ func intFromMap(m map[string]interface{}, key string) int {
 }
 
 func nodeIdentityFromMap(m map[string]interface{}) string {
-	tag := stringFromMap(m, "tag")
+	tag := stringFromMap(m, "display_name")
+	if tag == "" {
+		tag = stringFromMap(m, "tag")
+	}
+	if tag == "" {
+		tag = stringFromMap(m, "internal_tag")
+	}
+	sourceTag := stringFromMap(m, "source_tag")
+	if sourceTag != "" && sourceTag != tag {
+		if tag != "" {
+			tag = fmt.Sprintf("%s / %s", tag, sourceTag)
+		} else {
+			tag = sourceTag
+		}
+	}
 	server := stringFromMap(m, "server")
 	port := intFromMap(m, "server_port")
 	if server != "" && port > 0 {

@@ -43,14 +43,14 @@ type ProbeManager struct {
 	dataDir      string
 	cmd          *exec.Cmd
 	port         int
-	geoProxyPort int            // mixed inbound port for GeoIP lookups
+	geoProxyPort int // mixed inbound port for GeoIP lookups
 	pid          int
 	mu           sync.Mutex
 	running      bool
-	nodeTags     []string       // sorted tags of nodes currently loaded
-	tagMap       *ProbeTagMap   // probe tag ↔ original tag mapping
+	nodeTags     []string     // sorted tags of nodes currently loaded
+	tagMap       *ProbeTagMap // probe tag ↔ original tag mapping
 	startedAt    time.Time
-	configPath   string         // path to the current temp config file
+	configPath   string // path to the current temp config file
 }
 
 // NewProbeManager creates a new ProbeManager.
@@ -416,11 +416,11 @@ func (pm *ProbeManager) validateProbeConfig(nodes []storage.Node, port int, geoP
 				excluded[origIdx] = true
 				brokenNodes = append(brokenNodes, BrokenNode{
 					Index: origIdx,
-					Tag:   nodes[origIdx].Tag,
+					Tag:   nodes[origIdx].DisplayOrTag(),
 					Error: errMsg,
 				})
 				foundNew = true
-				logger.Printf("[probe] Broken node detected: %s — %s", nodes[origIdx].Tag, errMsg)
+				logger.Printf("[probe] Broken node detected: %s — %s", nodes[origIdx].DisplayOrTag(), errMsg)
 			}
 		}
 
@@ -447,7 +447,7 @@ func (pm *ProbeManager) validateProbeConfig(nodes []storage.Node, port int, geoP
 							excluded[origIdx] = true
 							brokenNodes = append(brokenNodes, BrokenNode{
 								Index: origIdx,
-								Tag:   nodes[origIdx].Tag,
+								Tag:   nodes[origIdx].DisplayOrTag(),
 								Error: fmt.Sprintf("duplicate tag: %s", dupTag),
 							})
 							foundNew = true
@@ -474,7 +474,7 @@ func (pm *ProbeManager) findOriginalIndex(original []storage.Node, node storage.
 		if excluded[i] {
 			continue
 		}
-		if fmt.Sprintf("%s:%d", n.Server, n.ServerPort) == key && n.Tag == node.Tag {
+		if fmt.Sprintf("%s:%d", n.Server, n.ServerPort) == key && n.RoutingTag() == node.RoutingTag() {
 			return i
 		}
 	}
@@ -527,7 +527,7 @@ func buildProbeConfig(nodes []storage.Node, clashAPIPort int, geoProxyPort int) 
 		probeTags = append(probeTags, probeTag)
 
 		key := fmt.Sprintf("%s:%d", n.Server, n.ServerPort)
-		tagMap.ProbeToOrig[probeTag] = n.Tag
+		tagMap.ProbeToOrig[probeTag] = n.RoutingTag()
 		tagMap.KeyToProbe[key] = probeTag
 	}
 
@@ -586,7 +586,7 @@ func buildProbeConfig(nodes []storage.Node, clashAPIPort int, geoProxyPort int) 
 func sortedNodeTags(nodes []storage.Node) []string {
 	tags := make([]string, len(nodes))
 	for i, n := range nodes {
-		tags[i] = n.Tag
+		tags[i] = n.RoutingTag()
 	}
 	sort.Strings(tags)
 	return tags

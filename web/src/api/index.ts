@@ -104,7 +104,7 @@ export const nodeApi = {
   healthCheck: (tags?: string[]) =>
     api.post('/nodes/health-check', { tags }, { timeout: 60000 }),
   healthCheckSingle: (tag: string) =>
-    api.post('/nodes/health-check-single', { tag }, { timeout: 15000 }),
+    api.post('/nodes/health-check-single', { tag, internal_tag: tag }, { timeout: 15000 }),
   siteCheck: (tags?: string[], sites?: string[]) =>
     api.post('/nodes/site-check', { tags, sites }, { timeout: 180000 }),
   getGeoData: () => api.get('/nodes/geo'),

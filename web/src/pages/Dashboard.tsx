@@ -3,6 +3,7 @@ import { Card, CardBody, CardHeader, Button, Chip, Input, Modal, ModalContent, M
 import { Play, Square, RefreshCw, Cpu, HardDrive, Wifi, Info, Activity, Copy, ClipboardCheck, Link, Globe, QrCode, Search, Stethoscope, ShieldCheck, Clock, CheckCircle, Archive, Network, ArrowUp, ArrowDown, Users, Cable } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useStore } from '../store';
+import { nodeDisplayTag, nodeInternalTag, nodeSourceTag } from '../store';
 import type { NodeSiteCheckResult } from '../store';
 import { shortSiteLabel } from '../features/nodes/types';
 import { serviceApi, configApi, monitoringApi } from '../api';
@@ -349,8 +350,10 @@ export default function Dashboard() {
   const knownNodesByTag = useMemo(() => {
     const map = new Map<string, (typeof allKnownNodes)[number]>();
     for (const node of allKnownNodes) {
-      if (!map.has(node.tag)) {
-        map.set(node.tag, node);
+      for (const alias of [nodeInternalTag(node), nodeDisplayTag(node), nodeSourceTag(node), node.tag]) {
+        const key = alias.trim();
+        if (!key || map.has(key)) continue;
+        map.set(key, node);
       }
     }
     return map;
@@ -384,6 +387,16 @@ export default function Dashboard() {
     || (mainProxyGroup?.now || '').toLowerCase() === 'auto';
   const activeProxyRefreshing = verificationRunning;
   const qrImageUrl = qrLink ? `https://quickchart.io/qr?text=${encodeURIComponent(qrLink)}&size=260` : '';
+
+  const getProxyDisplayTag = (tag: string): string => {
+    const node = knownNodesByTag.get(tag);
+    return node ? nodeDisplayTag(node) : tag;
+  };
+
+  const getProxySourceTag = (tag: string): string => {
+    const node = knownNodesByTag.get(tag);
+    return node ? nodeSourceTag(node) : '';
+  };
 
   const getServerPortLabel = (tag: string): string => {
     const node = knownNodesByTag.get(tag);
@@ -455,20 +468,26 @@ export default function Dashboard() {
   }, [mainProxyGroup, countryGroupTags]);
 
   const normalizedProxySearch = proxySearch.trim().toLowerCase();
-  const hasSearchMatches = !normalizedProxySearch || selectableMainProxyOptions.some((item) =>
-    item.toLowerCase().includes(normalizedProxySearch),
-  );
+  const matchesProxySearch = (item: string): boolean => {
+    if (!normalizedProxySearch) return true;
+    const display = getProxyDisplayTag(item).toLowerCase();
+    const source = getProxySourceTag(item).toLowerCase();
+    return item.toLowerCase().includes(normalizedProxySearch)
+      || display.includes(normalizedProxySearch)
+      || source.includes(normalizedProxySearch);
+  };
+  const hasSearchMatches = !normalizedProxySearch || selectableMainProxyOptions.some(matchesProxySearch);
   const filteredMainProxyOptions = useMemo(() => {
     if (!mainProxyGroup) return [];
     const matchedOptions = normalizedProxySearch
-      ? selectableMainProxyOptions.filter((item) => item.toLowerCase().includes(normalizedProxySearch))
+      ? selectableMainProxyOptions.filter(matchesProxySearch)
       : selectableMainProxyOptions;
 
     if (mainProxyGroup.now && !matchedOptions.includes(mainProxyGroup.now)) {
       return [mainProxyGroup.now, ...matchedOptions];
     }
     return matchedOptions;
-  }, [mainProxyGroup, normalizedProxySearch, selectableMainProxyOptions]);
+  }, [mainProxyGroup, normalizedProxySearch, selectableMainProxyOptions, knownNodesByTag]);
 
   const handleRefreshActiveProxy = async () => {
     const activeTag = resolvedActiveProxyTag;
@@ -1003,54 +1022,64 @@ export default function Dashboard() {
             <div className="space-y-4 p-4 bg-gray-50 dark:bg-gray-800 rounded-xl">
               <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
                 <div className="min-w-0">
-                  <div className="flex items-center gap-2 flex-wrap min-w-0">
-                    {(() => {
-                      const geo = getGeoLabel(resolvedActiveProxyTag || mainProxyGroup.now);
-                      return geo ? (
-                        <Tooltip content={geo.country}>
-                          <span className="text-xl cursor-default">{geo.emoji}</span>
-                        </Tooltip>
-                      ) : null;
-                    })()}
-                    <span className="font-semibold text-base truncate">{resolvedActiveProxyTag || mainProxyGroup.now}</span>
-                    {getServerPortLabel(resolvedActiveProxyTag || mainProxyGroup.now) && (
-                      <span className="text-xs text-gray-500 truncate">{getServerPortLabel(resolvedActiveProxyTag || mainProxyGroup.now)}</span>
-                    )}
-                    {getLatestMeasuredDelay(resolvedActiveProxyTag || mainProxyGroup.now) !== null && (
-                      <Chip size="sm" variant="flat" color={delayChipColor(getLatestMeasuredDelay(resolvedActiveProxyTag || mainProxyGroup.now))}>
-                        {formatDelayLabel(getLatestMeasuredDelay(resolvedActiveProxyTag || mainProxyGroup.now))}
-                      </Chip>
-                    )}
-                    {(() => {
-                      const summary = getSiteCheckSummary(resolvedActiveProxyTag || mainProxyGroup.now);
-                      if (!summary) return null;
-                      return (
-                        <Tooltip
-                          placement="top-start"
-                          showArrow
-                          delay={100}
-                          content={
-                            <div className="flex flex-col gap-1 py-1">
-                              {summary.details.map((d) => (
-                                <div key={d.label} className="flex items-center justify-between gap-4 text-xs min-w-[180px]">
-                                  <span className="text-default-600">{d.label}</span>
-                                  <span className={d.delay > 0 ? (d.delay < 800 ? 'text-success' : 'text-warning') : 'text-danger'}>
-                                    {d.delay > 0 ? `${d.delay}ms` : 'Fail'}
-                                  </span>
-                                </div>
-                              ))}
-                            </div>
-                          }
-                        >
-                          <Chip size="sm" variant="flat" color={siteChipColor(summary)} className="cursor-help">
-                            {summary.failed > 0 ? `Fail (${summary.failed}/${summary.count})` : `${summary.avg}ms (${summary.count})`}
+                  {(() => {
+                    const activeProxyTag = resolvedActiveProxyTag || mainProxyGroup.now;
+                    const activeDisplay = getProxyDisplayTag(activeProxyTag);
+                    const activeSource = getProxySourceTag(activeProxyTag);
+                    const activeServerPort = getServerPortLabel(activeProxyTag);
+                    const activeDelay = getLatestMeasuredDelay(activeProxyTag);
+                    const activeSummary = getSiteCheckSummary(activeProxyTag);
+                    const geo = getGeoLabel(activeProxyTag);
+
+                    return (
+                      <div className="flex items-center gap-2 flex-wrap min-w-0">
+                        {geo ? (
+                          <Tooltip content={geo.country}>
+                            <span className="text-xl cursor-default">{geo.emoji}</span>
+                          </Tooltip>
+                        ) : null}
+                        <span className="font-semibold text-base truncate">{activeDisplay}</span>
+                        {activeSource && activeSource !== activeDisplay && (
+                          <span className="text-xs text-gray-500 truncate max-w-[280px]" title={activeSource}>
+                            {activeSource}
+                          </span>
+                        )}
+                        {activeServerPort && (
+                          <span className="text-xs text-gray-500 truncate">{activeServerPort}</span>
+                        )}
+                        {activeDelay !== null && (
+                          <Chip size="sm" variant="flat" color={delayChipColor(activeDelay)}>
+                            {formatDelayLabel(activeDelay)}
                           </Chip>
-                        </Tooltip>
-                      );
-                    })()}
-                  </div>
+                        )}
+                        {activeSummary && (
+                          <Tooltip
+                            placement="top-start"
+                            showArrow
+                            delay={100}
+                            content={
+                              <div className="flex flex-col gap-1 py-1">
+                                {activeSummary.details.map((d) => (
+                                  <div key={d.label} className="flex items-center justify-between gap-4 text-xs min-w-[180px]">
+                                    <span className="text-default-600">{d.label}</span>
+                                    <span className={d.delay > 0 ? (d.delay < 800 ? 'text-success' : 'text-warning') : 'text-danger'}>
+                                      {d.delay > 0 ? `${d.delay}ms` : 'Fail'}
+                                    </span>
+                                  </div>
+                                ))}
+                              </div>
+                            }
+                          >
+                            <Chip size="sm" variant="flat" color={siteChipColor(activeSummary)} className="cursor-help">
+                              {activeSummary.failed > 0 ? `Fail (${activeSummary.failed}/${activeSummary.count})` : `${activeSummary.avg}ms (${activeSummary.count})`}
+                            </Chip>
+                          </Tooltip>
+                        )}
+                      </div>
+                    );
+                  })()}
                   {isAutoMode && resolvedActiveProxyTag && resolvedActiveProxyTag !== mainProxyGroup.now && (
-                    <p className="text-xs text-gray-500 mt-1">via {mainProxyGroup.now}</p>
+                    <p className="text-xs text-gray-500 mt-1">via {getProxyDisplayTag(mainProxyGroup.now)}</p>
                   )}
                 </div>
                 <Button
@@ -1092,13 +1121,18 @@ export default function Dashboard() {
                 {filteredMainProxyOptions.map((item) => {
                   const siteSummary = getSiteCheckSummary(item);
                   const itemGeo = getGeoLabel(item);
+                  const itemDisplay = getProxyDisplayTag(item);
+                  const itemSource = getProxySourceTag(item);
                   return (
-                    <SelectItem key={item} textValue={item}>
+                    <SelectItem key={item} textValue={`${itemDisplay} ${itemSource} ${item}`}>
                       <div className="flex items-center justify-between gap-3">
                         <div className="flex items-center gap-2 min-w-0">
                           {itemGeo && <span className="text-lg shrink-0">{itemGeo.emoji}</span>}
                           <div className="min-w-0">
-                            <p className="text-sm truncate">{item}</p>
+                            <p className="text-sm truncate">{itemDisplay}</p>
+                            {itemSource && itemSource !== itemDisplay && (
+                              <p className="text-xs text-gray-500 truncate">{itemSource}</p>
+                            )}
                             {getServerPortLabel(item) && (
                               <p className="text-xs text-gray-500 truncate">{getServerPortLabel(item)}</p>
                             )}

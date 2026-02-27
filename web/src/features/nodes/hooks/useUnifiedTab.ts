@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useStore } from '../../../store';
 import type { UnifiedNode as StoreUnifiedNode } from '../../../store';
+import { nodeDisplayTag, nodeInternalTag, nodeSourceTag } from '../../../store';
 import type { HealthFilter, SortColumn, SortConfig } from '../types';
 import { spKey, getNodeLatency, UNIFIED_PAGE_SIZE } from '../types';
 
@@ -64,7 +65,9 @@ export function useUnifiedTab(status: 'pending' | 'verified' | 'archived') {
     if (searchQuery) {
       const q = searchQuery.toLowerCase();
       result = result.filter(n =>
-        n.tag.toLowerCase().includes(q) ||
+        nodeDisplayTag(n).toLowerCase().includes(q) ||
+        nodeSourceTag(n).toLowerCase().includes(q) ||
+        nodeInternalTag(n).toLowerCase().includes(q) ||
         n.server.toLowerCase().includes(q) ||
         (n.country || '').toLowerCase().includes(q)
       );
@@ -93,7 +96,7 @@ export function useUnifiedTab(status: 'pending' | 'verified' | 'archived') {
       result.sort((a, b) => {
         switch (sortConfig.column) {
           case 'name':
-            return dir * a.tag.localeCompare(b.tag);
+            return dir * nodeDisplayTag(a).localeCompare(nodeDisplayTag(b));
           case 'type':
             return dir * a.type.localeCompare(b.type);
           case 'source':
@@ -168,13 +171,13 @@ export function useUnifiedTab(status: 'pending' | 'verified' | 'archived') {
   const handleBulkHealthCheck = async () => {
     const selected = nodes.filter(n => selectedNodes.has(n.id));
     await Promise.all(
-      selected.map(n => checkSingleNodeHealth(n.tag, { skipStatsRefresh: true }))
+      selected.map(n => checkSingleNodeHealth(nodeInternalTag(n), { skipStatsRefresh: true }))
     );
     useStore.getState().fetchStabilityStats();
   };
 
   const handleBulkSiteCheck = async () => {
-    const tags = [...new Set(nodes.filter(n => selectedNodes.has(n.id)).map(n => n.tag))];
+    const tags = [...new Set(nodes.filter(n => selectedNodes.has(n.id)).map(n => nodeInternalTag(n)))];
     if (tags.length === 0) return;
     await checkNodesSites(tags);
   };
