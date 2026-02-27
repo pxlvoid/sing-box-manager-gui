@@ -557,7 +557,7 @@ func (b *ConfigBuilder) buildOutboundsWithMap() ([]Outbound, map[int]string) {
 				group["interval"] = filter.URLTestConfig.Interval
 				group["tolerance"] = filter.URLTestConfig.Tolerance
 			} else {
-				group["url"] = "https://www.gstatic.com/generate_204"
+				group["url"] = "https://www.youtube.com/generate_204"
 				group["interval"] = "5m"
 				group["tolerance"] = 50
 			}
@@ -592,7 +592,7 @@ func (b *ConfigBuilder) buildOutboundsWithMap() ([]Outbound, map[int]string) {
 			"tag":       groupTag,
 			"type":      "urltest",
 			"outbounds": nodes,
-			"url":       "https://www.gstatic.com/generate_204",
+			"url":       "https://www.youtube.com/generate_204",
 			"interval":  "5m",
 			"tolerance": 50,
 		})
@@ -604,7 +604,7 @@ func (b *ConfigBuilder) buildOutboundsWithMap() ([]Outbound, map[int]string) {
 			"tag":       "Auto",
 			"type":      "urltest",
 			"outbounds": allNodeTags,
-			"url":       "https://www.gstatic.com/generate_204",
+			"url":       "https://www.youtube.com/generate_204",
 			"interval":  "5m",
 			"tolerance": 50,
 		})

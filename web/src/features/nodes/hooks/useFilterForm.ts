@@ -11,7 +11,7 @@ const defaultFilterForm: Omit<Filter, 'id'> = {
   exclude_countries: [],
   mode: 'urltest',
   urltest_config: {
-    url: 'https://www.gstatic.com/generate_204',
+    url: 'https://www.youtube.com/generate_204',
     interval: '5m',
     tolerance: 50,
   },
@@ -44,7 +44,7 @@ export function useFilterForm() {
       exclude_countries: filter.exclude_countries || [],
       mode: filter.mode || 'urltest',
       urltest_config: filter.urltest_config || {
-        url: 'https://www.gstatic.com/generate_204',
+        url: 'https://www.youtube.com/generate_204',
         interval: '5m',
         tolerance: 50,
       },

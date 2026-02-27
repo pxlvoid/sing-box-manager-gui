@@ -122,7 +122,7 @@ func (s *Server) runVerificationWithTagFilter(tagSet map[string]struct{}) {
 	}
 
 	// 2. Site check via probe (mandatory sites) only for alive nodes
-	siteTargets := []string{"chatgpt.com", "youtube.com", "instagram.com", "2ip.ru"}
+	siteTargets := append([]string(nil), defaultSiteCheckTargets...)
 	aliveCheckNodes := make([]storage.Node, 0, len(allCheckNodes))
 	for _, n := range allCheckNodes {
 		key := fmt.Sprintf("%s:%d", n.Server, n.ServerPort)

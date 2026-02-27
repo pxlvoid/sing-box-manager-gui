@@ -66,7 +66,13 @@ export const congestionControlOptions = ['bbr', 'cubic', 'new_reno'];
 
 export const protocolsWithTls = ['vmess', 'vless', 'trojan', 'hysteria2', 'tuic'];
 export const protocolsWithTransport = ['vmess', 'vless', 'trojan'];
-export const SITE_CHECK_TARGETS = ['chatgpt.com', '2ip.ru', 'youtube.com', 'instagram.com'];
+export const SITE_CHECK_TARGETS = [
+  'https://chatgpt.com',
+  'https://2ip.ru',
+  'https://www.youtube.com/generate_204',
+  'https://i.ytimg.com/generate_204',
+  'https://instagram.com',
+];
 
 export const knownExtraKeys: Record<string, string[]> = {
   shadowsocks: ['method', 'password', 'network'],
@@ -128,7 +134,8 @@ export function spKey(node: { server: string; server_port: number }): string {
 export function shortSiteLabel(site: string): string {
   const host = site.toLowerCase();
   if (host.includes('chatgpt')) return 'chatgpt';
-  if (host.includes('youtube')) return 'youtube';
+  if (host.includes('ytimg')) return 'yt-cdn';
+  if (host.includes('youtube')) return 'yt-web';
   if (host.includes('instagram')) return 'instagram';
   if (host.includes('2ip')) return '2ip';
   return host.split('.')[0];

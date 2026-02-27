@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"net"
 	"net/http"
 	neturl "net/url"
 	"os"
@@ -2381,10 +2382,11 @@ func matchFilter(node storage.Node, filter storage.Filter) bool {
 }
 
 var defaultSiteCheckTargets = []string{
-	"chatgpt.com",
-	"2ip.ru",
-	"youtube.com",
-	"instagram.com",
+	"https://chatgpt.com",
+	"https://2ip.ru",
+	"https://www.youtube.com/generate_204",
+	"https://i.ytimg.com/generate_204",
+	"https://instagram.com",
 }
 
 func normalizeSiteTarget(site string) string {
@@ -2393,25 +2395,41 @@ func normalizeSiteTarget(site string) string {
 		return ""
 	}
 
-	// Fast path: plain hostname.
-	if !strings.Contains(site, "://") && !strings.Contains(site, "/") {
-		return strings.ToLower(site)
-	}
-
 	raw := site
 	if !strings.Contains(raw, "://") {
 		raw = "https://" + raw
 	}
-	if u, err := neturl.Parse(raw); err == nil && u.Hostname() != "" {
-		return strings.ToLower(u.Hostname())
+
+	u, err := neturl.Parse(raw)
+	if err != nil || u.Hostname() == "" {
+		return ""
 	}
 
-	site = strings.TrimPrefix(site, "https://")
-	site = strings.TrimPrefix(site, "http://")
-	if idx := strings.Index(site, "/"); idx >= 0 {
-		site = site[:idx]
+	scheme := strings.ToLower(u.Scheme)
+	if scheme != "http" && scheme != "https" {
+		return ""
 	}
-	return strings.ToLower(site)
+
+	host := strings.ToLower(u.Hostname())
+	if port := u.Port(); port != "" {
+		host = net.JoinHostPort(host, port)
+	}
+
+	path := u.EscapedPath()
+	if path == "" || path == "/" {
+		path = ""
+	}
+	query := u.RawQuery
+
+	result := scheme + "://" + host
+	if path != "" {
+		result += path
+	}
+	if query != "" {
+		result += "?" + query
+	}
+
+	return result
 }
 
 func sanitizeSiteTargets(raw []string) []string {

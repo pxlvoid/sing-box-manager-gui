@@ -133,7 +133,7 @@ export default function FilterModal({
                   <h4 className="font-medium text-sm">Speed Test Configuration</h4>
                   <Input
                     label="Speed Test URL"
-                    placeholder="https://www.gstatic.com/generate_204"
+                    placeholder="https://www.youtube.com/generate_204"
                     value={filterForm.urltest_config?.url || ''}
                     onChange={(e) => setFilterForm({
                       ...filterForm,
