@@ -340,7 +340,7 @@ export default function Dashboard() {
     }
   }
 
-  const totalNodes = nodeCounts.pending + nodeCounts.verified + nodeCounts.archived;
+  const totalNodes = nodeCounts.pending + nodeCounts.verified;
   const enabledSubs = subscriptions.filter(sub => sub.enabled).length;
   const mainProxyGroup = proxyGroups.find((group) => group.name.toLowerCase() === 'proxy');
   const allKnownNodes = useMemo(
@@ -623,12 +623,6 @@ export default function Dashboard() {
                     style={{ width: `${(nodeCounts.pending / totalNodes) * 100}%` }}
                   />
                 )}
-                {nodeCounts.archived > 0 && (
-                  <div
-                    className="bg-gray-300 dark:bg-gray-500 h-full"
-                    style={{ width: `${(nodeCounts.archived / totalNodes) * 100}%` }}
-                  />
-                )}
               </div>
               <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-gray-500">
                 <span className="flex items-center gap-1.5">
@@ -638,10 +632,6 @@ export default function Dashboard() {
                 <span className="flex items-center gap-1.5">
                   <span className="w-2.5 h-2.5 rounded-full bg-yellow-400 inline-block" />
                   Pending: <span className="font-semibold text-gray-700 dark:text-gray-200">{nodeCounts.pending}</span>
-                </span>
-                <span className="flex items-center gap-1.5">
-                  <span className="w-2.5 h-2.5 rounded-full bg-gray-300 dark:bg-gray-500 inline-block" />
-                  Archived: <span className="font-semibold text-gray-700 dark:text-gray-200">{nodeCounts.archived}</span>
                 </span>
               </div>
             </div>
