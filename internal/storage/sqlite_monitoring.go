@@ -3,6 +3,8 @@ package storage
 import (
 	"database/sql"
 	"fmt"
+	"strconv"
+	"strings"
 	"time"
 )
 
@@ -387,19 +389,23 @@ func (s *SQLiteStore) GetRecentTrafficClients(limit int, lookback time.Duration)
 func (s *SQLiteStore) GetTrafficLifetimeStats() (*TrafficLifetimeStats, error) {
 	stats := &TrafficLifetimeStats{}
 
-	var firstSample sql.NullTime
-	var lastSample sql.NullTime
+	var firstSampleRaw interface{}
+	var lastSampleRaw interface{}
 	if err := s.db.QueryRow(
 		`SELECT COUNT(*) AS sample_count, MIN(timestamp), MAX(timestamp) FROM traffic_samples`,
-	).Scan(&stats.SampleCount, &firstSample, &lastSample); err != nil {
+	).Scan(&stats.SampleCount, &firstSampleRaw, &lastSampleRaw); err != nil {
 		return nil, err
 	}
-	if firstSample.Valid {
-		t := firstSample.Time
+
+	if t, ok, err := parseSQLiteTimestampValue(firstSampleRaw); err != nil {
+		return nil, fmt.Errorf("parse first_sample_at: %w", err)
+	} else if ok {
 		stats.FirstSampleAt = &t
 	}
-	if lastSample.Valid {
-		t := lastSample.Time
+
+	if t, ok, err := parseSQLiteTimestampValue(lastSampleRaw); err != nil {
+		return nil, fmt.Errorf("parse last_sample_at: %w", err)
+	} else if ok {
 		stats.LastSampleAt = &t
 	}
 
@@ -467,6 +473,58 @@ func (s *SQLiteStore) GetTrafficLifetimeStats() (*TrafficLifetimeStats, error) {
 	}
 
 	return stats, nil
+}
+
+func parseSQLiteTimestampValue(raw interface{}) (time.Time, bool, error) {
+	switch v := raw.(type) {
+	case nil:
+		return time.Time{}, false, nil
+	case time.Time:
+		return v, true, nil
+	case string:
+		return parseSQLiteTimestampString(v)
+	case []byte:
+		return parseSQLiteTimestampString(string(v))
+	default:
+		return time.Time{}, false, fmt.Errorf("unsupported timestamp type %T", raw)
+	}
+}
+
+func parseSQLiteTimestampString(value string) (time.Time, bool, error) {
+	s := strings.TrimSpace(value)
+	if s == "" {
+		return time.Time{}, false, nil
+	}
+
+	layouts := []string{
+		time.RFC3339Nano,
+		time.RFC3339,
+		"2006-01-02 15:04:05.999999999-07:00",
+		"2006-01-02 15:04:05.999999999",
+		"2006-01-02 15:04:05-07:00",
+		"2006-01-02 15:04:05",
+	}
+	for _, layout := range layouts {
+		if ts, err := time.Parse(layout, s); err == nil {
+			return ts, true, nil
+		}
+	}
+
+	// Be tolerant to unix timestamps that may appear from custom SQL conversions.
+	if unix, err := strconv.ParseInt(s, 10, 64); err == nil {
+		switch {
+		case unix > 1_000_000_000_000_000_000:
+			return time.Unix(0, unix), true, nil
+		case unix > 1_000_000_000_000_000:
+			return time.UnixMicro(unix), true, nil
+		case unix > 1_000_000_000_000:
+			return time.UnixMilli(unix), true, nil
+		default:
+			return time.Unix(unix, 0), true, nil
+		}
+	}
+
+	return time.Time{}, false, fmt.Errorf("unsupported timestamp format %q", s)
 }
 
 func (s *SQLiteStore) GetTrafficChainStats(limit int, lookback time.Duration) ([]TrafficChainStats, error) {
