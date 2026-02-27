@@ -601,17 +601,19 @@ func (s *SQLiteStore) GetTrafficChainStats(limit int, lookback time.Duration) ([
 	stats := make([]TrafficChainStats, 0, limit)
 	for rows.Next() {
 		var item TrafficChainStats
-		var lastSeen sql.NullTime
+		var lastSeenRaw interface{}
 		if err := rows.Scan(
 			&item.ProxyChain,
-			&lastSeen,
+			&lastSeenRaw,
 			&item.UploadBytes,
 			&item.DownloadBytes,
 		); err != nil {
 			return nil, fmt.Errorf("scan traffic chain stats row: %w", err)
 		}
-		if lastSeen.Valid {
-			item.LastSeen = lastSeen.Time
+		if ts, ok, err := parseSQLiteTimestampValue(lastSeenRaw); err != nil {
+			return nil, fmt.Errorf("parse traffic chain last_seen: %w", err)
+		} else if ok {
+			item.LastSeen = ts
 		}
 		stats = append(stats, item)
 	}

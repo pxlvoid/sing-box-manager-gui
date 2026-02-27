@@ -80,3 +80,57 @@ func TestParseSQLiteTimestampString_UTCZoneFormat(t *testing.T) {
 		t.Fatalf("timestamp mismatch: got %s, want %s", got.UTC().Format(time.RFC3339Nano), want.UTC().Format(time.RFC3339Nano))
 	}
 }
+
+func TestGetTrafficChainStats_AggregateTimestampString(t *testing.T) {
+	store, err := NewSQLiteStore(t.TempDir())
+	if err != nil {
+		t.Fatalf("create sqlite store: %v", err)
+	}
+	t.Cleanup(func() { _ = store.Close() })
+
+	ts1 := "2026-02-27T08:11:36.386663074Z"
+	ts2 := "2026-02-27T08:11:38.386855382Z"
+
+	if _, err := store.db.Exec(`INSERT INTO traffic_samples (
+		timestamp, up_bps, down_bps, upload_total, download_total,
+		active_connections, client_count, memory_inuse, memory_oslimit
+	) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`, ts1, 0, 0, 100, 200, 1, 1, 0, 0); err != nil {
+		t.Fatalf("insert sample: %v", err)
+	}
+
+	if _, err := store.db.Exec(`INSERT INTO traffic_clients (
+		sample_id, timestamp, source_ip, active_connections, upload_bytes,
+		download_bytes, duration_seconds, proxy_chain, host_count, top_host
+	) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, 1, ts1, "10.0.0.1", 1, 100, 200, 1, "node_1", 1, "example.com"); err != nil {
+		t.Fatalf("insert first client row: %v", err)
+	}
+	if _, err := store.db.Exec(`INSERT INTO traffic_clients (
+		sample_id, timestamp, source_ip, active_connections, upload_bytes,
+		download_bytes, duration_seconds, proxy_chain, host_count, top_host
+	) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, 1, ts2, "10.0.0.1", 1, 130, 260, 1, "node_1", 1, "example.com"); err != nil {
+		t.Fatalf("insert second client row: %v", err)
+	}
+
+	stats, err := store.GetTrafficChainStats(10, 0)
+	if err != nil {
+		t.Fatalf("get traffic chain stats: %v", err)
+	}
+	if len(stats) != 1 {
+		t.Fatalf("stats length mismatch: got %d, want 1", len(stats))
+	}
+
+	item := stats[0]
+	if item.ProxyChain != "node_1" {
+		t.Fatalf("proxy chain mismatch: got %q, want %q", item.ProxyChain, "node_1")
+	}
+	if item.UploadBytes != 130 {
+		t.Fatalf("upload bytes mismatch: got %d, want 130", item.UploadBytes)
+	}
+	if item.DownloadBytes != 260 {
+		t.Fatalf("download bytes mismatch: got %d, want 260", item.DownloadBytes)
+	}
+	wantLastSeen, _ := time.Parse(time.RFC3339Nano, ts2)
+	if !item.LastSeen.Equal(wantLastSeen) {
+		t.Fatalf("last seen mismatch: got %s, want %s", item.LastSeen.UTC().Format(time.RFC3339Nano), wantLastSeen.UTC().Format(time.RFC3339Nano))
+	}
+}

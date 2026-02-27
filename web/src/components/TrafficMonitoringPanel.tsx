@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Card, CardBody, CardHeader, Chip, Spinner } from '@nextui-org/react';
-import { Activity, ArrowDownToLine, ArrowUpToLine, Network, Users } from 'lucide-react';
+import { Card, CardBody, CardHeader, Chip, Button, ButtonGroup, Spinner } from '@nextui-org/react';
+import { Activity, ArrowDownToLine, ArrowUpToLine, Clock, Network, Users, HardDrive, Database } from 'lucide-react';
 import { Area, AreaChart, CartesianGrid, Legend, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import { monitoringApi } from '../api';
 
@@ -100,6 +100,15 @@ const defaultLifetime: MonitoringLifetimeStats = {
   total_traffic_bytes: 0,
 };
 
+const CHART_PERIODS = [
+  { key: '1m', label: '1 мин', seconds: 60 },
+  { key: '5m', label: '5 мин', seconds: 300 },
+  { key: '15m', label: '15 мин', seconds: 900 },
+  { key: '1h', label: '1 час', seconds: 3600 },
+] as const;
+
+const MAX_HISTORY_POINTS = 3600;
+
 function toWebSocketURL(path: string): string {
   const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
   return `${protocol}//${window.location.host}${path}`;
@@ -162,8 +171,8 @@ function formatDateTime(value?: string): string {
 
 function appendPoint(history: TrafficHistoryPoint[], point: TrafficHistoryPoint): TrafficHistoryPoint[] {
   const next = [...history, point];
-  if (next.length <= 120) return next;
-  return next.slice(next.length - 120);
+  if (next.length <= MAX_HISTORY_POINTS) return next;
+  return next.slice(next.length - MAX_HISTORY_POINTS);
 }
 
 const CHART_EMA_ALPHA = 0.28;
@@ -335,6 +344,7 @@ export default function TrafficMonitoringPanel() {
   const [fallbackResourcesFor, setFallbackResourcesFor] = useState<string>('');
   const [trafficConnected, setTrafficConnected] = useState(false);
   const [connectionsConnected, setConnectionsConnected] = useState(false);
+  const [chartPeriod, setChartPeriod] = useState<string>('5m');
 
   const fetchRecentClients = useCallback(async () => {
     try {
@@ -360,7 +370,7 @@ export default function TrafficMonitoringPanel() {
       const [overviewRes, lifetimeRes, historyRes, recentClientsRes, resourcesRes] = await Promise.all([
         monitoringApi.getOverview(),
         monitoringApi.getLifetime(),
-        monitoringApi.getHistory(120),
+        monitoringApi.getHistory(MAX_HISTORY_POINTS),
         monitoringApi.getRecentClients(400, 24),
         monitoringApi.getResources(300),
       ]);
@@ -500,11 +510,23 @@ export default function TrafficMonitoringPanel() {
     };
   }, []);
 
+  const selectedPeriod = useMemo(
+    () => CHART_PERIODS.find((p) => p.key === chartPeriod) || CHART_PERIODS[1],
+    [chartPeriod],
+  );
+
   const chartData = useMemo(() => {
+    const now = Date.now();
+    const cutoff = now - selectedPeriod.seconds * 1000;
+    const filtered = history.filter((p) => {
+      const ts = Date.parse(p.timestamp);
+      return !Number.isNaN(ts) && ts >= cutoff;
+    });
+
     let emaUp = 0;
     let emaDown = 0;
 
-    return history.map((point, idx) => {
+    return filtered.map((point, idx) => {
       const rawUp = Math.max(0, toNumber(point.up_bps));
       const rawDown = Math.max(0, toNumber(point.down_bps));
 
@@ -523,7 +545,7 @@ export default function TrafficMonitoringPanel() {
         down_kbps: emaDown / 1024,
       };
     });
-  }, [history]);
+  }, [history, selectedPeriod]);
 
   const clients = useMemo(
     () => mergeClients(recentClients, activeClients, new Date().toISOString()),
@@ -585,232 +607,266 @@ export default function TrafficMonitoringPanel() {
     [selectedClient, liveSelectedResources, fallbackResources],
   );
 
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-40">
+        <Spinner />
+      </div>
+    );
+  }
+
   return (
-    <Card>
-      <CardHeader className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-        <div className="flex items-center gap-2">
-          <Network className="w-5 h-5" />
-          <h2 className="text-lg font-semibold">Traffic Monitoring</h2>
-        </div>
-        <div className="flex items-center gap-2">
-          <Chip size="sm" variant="flat" color={trafficConnected ? 'success' : 'warning'}>
-            traffic: {trafficConnected ? 'live' : 'offline'}
-          </Chip>
-          <Chip size="sm" variant="flat" color={connectionsConnected ? 'success' : 'warning'}>
-            connections: {connectionsConnected ? 'live' : 'offline'}
-          </Chip>
-        </div>
-      </CardHeader>
-      <CardBody className="space-y-6">
-        {loading ? (
-          <div className="flex items-center justify-center h-40">
-            <Spinner />
+    <div className="space-y-4">
+      {/* Connection status */}
+      <div className="flex items-center gap-2">
+        <Chip size="sm" variant="flat" color={trafficConnected ? 'success' : 'warning'}>
+          traffic: {trafficConnected ? 'live' : 'offline'}
+        </Chip>
+        <Chip size="sm" variant="flat" color={connectionsConnected ? 'success' : 'warning'}>
+          connections: {connectionsConnected ? 'live' : 'offline'}
+        </Chip>
+      </div>
+
+      {/* Stat cards */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+        <Card className="shadow-sm">
+          <CardBody className="py-4 px-4">
+            <div className="flex items-center gap-2 mb-2">
+              <div className="p-2 rounded-lg bg-green-100 dark:bg-green-900/30">
+                <ArrowUpToLine className="w-4 h-4 text-green-600 dark:text-green-400" />
+              </div>
+              <span className="text-sm text-gray-500 dark:text-gray-400">Upload</span>
+            </div>
+            <p className="text-2xl font-bold">{formatRate(overview.up_bps)}</p>
+            <p className="text-xs text-gray-400 mt-1">Total: {formatBytes(overview.upload_total)}</p>
+          </CardBody>
+        </Card>
+
+        <Card className="shadow-sm">
+          <CardBody className="py-4 px-4">
+            <div className="flex items-center gap-2 mb-2">
+              <div className="p-2 rounded-lg bg-blue-100 dark:bg-blue-900/30">
+                <ArrowDownToLine className="w-4 h-4 text-blue-600 dark:text-blue-400" />
+              </div>
+              <span className="text-sm text-gray-500 dark:text-gray-400">Download</span>
+            </div>
+            <p className="text-2xl font-bold">{formatRate(overview.down_bps)}</p>
+            <p className="text-xs text-gray-400 mt-1">Total: {formatBytes(overview.download_total)}</p>
+          </CardBody>
+        </Card>
+
+        <Card className="shadow-sm">
+          <CardBody className="py-4 px-4">
+            <div className="flex items-center gap-2 mb-2">
+              <div className="p-2 rounded-lg bg-orange-100 dark:bg-orange-900/30">
+                <Activity className="w-4 h-4 text-orange-600 dark:text-orange-400" />
+              </div>
+              <span className="text-sm text-gray-500 dark:text-gray-400">Connections</span>
+            </div>
+            <p className="text-2xl font-bold">{overview.active_connections}</p>
+            <p className="text-xs text-gray-400 mt-1">Memory: {formatBytes(overview.memory_inuse)}</p>
+          </CardBody>
+        </Card>
+
+        <Card className="shadow-sm">
+          <CardBody className="py-4 px-4">
+            <div className="flex items-center gap-2 mb-2">
+              <div className="p-2 rounded-lg bg-purple-100 dark:bg-purple-900/30">
+                <Users className="w-4 h-4 text-purple-600 dark:text-purple-400" />
+              </div>
+              <span className="text-sm text-gray-500 dark:text-gray-400">Clients</span>
+            </div>
+            <p className="text-2xl font-bold">{overview.client_count}</p>
+            <p className="text-xs text-gray-400 mt-1">All time: {lifetime.total_clients}</p>
+          </CardBody>
+        </Card>
+      </div>
+
+      {/* Traffic chart */}
+      <Card className="shadow-sm">
+        <CardHeader className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 pb-0">
+          <div className="flex items-center gap-2">
+            <Network className="w-5 h-5 text-gray-500" />
+            <h3 className="font-semibold">Traffic</h3>
           </div>
-        ) : (
-          <>
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
-              <Card className="bg-green-50 dark:bg-green-900/20 shadow-none">
-                <CardBody className="py-3">
-                  <div className="flex items-center gap-2 text-sm text-gray-500">
-                    <ArrowUpToLine className="w-4 h-4 text-green-600 dark:text-green-300" />
-                    Upload
-                  </div>
-                  <p className="text-xl font-semibold">{formatRate(overview.up_bps)}</p>
-                </CardBody>
-              </Card>
-              <Card className="bg-blue-50 dark:bg-blue-900/20 shadow-none">
-                <CardBody className="py-3">
-                  <div className="flex items-center gap-2 text-sm text-gray-500">
-                    <ArrowDownToLine className="w-4 h-4 text-blue-600 dark:text-blue-300" />
-                    Download
-                  </div>
-                  <p className="text-xl font-semibold">{formatRate(overview.down_bps)}</p>
-                </CardBody>
-              </Card>
-              <Card className="bg-orange-50 dark:bg-orange-900/20 shadow-none">
-                <CardBody className="py-3">
-                  <div className="flex items-center gap-2 text-sm text-gray-500">
-                    <Activity className="w-4 h-4 text-orange-600 dark:text-orange-300" />
-                    Active Connections
-                  </div>
-                  <p className="text-xl font-semibold">{overview.active_connections}</p>
-                </CardBody>
-              </Card>
-              <Card className="bg-purple-50 dark:bg-purple-900/20 shadow-none">
-                <CardBody className="py-3">
-                  <div className="flex items-center gap-2 text-sm text-gray-500">
-                    <Users className="w-4 h-4 text-purple-600 dark:text-purple-300" />
-                    Active Clients
-                  </div>
-                  <p className="text-xl font-semibold">{overview.client_count}</p>
-                </CardBody>
-              </Card>
+          <ButtonGroup size="sm" variant="flat">
+            {CHART_PERIODS.map((period) => (
+              <Button
+                key={period.key}
+                color={chartPeriod === period.key ? 'primary' : 'default'}
+                onPress={() => setChartPeriod(period.key)}
+              >
+                {period.label}
+              </Button>
+            ))}
+          </ButtonGroup>
+        </CardHeader>
+        <CardBody>
+          <div className="h-72 w-full">
+            <ResponsiveContainer width="100%" height="100%">
+              <AreaChart data={chartData}>
+                <CartesianGrid strokeDasharray="3 3" />
+                <XAxis dataKey="time" minTickGap={24} />
+                <YAxis tickFormatter={(value) => `${Math.round(value)} KB/s`} />
+                <Tooltip
+                  formatter={(value, name) => {
+                    const raw = Array.isArray(value) ? value[0] : value;
+                    const numeric = Number(raw);
+                    const bytesPerSecond = Number.isFinite(numeric) ? numeric * 1024 : 0;
+                    return [formatRate(Math.round(bytesPerSecond)), name === 'up_kbps' ? 'Upload' : 'Download'];
+                  }}
+                  labelFormatter={(label) => `Time: ${label}`}
+                />
+                <Legend formatter={(value) => (value === 'up_kbps' ? 'Upload' : 'Download')} />
+                <Area type="monotone" dataKey="up_kbps" stroke="#16a34a" fill="#16a34a33" strokeWidth={2} />
+                <Area type="monotone" dataKey="down_kbps" stroke="#2563eb" fill="#2563eb33" strokeWidth={2} />
+              </AreaChart>
+            </ResponsiveContainer>
+          </div>
+        </CardBody>
+      </Card>
+
+      {/* Lifetime stats */}
+      <Card className="shadow-sm">
+        <CardHeader className="pb-0">
+          <div className="flex items-center gap-2">
+            <Database className="w-5 h-5 text-gray-500" />
+            <h3 className="font-semibold">System Totals</h3>
+          </div>
+        </CardHeader>
+        <CardBody>
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 text-sm">
+            <div>
+              <p className="text-xs text-gray-500 dark:text-gray-400">Clients seen</p>
+              <p className="text-lg font-semibold">{lifetime.total_clients}</p>
             </div>
-
-            <Card className="shadow-none border border-gray-200 dark:border-gray-700">
-              <CardHeader>
-                <h3 className="font-semibold">System Totals (all time)</h3>
-              </CardHeader>
-              <CardBody className="pt-0">
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 text-sm">
-                  <div>
-                    <p className="text-xs text-gray-500">Clients seen</p>
-                    <p className="font-semibold">{lifetime.total_clients}</p>
-                  </div>
-                  <div>
-                    <p className="text-xs text-gray-500">Total upload</p>
-                    <p className="font-semibold">{formatBytes(lifetime.total_upload_bytes)}</p>
-                  </div>
-                  <div>
-                    <p className="text-xs text-gray-500">Total download</p>
-                    <p className="font-semibold">{formatBytes(lifetime.total_download_bytes)}</p>
-                  </div>
-                  <div>
-                    <p className="text-xs text-gray-500">Total traffic</p>
-                    <p className="font-semibold">{formatBytes(lifetime.total_traffic_bytes)}</p>
-                  </div>
-                </div>
-                <div className="mt-3 text-xs text-gray-500">
-                  Window: {formatDateTime(lifetime.first_sample_at)} → {formatDateTime(lifetime.last_sample_at)} · samples: {lifetime.sample_count}
-                </div>
-              </CardBody>
-            </Card>
-
-            <div className="h-72 w-full rounded-lg border border-gray-200 dark:border-gray-700 p-3">
-              <ResponsiveContainer width="100%" height="100%">
-                <AreaChart data={chartData}>
-                  <CartesianGrid strokeDasharray="3 3" />
-                  <XAxis dataKey="time" minTickGap={24} />
-                  <YAxis tickFormatter={(value) => `${Math.round(value)} KB/s`} />
-                  <Tooltip
-                    formatter={(value, name) => {
-                      const raw = Array.isArray(value) ? value[0] : value;
-                      const numeric = Number(raw);
-                      const bytesPerSecond = Number.isFinite(numeric) ? numeric * 1024 : 0;
-                      return [formatRate(Math.round(bytesPerSecond)), name === 'up_kbps' ? 'Upload' : 'Download'];
-                    }}
-                    labelFormatter={(label) => `Time: ${label}`}
-                  />
-                  <Legend formatter={(value) => (value === 'up_kbps' ? 'Upload' : 'Download')} />
-                  <Area type="monotone" dataKey="up_kbps" stroke="#16a34a" fill="#16a34a33" strokeWidth={2} />
-                  <Area type="monotone" dataKey="down_kbps" stroke="#2563eb" fill="#2563eb33" strokeWidth={2} />
-                </AreaChart>
-              </ResponsiveContainer>
+            <div>
+              <p className="text-xs text-gray-500 dark:text-gray-400">Total upload</p>
+              <p className="text-lg font-semibold">{formatBytes(lifetime.total_upload_bytes)}</p>
             </div>
+            <div>
+              <p className="text-xs text-gray-500 dark:text-gray-400">Total download</p>
+              <p className="text-lg font-semibold">{formatBytes(lifetime.total_download_bytes)}</p>
+            </div>
+            <div>
+              <p className="text-xs text-gray-500 dark:text-gray-400">Total traffic</p>
+              <p className="text-lg font-semibold">{formatBytes(lifetime.total_traffic_bytes)}</p>
+            </div>
+          </div>
+          <div className="mt-3 pt-3 border-t border-gray-200 dark:border-gray-700 text-xs text-gray-400">
+            <Clock className="w-3 h-3 inline mr-1" />
+            {formatDateTime(lifetime.first_sample_at)} — {formatDateTime(lifetime.last_sample_at)} · {lifetime.sample_count} samples
+          </div>
+        </CardBody>
+      </Card>
 
-            <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
-              <Card className="shadow-none border border-gray-200 dark:border-gray-700">
-                <CardHeader>
-                  <h3 className="font-semibold">Clients (active + recently disconnected)</h3>
-                </CardHeader>
-                <CardBody className="pt-0">
-                  <div className="max-h-72 overflow-auto">
-                    <table className="w-full text-sm">
-                      <thead className="text-left text-gray-500 border-b border-gray-200 dark:border-gray-700">
-                        <tr>
-                          <th className="py-2 pr-3">IP</th>
-                          <th className="py-2 pr-3">Status</th>
-                          <th className="py-2 pr-3">Last Seen</th>
-                          <th className="py-2 pr-3">Conn</th>
-                          <th className="py-2 pr-3">Traffic</th>
-                          <th className="py-2">Top Host</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {clients.slice(0, 25).map((client) => {
-                          const isSelected = client.source_ip === selectedClientIP;
-                          return (
-                            <tr
-                              key={client.source_ip}
-                              className={`border-b border-gray-100 dark:border-gray-800 cursor-pointer ${isSelected ? 'bg-primary-50 dark:bg-primary-900/20' : ''}`}
-                              onClick={() => setSelectedClientIP(client.source_ip)}
-                            >
-                              <td className="py-2 pr-3 font-mono">{client.source_ip}</td>
-                              <td className="py-2 pr-3">
-                                <Chip size="sm" variant="flat" color={client.online ? 'success' : 'default'}>
-                                  {client.online ? 'online' : 'offline'}
-                                </Chip>
-                              </td>
-                              <td className="py-2 pr-3">{formatDateTime(client.last_seen)}</td>
-                              <td className="py-2 pr-3">{client.active_connections}</td>
-                              <td className="py-2 pr-3">{formatBytes(client.upload_bytes + client.download_bytes)}</td>
-                              <td className="py-2 truncate max-w-[160px]" title={client.top_host || '-'}>
-                                {client.top_host || '-'}
-                              </td>
-                            </tr>
-                          );
-                        })}
-                        {clients.length === 0 && (
-                          <tr>
-                            <td className="py-3 text-gray-500" colSpan={6}>No clients in recent history</td>
-                          </tr>
-                        )}
-                      </tbody>
-                    </table>
-                  </div>
-                </CardBody>
-              </Card>
-
-              <Card className="shadow-none border border-gray-200 dark:border-gray-700">
-                <CardHeader className="flex flex-col gap-2">
-                  <h3 className="font-semibold">Client Details</h3>
-                  {selectedClient ? (
-                    <div className="grid grid-cols-2 gap-2 text-xs text-gray-600 dark:text-gray-300">
-                      <div><span className="text-gray-500">IP:</span> <span className="font-mono">{selectedClient.source_ip}</span></div>
-                      <div><span className="text-gray-500">Status:</span> {selectedClient.online ? 'online' : 'offline'}</div>
-                      <div><span className="text-gray-500">Last seen:</span> {formatDateTime(selectedClient.last_seen)}</div>
-                      <div><span className="text-gray-500">Connections:</span> {selectedClient.active_connections}</div>
-                      <div><span className="text-gray-500">Duration:</span> {formatDuration(selectedClient.duration_seconds)}</div>
-                      <div><span className="text-gray-500">Hosts:</span> {selectedClient.host_count}</div>
-                      <div className="col-span-2"><span className="text-gray-500">Traffic:</span> {formatBytes(selectedClient.upload_bytes + selectedClient.download_bytes)}</div>
-                      <div className="col-span-2 truncate" title={selectedClient.proxy_chain}>
-                        <span className="text-gray-500">Chain:</span> {selectedClient.proxy_chain || 'direct'}
-                      </div>
-                    </div>
-                  ) : (
-                    <div className="text-sm text-gray-500">Select a client on the left</div>
+      {/* Clients + Details */}
+      <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
+        <Card className="shadow-sm">
+          <CardHeader className="pb-0">
+            <h3 className="font-semibold">Clients</h3>
+          </CardHeader>
+          <CardBody>
+            <div className="max-h-80 overflow-auto">
+              <table className="w-full text-sm">
+                <thead className="text-left text-gray-500 border-b border-gray-200 dark:border-gray-700">
+                  <tr>
+                    <th className="py-2 pr-3">IP</th>
+                    <th className="py-2 pr-3">Status</th>
+                    <th className="py-2 pr-3">Last Seen</th>
+                    <th className="py-2 pr-3">Conn</th>
+                    <th className="py-2 pr-3">Traffic</th>
+                    <th className="py-2">Top Host</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {clients.slice(0, 25).map((client) => {
+                    const isSelected = client.source_ip === selectedClientIP;
+                    return (
+                      <tr
+                        key={client.source_ip}
+                        className={`border-b border-gray-100 dark:border-gray-800 cursor-pointer transition-colors ${isSelected ? 'bg-primary-50 dark:bg-primary-900/20' : 'hover:bg-gray-50 dark:hover:bg-gray-800/50'}`}
+                        onClick={() => setSelectedClientIP(client.source_ip)}
+                      >
+                        <td className="py-2 pr-3 font-mono">{client.source_ip}</td>
+                        <td className="py-2 pr-3">
+                          <Chip size="sm" variant="flat" color={client.online ? 'success' : 'default'}>
+                            {client.online ? 'online' : 'offline'}
+                          </Chip>
+                        </td>
+                        <td className="py-2 pr-3">{formatDateTime(client.last_seen)}</td>
+                        <td className="py-2 pr-3">{client.active_connections}</td>
+                        <td className="py-2 pr-3">{formatBytes(client.upload_bytes + client.download_bytes)}</td>
+                        <td className="py-2 truncate max-w-[160px]" title={client.top_host || '-'}>
+                          {client.top_host || '-'}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                  {clients.length === 0 && (
+                    <tr>
+                      <td className="py-3 text-gray-500" colSpan={6}>No clients in recent history</td>
+                    </tr>
                   )}
-                </CardHeader>
-                <CardBody className="pt-0">
-                  <div className="max-h-72 overflow-auto">
-                    <table className="w-full text-sm">
-                      <thead className="text-left text-gray-500 border-b border-gray-200 dark:border-gray-700">
-                        <tr>
-                          <th className="py-2 pr-3">Host</th>
-                          <th className="py-2 pr-3">Client</th>
-                          <th className="py-2 pr-3">Conn</th>
-                          <th className="py-2">Traffic</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {selectedResources.slice(0, 30).map((resource) => (
-                          <tr key={`${resource.source_ip}-${resource.host}`} className="border-b border-gray-100 dark:border-gray-800">
-                            <td className="py-2 pr-3 truncate max-w-[180px]" title={resource.host}>{resource.host}</td>
-                            <td className="py-2 pr-3 font-mono">{resource.source_ip}</td>
-                            <td className="py-2 pr-3">{resource.active_connections}</td>
-                            <td className="py-2">{formatBytes(resource.upload_bytes + resource.download_bytes)}</td>
-                          </tr>
-                        ))}
-                        {selectedResources.length === 0 && (
-                          <tr>
-                            <td className="py-3 text-gray-500" colSpan={4}>
-                              {selectedClient ? 'No resources in current snapshot' : 'Select a client to see resource details'}
-                            </td>
-                          </tr>
-                        )}
-                      </tbody>
-                    </table>
-                  </div>
-                </CardBody>
-              </Card>
+                </tbody>
+              </table>
             </div>
+          </CardBody>
+        </Card>
 
-            <div className="text-xs text-gray-500 dark:text-gray-400">
-              Totals: upload {formatBytes(overview.upload_total)} · download {formatBytes(overview.download_total)}
+        <Card className="shadow-sm">
+          <CardHeader className="flex flex-col gap-2 pb-0">
+            <h3 className="font-semibold w-full">Client Details</h3>
+            {selectedClient ? (
+              <div className="grid grid-cols-2 gap-2 text-xs text-gray-600 dark:text-gray-300 w-full">
+                <div><span className="text-gray-500">IP:</span> <span className="font-mono">{selectedClient.source_ip}</span></div>
+                <div><span className="text-gray-500">Status:</span> {selectedClient.online ? 'online' : 'offline'}</div>
+                <div><span className="text-gray-500">Last seen:</span> {formatDateTime(selectedClient.last_seen)}</div>
+                <div><span className="text-gray-500">Connections:</span> {selectedClient.active_connections}</div>
+                <div><span className="text-gray-500">Duration:</span> {formatDuration(selectedClient.duration_seconds)}</div>
+                <div><span className="text-gray-500">Hosts:</span> {selectedClient.host_count}</div>
+                <div className="col-span-2"><span className="text-gray-500">Traffic:</span> {formatBytes(selectedClient.upload_bytes + selectedClient.download_bytes)}</div>
+                <div className="col-span-2 truncate" title={selectedClient.proxy_chain}>
+                  <span className="text-gray-500">Chain:</span> {selectedClient.proxy_chain || 'direct'}
+                </div>
+              </div>
+            ) : (
+              <div className="text-sm text-gray-500">Select a client on the left</div>
+            )}
+          </CardHeader>
+          <CardBody>
+            <div className="max-h-72 overflow-auto">
+              <table className="w-full text-sm">
+                <thead className="text-left text-gray-500 border-b border-gray-200 dark:border-gray-700">
+                  <tr>
+                    <th className="py-2 pr-3">Host</th>
+                    <th className="py-2 pr-3">Client</th>
+                    <th className="py-2 pr-3">Conn</th>
+                    <th className="py-2">Traffic</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {selectedResources.slice(0, 30).map((resource) => (
+                    <tr key={`${resource.source_ip}-${resource.host}`} className="border-b border-gray-100 dark:border-gray-800">
+                      <td className="py-2 pr-3 truncate max-w-[180px]" title={resource.host}>{resource.host}</td>
+                      <td className="py-2 pr-3 font-mono">{resource.source_ip}</td>
+                      <td className="py-2 pr-3">{resource.active_connections}</td>
+                      <td className="py-2">{formatBytes(resource.upload_bytes + resource.download_bytes)}</td>
+                    </tr>
+                  ))}
+                  {selectedResources.length === 0 && (
+                    <tr>
+                      <td className="py-3 text-gray-500" colSpan={4}>
+                        {selectedClient ? 'No resources in current snapshot' : 'Select a client to see resource details'}
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
             </div>
-          </>
-        )}
-      </CardBody>
-    </Card>
+          </CardBody>
+        </Card>
+      </div>
+    </div>
   );
 }
