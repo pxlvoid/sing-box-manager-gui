@@ -7,6 +7,10 @@ import { nodeDisplayTag, nodeInternalTag, nodeSourceTag } from '../store';
 import type { NodeSiteCheckResult } from '../store';
 import { shortSiteLabel } from '../features/nodes/types';
 import { serviceApi, configApi, monitoringApi } from '../api';
+import ActiveProxyVariantA from '../components/ActiveProxyVariantA';
+import ActiveProxyVariantB from '../components/ActiveProxyVariantB';
+import ActiveProxyVariantC from '../components/ActiveProxyVariantC';
+import ActiveProxyVariantD from '../components/ActiveProxyVariantD';
 import { toast } from '../components/Toast';
 
 interface WSTrafficPayload {
@@ -1105,6 +1109,39 @@ export default function Dashboard() {
           </CardBody>
         </Card>
 
+      {/* === Redesign Variants === */}
+      {(() => {
+        const variantProps = {
+          mainProxyGroup: mainProxyGroup || null,
+          resolvedActiveProxyTag,
+          isAutoMode,
+          activeProxyRefreshing,
+          verificationRunning,
+          proxySearch,
+          setProxySearch,
+          filteredMainProxyOptions,
+          hasSearchMatches,
+          switchProxy,
+          handleRefreshActiveProxy,
+          getProxyDisplayTag,
+          getProxySourceTag,
+          getServerPortLabel,
+          getLatestMeasuredDelay,
+          getSiteCheckSummary,
+          getGeoLabel,
+          delayChipColor,
+          siteChipColor,
+          formatDelayLabel,
+        };
+        return (
+          <>
+            <ActiveProxyVariantA {...variantProps} />
+            <ActiveProxyVariantB {...variantProps} />
+            <ActiveProxyVariantC {...variantProps} />
+            <ActiveProxyVariantD {...variantProps} />
+          </>
+        );
+      })()}
 
       {/* Proxy Links Modal */}
       <Modal isOpen={proxyLinksOpen} onClose={() => setProxyLinksOpen(false)} size="lg">
