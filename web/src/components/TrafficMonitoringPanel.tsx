@@ -1,6 +1,6 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Card, CardBody, CardHeader, Chip, Button, ButtonGroup, Spinner } from '@nextui-org/react';
-import { Activity, ArrowDownToLine, ArrowUpToLine, Clock, Network, Users, Database } from 'lucide-react';
+import { Activity, ArrowDownToLine, ArrowUpToLine, ChevronDown, ChevronRight, Clock, Network, Users, Database } from 'lucide-react';
 import { Area, AreaChart, CartesianGrid, Legend, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import { monitoringApi } from '../api';
 
@@ -101,10 +101,10 @@ const defaultLifetime: MonitoringLifetimeStats = {
 };
 
 const CHART_PERIODS = [
-  { key: '1m', label: '1 мин', seconds: 60 },
-  { key: '5m', label: '5 мин', seconds: 300 },
-  { key: '15m', label: '15 мин', seconds: 900 },
-  { key: '1h', label: '1 час', seconds: 3600 },
+  { key: '1m', label: '1 мин', seconds: 60, throttleMs: 1000 },
+  { key: '5m', label: '5 мин', seconds: 300, throttleMs: 3000 },
+  { key: '15m', label: '15 мин', seconds: 900, throttleMs: 8000 },
+  { key: '1h', label: '1 час', seconds: 3600, throttleMs: 20000 },
 ] as const;
 
 const MAX_HISTORY_POINTS = 3600;
@@ -169,12 +169,6 @@ function formatDateTime(value?: string): string {
   return new Date(ts).toLocaleString();
 }
 
-function appendPoint(history: TrafficHistoryPoint[], point: TrafficHistoryPoint): TrafficHistoryPoint[] {
-  const next = [...history, point];
-  if (next.length <= MAX_HISTORY_POINTS) return next;
-  return next.slice(next.length - MAX_HISTORY_POINTS);
-}
-
 const CHART_EMA_ALPHA = 0.28;
 
 function aggregateConnections(connections: ClashConnection[]): { clients: MonitoringClient[]; resources: MonitoringResource[] } {
@@ -187,10 +181,9 @@ function aggregateConnections(connections: ClashConnection[]): { clients: Monito
     chainCounter: Record<string, number>;
     hosts: Set<string>;
   };
-  type ResourceAcc = MonitoringResource;
 
   const clientsMap = new Map<string, ClientAcc>();
-  const resourcesMap = new Map<string, ResourceAcc>();
+  const resourcesMap = new Map<string, MonitoringResource>();
 
   for (const conn of connections) {
     const sourceIP = (conn.metadata?.sourceIP || '').trim() || 'unknown';
@@ -335,16 +328,51 @@ export default function TrafficMonitoringPanel() {
   const [loading, setLoading] = useState(true);
   const [overview, setOverview] = useState<MonitoringOverview>(defaultOverview);
   const [lifetime, setLifetime] = useState<MonitoringLifetimeStats>(defaultLifetime);
-  const [history, setHistory] = useState<TrafficHistoryPoint[]>([]);
   const [activeClients, setActiveClients] = useState<MonitoringClient[]>([]);
   const [recentClients, setRecentClients] = useState<MonitoringClient[]>([]);
   const [resources, setResources] = useState<MonitoringResource[]>([]);
-  const [selectedClientIP, setSelectedClientIP] = useState<string>('');
-  const [fallbackResources, setFallbackResources] = useState<MonitoringResource[]>([]);
-  const [fallbackResourcesFor, setFallbackResourcesFor] = useState<string>('');
+  const [expandedClientIP, setExpandedClientIP] = useState<string>('');
   const [trafficConnected, setTrafficConnected] = useState(false);
   const [connectionsConnected, setConnectionsConnected] = useState(false);
   const [chartPeriod, setChartPeriod] = useState<string>('5m');
+
+  // Chart throttling: accumulate points in ref, flush to display state on interval
+  const historyRef = useRef<TrafficHistoryPoint[]>([]);
+  const [displayHistory, setDisplayHistory] = useState<TrafficHistoryPoint[]>([]);
+  const lastChartFlushRef = useRef(0);
+
+  // Resource cache: keep last known resources per client IP so they don't disappear
+  const resourceCacheRef = useRef(new Map<string, MonitoringResource[]>());
+
+  const selectedPeriod = useMemo(
+    () => CHART_PERIODS.find((p) => p.key === chartPeriod) || CHART_PERIODS[1],
+    [chartPeriod],
+  );
+
+  // Flush chart display on throttle interval
+  useEffect(() => {
+    const flush = () => {
+      setDisplayHistory([...historyRef.current]);
+      lastChartFlushRef.current = Date.now();
+    };
+    // Flush immediately on period change
+    flush();
+    const timer = window.setInterval(flush, selectedPeriod.throttleMs);
+    return () => window.clearInterval(timer);
+  }, [selectedPeriod]);
+
+  const appendHistory = useCallback((point: TrafficHistoryPoint) => {
+    const buf = historyRef.current;
+    buf.push(point);
+    if (buf.length > MAX_HISTORY_POINTS) {
+      historyRef.current = buf.slice(buf.length - MAX_HISTORY_POINTS);
+    }
+    // For short periods, flush immediately
+    if (Date.now() - lastChartFlushRef.current >= (CHART_PERIODS[0].throttleMs)) {
+      setDisplayHistory([...historyRef.current]);
+      lastChartFlushRef.current = Date.now();
+    }
+  }, []);
 
   const fetchRecentClients = useCallback(async () => {
     try {
@@ -377,9 +405,19 @@ export default function TrafficMonitoringPanel() {
 
       setOverview({ ...defaultOverview, ...(overviewRes.data?.data || {}) });
       setLifetime({ ...defaultLifetime, ...(lifetimeRes.data?.data || {}) });
-      setHistory(historyRes.data?.data || []);
+      const initialHistory: TrafficHistoryPoint[] = historyRes.data?.data || [];
+      historyRef.current = initialHistory;
+      setDisplayHistory(initialHistory);
       setRecentClients(recentClientsRes.data?.data || []);
-      setResources(resourcesRes.data?.data || []);
+      const initialResources: MonitoringResource[] = resourcesRes.data?.data || [];
+      setResources(initialResources);
+      // Seed resource cache from initial data
+      const cache = resourceCacheRef.current;
+      for (const r of initialResources) {
+        const existing = cache.get(r.source_ip) || [];
+        existing.push(r);
+        cache.set(r.source_ip, existing);
+      }
     } catch (error) {
       console.error('Failed to fetch monitoring data:', error);
     } finally {
@@ -428,13 +466,13 @@ export default function TrafficMonitoringPanel() {
 
           setOverview((prev) => {
             const next = { ...prev, running: true, up_bps: up, down_bps: down, timestamp: ts };
-            setHistory((prevHistory) => appendPoint(prevHistory, {
+            appendHistory({
               timestamp: ts,
               up_bps: up,
               down_bps: down,
               active_connections: next.active_connections,
               client_count: next.client_count,
-            }));
+            });
             return next;
           });
         } catch (error) {
@@ -451,7 +489,7 @@ export default function TrafficMonitoringPanel() {
       }
       ws?.close();
     };
-  }, []);
+  }, [appendHistory]);
 
   useEffect(() => {
     let ws: WebSocket | null = null;
@@ -482,6 +520,14 @@ export default function TrafficMonitoringPanel() {
 
           setActiveClients(liveClients.map((client) => ({ ...client, online: true, last_seen: ts })));
           setResources(liveResources);
+
+          // Update resource cache for all live clients
+          const cache = resourceCacheRef.current;
+          const liveIPs = new Set(liveClients.map((c) => c.source_ip));
+          for (const ip of liveIPs) {
+            cache.set(ip, liveResources.filter((r) => r.source_ip === ip));
+          }
+
           setRecentClients((prev) => mergeClients(prev, liveClients, ts));
           setOverview((prev) => ({
             ...prev,
@@ -510,15 +556,10 @@ export default function TrafficMonitoringPanel() {
     };
   }, []);
 
-  const selectedPeriod = useMemo(
-    () => CHART_PERIODS.find((p) => p.key === chartPeriod) || CHART_PERIODS[1],
-    [chartPeriod],
-  );
-
   const chartData = useMemo(() => {
     const now = Date.now();
     const cutoff = now - selectedPeriod.seconds * 1000;
-    const filtered = history.filter((p) => {
+    const filtered = displayHistory.filter((p) => {
       const ts = Date.parse(p.timestamp);
       return !Number.isNaN(ts) && ts >= cutoff;
     });
@@ -545,67 +586,50 @@ export default function TrafficMonitoringPanel() {
         down_kbps: emaDown / 1024,
       };
     });
-  }, [history, selectedPeriod]);
+  }, [displayHistory, selectedPeriod]);
 
   const clients = useMemo(
     () => mergeClients(recentClients, activeClients, new Date().toISOString()),
     [recentClients, activeClients],
   );
 
+  // Fetch resources for offline expanded client from API, then cache
   useEffect(() => {
-    if (clients.length === 0) {
-      setSelectedClientIP('');
-      return;
-    }
-    if (!selectedClientIP || !clients.some((client) => client.source_ip === selectedClientIP)) {
-      setSelectedClientIP(clients[0].source_ip);
-    }
-  }, [clients, selectedClientIP]);
-
-  const selectedClient = useMemo(
-    () => clients.find((client) => client.source_ip === selectedClientIP) || null,
-    [clients, selectedClientIP],
-  );
-
-  useEffect(() => {
-    if (!selectedClient || selectedClient.online) {
-      setFallbackResources([]);
-      setFallbackResourcesFor('');
-      return;
-    }
-    if (fallbackResourcesFor === selectedClient.source_ip) {
-      return;
-    }
+    if (!expandedClientIP) return;
+    const client = clients.find((c) => c.source_ip === expandedClientIP);
+    if (!client || client.online) return;
+    // Already have cached data
+    if (resourceCacheRef.current.has(expandedClientIP)) return;
 
     let cancelled = false;
     monitoringApi
-      .getResources(300, selectedClient.source_ip)
+      .getResources(300, expandedClientIP)
       .then((res) => {
         if (cancelled) return;
-        setFallbackResources(res.data?.data || []);
-        setFallbackResourcesFor(selectedClient.source_ip);
+        const data = res.data?.data || [];
+        resourceCacheRef.current.set(expandedClientIP, data);
+        // Force re-render
+        setResources((prev) => [...prev]);
       })
       .catch((error) => {
         if (cancelled) return;
-        console.error('Failed to fetch fallback client resources:', error);
-        setFallbackResources([]);
-        setFallbackResourcesFor(selectedClient.source_ip);
+        console.error('Failed to fetch client resources:', error);
       });
 
-    return () => {
-      cancelled = true;
-    };
-  }, [selectedClient, fallbackResourcesFor]);
+    return () => { cancelled = true; };
+  }, [expandedClientIP, clients]);
 
-  const liveSelectedResources = useMemo(
-    () => (selectedClient ? resources.filter((resource) => resource.source_ip === selectedClient.source_ip) : []),
-    [resources, selectedClient],
-  );
+  const getClientResources = useCallback((ip: string, online?: boolean): MonitoringResource[] => {
+    if (online) {
+      const live = resources.filter((r) => r.source_ip === ip);
+      if (live.length > 0) return live;
+    }
+    return resourceCacheRef.current.get(ip) || [];
+  }, [resources]);
 
-  const selectedResources = useMemo(
-    () => (selectedClient?.online ? liveSelectedResources : fallbackResources),
-    [selectedClient, liveSelectedResources, fallbackResources],
-  );
+  const toggleExpanded = useCallback((ip: string) => {
+    setExpandedClientIP((prev) => (prev === ip ? '' : ip));
+  }, []);
 
   if (loading) {
     return (
@@ -760,113 +784,251 @@ export default function TrafficMonitoringPanel() {
         </CardBody>
       </Card>
 
-      {/* Clients + Details */}
-      <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
-        <Card className="shadow-sm">
-          <CardHeader className="pb-0">
+      {/* Clients table with split-view */}
+      <Card className="shadow-sm">
+        <CardHeader className="pb-0">
+          <div className="flex items-center gap-2">
+            <Users className="w-5 h-5 text-gray-500" />
             <h3 className="font-semibold">Clients</h3>
-          </CardHeader>
-          <CardBody>
-            <div className="max-h-80 overflow-auto">
-              <table className="w-full text-sm">
-                <thead className="text-left text-gray-500 border-b border-gray-200 dark:border-gray-700">
-                  <tr>
-                    <th className="py-2 pr-3">IP</th>
-                    <th className="py-2 pr-3">Status</th>
-                    <th className="py-2 pr-3">Last Seen</th>
-                    <th className="py-2 pr-3">Conn</th>
-                    <th className="py-2 pr-3">Traffic</th>
-                    <th className="py-2">Top Host</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {clients.slice(0, 25).map((client) => {
-                    const isSelected = client.source_ip === selectedClientIP;
-                    return (
-                      <tr
-                        key={client.source_ip}
-                        className={`border-b border-gray-100 dark:border-gray-800 cursor-pointer transition-colors ${isSelected ? 'bg-primary-50 dark:bg-primary-900/20' : 'hover:bg-gray-50 dark:hover:bg-gray-800/50'}`}
-                        onClick={() => setSelectedClientIP(client.source_ip)}
-                      >
-                        <td className="py-2 pr-3 font-mono">{client.source_ip}</td>
-                        <td className="py-2 pr-3">
-                          <Chip size="sm" variant="flat" color={client.online ? 'success' : 'default'}>
-                            {client.online ? 'online' : 'offline'}
-                          </Chip>
-                        </td>
-                        <td className="py-2 pr-3">{formatDateTime(client.last_seen)}</td>
-                        <td className="py-2 pr-3">{client.active_connections}</td>
-                        <td className="py-2 pr-3">{formatBytes(client.upload_bytes + client.download_bytes)}</td>
-                        <td className="py-2 truncate max-w-[160px]" title={client.top_host || '-'}>
-                          {client.top_host || '-'}
-                        </td>
-                      </tr>
-                    );
-                  })}
-                  {clients.length === 0 && (
-                    <tr>
-                      <td className="py-3 text-gray-500" colSpan={6}>No clients in recent history</td>
-                    </tr>
-                  )}
-                </tbody>
-              </table>
-            </div>
-          </CardBody>
-        </Card>
+            <span className="text-xs text-gray-400">({clients.length})</span>
+          </div>
+        </CardHeader>
+        <CardBody>
+          <div className="overflow-auto">
+            <table className="w-full text-sm">
+              <thead className="text-left text-xs text-gray-500 border-b border-gray-200 dark:border-gray-700 sticky top-0 bg-white dark:bg-gray-900">
+                <tr>
+                  <th className="py-2 pr-2 w-6"></th>
+                  <th className="py-2 pr-3">IP</th>
+                  <th className="py-2 pr-3">Status</th>
+                  <th className="py-2 pr-3 hidden sm:table-cell">Last Seen</th>
+                  <th className="py-2 pr-3">Conn</th>
+                  <th className="py-2 pr-3">Traffic</th>
+                  <th className="py-2 pr-3 hidden md:table-cell">Duration</th>
+                  <th className="py-2 hidden lg:table-cell">Top Host</th>
+                </tr>
+              </thead>
+              <tbody>
+                {clients.slice(0, 50).map((client) => {
+                  const isExpanded = client.source_ip === expandedClientIP;
+                  const clientResources = isExpanded ? getClientResources(client.source_ip, client.online) : [];
 
-        <Card className="shadow-sm">
-          <CardHeader className="flex flex-col gap-2 pb-0">
-            <h3 className="font-semibold w-full">Client Details</h3>
-            {selectedClient ? (
-              <div className="grid grid-cols-2 gap-2 text-xs text-gray-600 dark:text-gray-300 w-full">
-                <div><span className="text-gray-500">IP:</span> <span className="font-mono">{selectedClient.source_ip}</span></div>
-                <div><span className="text-gray-500">Status:</span> {selectedClient.online ? 'online' : 'offline'}</div>
-                <div><span className="text-gray-500">Last seen:</span> {formatDateTime(selectedClient.last_seen)}</div>
-                <div><span className="text-gray-500">Connections:</span> {selectedClient.active_connections}</div>
-                <div><span className="text-gray-500">Duration:</span> {formatDuration(selectedClient.duration_seconds)}</div>
-                <div><span className="text-gray-500">Hosts:</span> {selectedClient.host_count}</div>
-                <div className="col-span-2"><span className="text-gray-500">Traffic:</span> {formatBytes(selectedClient.upload_bytes + selectedClient.download_bytes)}</div>
-                <div className="col-span-2 truncate" title={selectedClient.proxy_chain}>
-                  <span className="text-gray-500">Chain:</span> {selectedClient.proxy_chain || 'direct'}
+                  return (
+                    <ClientRow
+                      key={client.source_ip}
+                      client={client}
+                      isExpanded={isExpanded}
+                      clientResources={clientResources}
+                      onToggle={toggleExpanded}
+                    />
+                  );
+                })}
+                {clients.length === 0 && (
+                  <tr>
+                    <td className="py-6 text-center text-gray-500" colSpan={8}>No clients in recent history</td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </CardBody>
+      </Card>
+    </div>
+  );
+}
+
+interface ClientHistoryPoint {
+  timestamp: string;
+  upload_bytes: number;
+  download_bytes: number;
+  active_connections: number;
+}
+
+function ClientRow({
+  client,
+  isExpanded,
+  clientResources,
+  onToggle,
+}: {
+  client: MonitoringClient;
+  isExpanded: boolean;
+  clientResources: MonitoringResource[];
+  onToggle: (ip: string) => void;
+}) {
+  const [historyData, setHistoryData] = useState<ClientHistoryPoint[]>([]);
+  const [historyLoading, setHistoryLoading] = useState(false);
+  const fetchedRef = useRef<string>('');
+
+  useEffect(() => {
+    if (!isExpanded) return;
+    if (fetchedRef.current === client.source_ip) return;
+
+    let cancelled = false;
+    setHistoryLoading(true);
+    monitoringApi
+      .getClientHistory(client.source_ip, 500)
+      .then((res) => {
+        if (cancelled) return;
+        setHistoryData(res.data?.data || []);
+        fetchedRef.current = client.source_ip;
+      })
+      .catch((err) => {
+        if (cancelled) return;
+        console.error('Failed to fetch client history:', err);
+      })
+      .finally(() => {
+        if (!cancelled) setHistoryLoading(false);
+      });
+
+    return () => { cancelled = true; };
+  }, [isExpanded, client.source_ip]);
+
+  const miniChartData = useMemo(() => {
+    if (historyData.length < 2) return [];
+
+    return historyData.map((point, idx) => {
+      // Compute deltas between consecutive snapshots to show traffic rate
+      const prev = idx > 0 ? historyData[idx - 1] : point;
+      const uploadDelta = point.upload_bytes >= prev.upload_bytes
+        ? point.upload_bytes - prev.upload_bytes
+        : point.upload_bytes;
+      const downloadDelta = point.download_bytes >= prev.download_bytes
+        ? point.download_bytes - prev.download_bytes
+        : point.download_bytes;
+
+      return {
+        time: new Date(point.timestamp).toLocaleTimeString([], { hour12: false }),
+        upload: uploadDelta / 1024,
+        download: downloadDelta / 1024,
+        connections: point.active_connections,
+      };
+    });
+  }, [historyData]);
+
+  return (
+    <>
+      <tr
+        className={`border-b border-gray-100 dark:border-gray-800 cursor-pointer transition-colors ${
+          isExpanded
+            ? 'bg-primary-50 dark:bg-primary-900/20'
+            : 'hover:bg-gray-50 dark:hover:bg-gray-800/50'
+        }`}
+        onClick={() => onToggle(client.source_ip)}
+      >
+        <td className="py-2 pr-2 text-gray-400">
+          {isExpanded
+            ? <ChevronDown className="w-4 h-4" />
+            : <ChevronRight className="w-4 h-4" />
+          }
+        </td>
+        <td className="py-2 pr-3 font-mono text-xs">{client.source_ip}</td>
+        <td className="py-2 pr-3">
+          <Chip size="sm" variant="flat" color={client.online ? 'success' : 'default'}>
+            {client.online ? 'online' : 'offline'}
+          </Chip>
+        </td>
+        <td className="py-2 pr-3 hidden sm:table-cell text-xs">{formatDateTime(client.last_seen)}</td>
+        <td className="py-2 pr-3">{client.active_connections}</td>
+        <td className="py-2 pr-3">{formatBytes(client.upload_bytes + client.download_bytes)}</td>
+        <td className="py-2 pr-3 hidden md:table-cell">{formatDuration(client.duration_seconds)}</td>
+        <td className="py-2 truncate max-w-[200px] hidden lg:table-cell" title={client.top_host || '-'}>
+          {client.top_host || '-'}
+        </td>
+      </tr>
+      {isExpanded && (
+        <tr className="bg-gray-50 dark:bg-gray-800/30">
+          <td colSpan={8} className="p-0">
+            <div className="px-4 py-3 border-b border-gray-200 dark:border-gray-700">
+              {/* Client detail summary */}
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-3 text-xs">
+                <div className="bg-white dark:bg-gray-800 rounded-lg p-2">
+                  <span className="text-gray-400 block">Upload</span>
+                  <span className="font-semibold">{formatBytes(client.upload_bytes)}</span>
+                </div>
+                <div className="bg-white dark:bg-gray-800 rounded-lg p-2">
+                  <span className="text-gray-400 block">Download</span>
+                  <span className="font-semibold">{formatBytes(client.download_bytes)}</span>
+                </div>
+                <div className="bg-white dark:bg-gray-800 rounded-lg p-2">
+                  <span className="text-gray-400 block">Hosts</span>
+                  <span className="font-semibold">{client.host_count}</span>
+                </div>
+                <div className="bg-white dark:bg-gray-800 rounded-lg p-2">
+                  <span className="text-gray-400 block">Chain</span>
+                  <span className="font-semibold truncate block" title={client.proxy_chain}>{client.proxy_chain || 'direct'}</span>
                 </div>
               </div>
-            ) : (
-              <div className="text-sm text-gray-500">Select a client on the left</div>
-            )}
-          </CardHeader>
-          <CardBody>
-            <div className="max-h-72 overflow-auto">
-              <table className="w-full text-sm">
-                <thead className="text-left text-gray-500 border-b border-gray-200 dark:border-gray-700">
-                  <tr>
-                    <th className="py-2 pr-3">Host</th>
-                    <th className="py-2 pr-3">Client</th>
-                    <th className="py-2 pr-3">Conn</th>
-                    <th className="py-2">Traffic</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {selectedResources.slice(0, 30).map((resource) => (
-                    <tr key={`${resource.source_ip}-${resource.host}`} className="border-b border-gray-100 dark:border-gray-800">
-                      <td className="py-2 pr-3 truncate max-w-[180px]" title={resource.host}>{resource.host}</td>
-                      <td className="py-2 pr-3 font-mono">{resource.source_ip}</td>
-                      <td className="py-2 pr-3">{resource.active_connections}</td>
-                      <td className="py-2">{formatBytes(resource.upload_bytes + resource.download_bytes)}</td>
-                    </tr>
-                  ))}
-                  {selectedResources.length === 0 && (
-                    <tr>
-                      <td className="py-3 text-gray-500" colSpan={4}>
-                        {selectedClient ? 'No resources in current snapshot' : 'Select a client to see resource details'}
-                      </td>
-                    </tr>
-                  )}
-                </tbody>
-              </table>
+
+              {/* Client traffic history chart */}
+              {historyLoading ? (
+                <div className="flex items-center justify-center h-32">
+                  <Spinner size="sm" />
+                </div>
+              ) : miniChartData.length > 2 ? (
+                <div className="mb-3">
+                  <p className="text-xs text-gray-500 mb-1">Traffic history (delta per sample)</p>
+                  <div className="h-36 w-full bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-2">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <AreaChart data={miniChartData}>
+                        <CartesianGrid strokeDasharray="3 3" />
+                        <XAxis dataKey="time" minTickGap={40} tick={{ fontSize: 10 }} />
+                        <YAxis tickFormatter={(v) => `${Math.round(v)} KB`} tick={{ fontSize: 10 }} width={50} />
+                        <Tooltip
+                          formatter={(value, name) => {
+                            const numeric = Number(value);
+                            if (name === 'connections') return [numeric, 'Connections'];
+                            return [formatBytes(numeric * 1024), name === 'upload' ? 'Upload' : 'Download'];
+                          }}
+                          labelFormatter={(label) => `Time: ${label}`}
+                        />
+                        <Area type="monotone" dataKey="upload" stroke="#16a34a" fill="#16a34a22" strokeWidth={1.5} />
+                        <Area type="monotone" dataKey="download" stroke="#2563eb" fill="#2563eb22" strokeWidth={1.5} />
+                      </AreaChart>
+                    </ResponsiveContainer>
+                  </div>
+                </div>
+              ) : null}
+
+              {/* Resources table */}
+              {clientResources.length > 0 ? (
+                <div className="max-h-60 overflow-auto rounded-lg border border-gray-200 dark:border-gray-700">
+                  <table className="w-full text-xs">
+                    <thead className="text-left text-gray-500 bg-gray-100 dark:bg-gray-800 sticky top-0">
+                      <tr>
+                        <th className="py-1.5 px-3">Host</th>
+                        <th className="py-1.5 px-3">Conn</th>
+                        <th className="py-1.5 px-3">Upload</th>
+                        <th className="py-1.5 px-3">Download</th>
+                        <th className="py-1.5 px-3 hidden sm:table-cell">Chain</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {clientResources.slice(0, 30).map((resource) => (
+                        <tr
+                          key={`${resource.source_ip}-${resource.host}`}
+                          className="border-t border-gray-100 dark:border-gray-700/50"
+                        >
+                          <td className="py-1.5 px-3 truncate max-w-[250px]" title={resource.host}>
+                            {resource.host}
+                          </td>
+                          <td className="py-1.5 px-3">{resource.active_connections}</td>
+                          <td className="py-1.5 px-3">{formatBytes(resource.upload_bytes)}</td>
+                          <td className="py-1.5 px-3">{formatBytes(resource.download_bytes)}</td>
+                          <td className="py-1.5 px-3 truncate max-w-[150px] hidden sm:table-cell" title={resource.proxy_chain}>
+                            {resource.proxy_chain}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              ) : (
+                <p className="text-xs text-gray-400 py-2">No resource data available</p>
+              )}
             </div>
-          </CardBody>
-        </Card>
-      </div>
-    </div>
+          </td>
+        </tr>
+      )}
+    </>
   );
 }

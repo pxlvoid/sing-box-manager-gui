@@ -306,6 +306,58 @@ func (s *SQLiteStore) GetLatestTrafficResources(limit int, sourceIP string) ([]C
 	return resources, nil
 }
 
+func (s *SQLiteStore) GetClientTrafficHistory(sourceIP string, limit int) ([]ClientTrafficSnapshot, error) {
+	if limit <= 0 {
+		limit = 120
+	}
+	if limit > 5000 {
+		limit = 5000
+	}
+
+	rows, err := s.db.Query(`SELECT
+		id, sample_id, timestamp, source_ip, active_connections,
+		upload_bytes, download_bytes, duration_seconds, proxy_chain, host_count, top_host
+		FROM traffic_clients
+		WHERE source_ip = ?
+		ORDER BY timestamp DESC, id DESC
+		LIMIT ?`, sourceIP, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	snapshots := make([]ClientTrafficSnapshot, 0, limit)
+	for rows.Next() {
+		var snap ClientTrafficSnapshot
+		if err := rows.Scan(
+			&snap.ID,
+			&snap.SampleID,
+			&snap.Timestamp,
+			&snap.SourceIP,
+			&snap.ActiveConnections,
+			&snap.UploadBytes,
+			&snap.DownloadBytes,
+			&snap.DurationSeconds,
+			&snap.ProxyChain,
+			&snap.HostCount,
+			&snap.TopHost,
+		); err != nil {
+			return nil, fmt.Errorf("scan client traffic history row: %w", err)
+		}
+		snapshots = append(snapshots, snap)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate client traffic history rows: %w", err)
+	}
+
+	// Reverse to ascending order for charting.
+	for i, j := 0, len(snapshots)-1; i < j; i, j = i+1, j-1 {
+		snapshots[i], snapshots[j] = snapshots[j], snapshots[i]
+	}
+
+	return snapshots, nil
+}
+
 func (s *SQLiteStore) GetRecentTrafficClients(limit int, lookback time.Duration) ([]TrafficClientRecent, error) {
 	if limit <= 0 {
 		limit = 200

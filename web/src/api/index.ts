@@ -187,6 +187,8 @@ export const monitoringApi = {
     api.get('/monitoring/clients/recent', { params: { limit, hours } }),
   getResources: (limit: number = 300, sourceIP?: string) =>
     api.get('/monitoring/resources', { params: { limit, source_ip: sourceIP || undefined } }),
+  getClientHistory: (sourceIP: string, limit: number = 120) =>
+    api.get('/monitoring/clients/history', { params: { source_ip: sourceIP, limit } }),
   getNodeTraffic: (limit: number = 100, hours: number = 0) =>
     api.get('/monitoring/nodes', { params: { limit, hours } }),
 };

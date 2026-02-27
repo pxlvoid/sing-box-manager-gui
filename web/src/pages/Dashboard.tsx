@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Card, CardBody, CardHeader, Button, Chip, Input, Modal, ModalContent, ModalHeader, ModalBody, ModalFooter, Tooltip, Select, SelectItem, Spinner, Progress } from '@nextui-org/react';
-import { Play, Square, RefreshCw, Cpu, HardDrive, Wifi, Info, Activity, Copy, ClipboardCheck, Link, Globe, QrCode, Search, Stethoscope, ShieldCheck, Clock, CheckCircle, Archive, Network, ArrowUp, ArrowDown, Users, Cable } from 'lucide-react';
+import { Play, Square, RefreshCw, Cpu, HardDrive, Wifi, Info, Activity, Copy, ClipboardCheck, Link, Globe, QrCode, Search, Stethoscope, ShieldCheck, Network, ArrowUp, ArrowDown, Users, Cable } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useStore } from '../store';
 import { nodeDisplayTag, nodeInternalTag, nodeSourceTag } from '../store';
@@ -534,7 +534,7 @@ export default function Dashboard() {
       </div>
 
       {/* Traffic monitoring cards */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-3 sm:gap-4">
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 sm:gap-4">
         <Card>
           <CardBody className="flex flex-row items-center gap-3 p-3 sm:p-4">
             <div className="p-2 bg-emerald-100 dark:bg-emerald-900 rounded-lg">
@@ -543,6 +543,7 @@ export default function Dashboard() {
             <div className="min-w-0">
               <p className="text-xs text-gray-500">Upload</p>
               <p className="text-lg font-bold">{formatRate(trafficOverview.up_bps)}</p>
+              <p className="text-xs text-gray-400">{formatBytes(trafficLifetime.total_upload_bytes)} total</p>
             </div>
           </CardBody>
         </Card>
@@ -555,6 +556,7 @@ export default function Dashboard() {
             <div className="min-w-0">
               <p className="text-xs text-gray-500">Download</p>
               <p className="text-lg font-bold">{formatRate(trafficOverview.down_bps)}</p>
+              <p className="text-xs text-gray-400">{formatBytes(trafficLifetime.total_download_bytes)} total</p>
             </div>
           </CardBody>
         </Card>
@@ -579,121 +581,73 @@ export default function Dashboard() {
             <div className="min-w-0">
               <p className="text-xs text-gray-500">Clients</p>
               <p className="text-lg font-bold">{trafficOverview.client_count}</p>
-            </div>
-          </CardBody>
-        </Card>
-
-        <Card>
-          <CardBody className="flex flex-row items-center gap-3 p-3 sm:p-4">
-            <div className="p-2 bg-rose-100 dark:bg-rose-900 rounded-lg">
-              <Users className="w-5 h-5 text-rose-600 dark:text-rose-300" />
-            </div>
-            <div className="min-w-0">
-              <p className="text-xs text-gray-500">Seen Total</p>
-              <p className="text-lg font-bold">{trafficLifetime.total_clients}</p>
-            </div>
-          </CardBody>
-        </Card>
-
-        <Card>
-          <CardBody className="flex flex-row items-center gap-3 p-3 sm:p-4">
-            <div className="p-2 bg-emerald-100 dark:bg-emerald-900 rounded-lg">
-              <ArrowUp className="w-5 h-5 text-emerald-600 dark:text-emerald-300" />
-            </div>
-            <div className="min-w-0">
-              <p className="text-xs text-gray-500">Total Up</p>
-              <p className="text-lg font-bold">{formatBytes(trafficLifetime.total_upload_bytes)}</p>
-            </div>
-          </CardBody>
-        </Card>
-
-        <Card>
-          <CardBody className="flex flex-row items-center gap-3 p-3 sm:p-4">
-            <div className="p-2 bg-sky-100 dark:bg-sky-900 rounded-lg">
-              <ArrowDown className="w-5 h-5 text-sky-600 dark:text-sky-300" />
-            </div>
-            <div className="min-w-0">
-              <p className="text-xs text-gray-500">Total Down</p>
-              <p className="text-lg font-bold">{formatBytes(trafficLifetime.total_download_bytes)}</p>
-            </div>
-          </CardBody>
-        </Card>
-
-        <Card>
-          <CardBody className="flex flex-row items-center gap-3 p-3 sm:p-4">
-            <div className="p-2 bg-indigo-100 dark:bg-indigo-900 rounded-lg">
-              <Network className="w-5 h-5 text-indigo-600 dark:text-indigo-300" />
-            </div>
-            <div className="min-w-0">
-              <p className="text-xs text-gray-500">Total Traffic</p>
-              <p className="text-lg font-bold">{formatBytes(trafficLifetime.total_traffic_bytes)}</p>
+              <p className="text-xs text-gray-400">{trafficLifetime.total_clients} seen total</p>
             </div>
           </CardBody>
         </Card>
       </div>
 
-      {/* Statistics cards */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3 sm:gap-4">
-        <Card>
-          <CardBody className="flex flex-row items-center gap-3 sm:gap-4 p-3 sm:p-4">
-            <div className="p-2 sm:p-3 bg-blue-100 dark:bg-blue-900 rounded-lg">
-              <Wifi className="w-5 h-5 sm:w-6 sm:h-6 text-blue-600 dark:text-blue-300" />
+      {/* Nodes summary card */}
+      <Card>
+        <CardBody className="p-4 sm:p-5">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-3">
+            <div className="flex items-center gap-3">
+              <div className="p-2 bg-green-100 dark:bg-green-900 rounded-lg">
+                <HardDrive className="w-5 h-5 text-green-600 dark:text-green-300" />
+              </div>
+              <div>
+                <p className="text-sm text-gray-500">Nodes</p>
+                <p className="text-xl font-bold">{totalNodes} <span className="text-sm font-normal text-gray-400">total</span></p>
+              </div>
             </div>
-            <div className="min-w-0">
-              <p className="text-xs sm:text-sm text-gray-500">Subscriptions</p>
-              <p className="text-xl sm:text-2xl font-bold">{enabledSubs} / {subscriptions.length}</p>
+            <div className="flex items-center gap-2">
+              <div className="p-1.5 bg-blue-100 dark:bg-blue-900 rounded-lg">
+                <Wifi className="w-4 h-4 text-blue-600 dark:text-blue-300" />
+              </div>
+              <span className="text-sm text-gray-500">Subscriptions</span>
+              <span className="text-sm font-bold">{enabledSubs} / {subscriptions.length}</span>
             </div>
-          </CardBody>
-        </Card>
-
-        <Card>
-          <CardBody className="flex flex-row items-center gap-3 sm:gap-4 p-3 sm:p-4">
-            <div className="p-2 sm:p-3 bg-yellow-100 dark:bg-yellow-900 rounded-lg">
-              <Clock className="w-5 h-5 sm:w-6 sm:h-6 text-yellow-600 dark:text-yellow-300" />
+          </div>
+          {totalNodes > 0 && (
+            <div className="space-y-2">
+              <div className="flex w-full h-2.5 rounded-full overflow-hidden bg-gray-100 dark:bg-gray-700">
+                {nodeCounts.verified > 0 && (
+                  <div
+                    className="bg-green-500 h-full"
+                    style={{ width: `${(nodeCounts.verified / totalNodes) * 100}%` }}
+                  />
+                )}
+                {nodeCounts.pending > 0 && (
+                  <div
+                    className="bg-yellow-400 h-full"
+                    style={{ width: `${(nodeCounts.pending / totalNodes) * 100}%` }}
+                  />
+                )}
+                {nodeCounts.archived > 0 && (
+                  <div
+                    className="bg-gray-300 dark:bg-gray-500 h-full"
+                    style={{ width: `${(nodeCounts.archived / totalNodes) * 100}%` }}
+                  />
+                )}
+              </div>
+              <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-gray-500">
+                <span className="flex items-center gap-1.5">
+                  <span className="w-2.5 h-2.5 rounded-full bg-green-500 inline-block" />
+                  Verified: <span className="font-semibold text-gray-700 dark:text-gray-200">{nodeCounts.verified}</span>
+                </span>
+                <span className="flex items-center gap-1.5">
+                  <span className="w-2.5 h-2.5 rounded-full bg-yellow-400 inline-block" />
+                  Pending: <span className="font-semibold text-gray-700 dark:text-gray-200">{nodeCounts.pending}</span>
+                </span>
+                <span className="flex items-center gap-1.5">
+                  <span className="w-2.5 h-2.5 rounded-full bg-gray-300 dark:bg-gray-500 inline-block" />
+                  Archived: <span className="font-semibold text-gray-700 dark:text-gray-200">{nodeCounts.archived}</span>
+                </span>
+              </div>
             </div>
-            <div className="min-w-0">
-              <p className="text-xs sm:text-sm text-gray-500">Pending</p>
-              <p className="text-xl sm:text-2xl font-bold">{nodeCounts.pending}</p>
-            </div>
-          </CardBody>
-        </Card>
-
-        <Card>
-          <CardBody className="flex flex-row items-center gap-3 sm:gap-4 p-3 sm:p-4">
-            <div className="p-2 sm:p-3 bg-green-100 dark:bg-green-900 rounded-lg">
-              <CheckCircle className="w-5 h-5 sm:w-6 sm:h-6 text-green-600 dark:text-green-300" />
-            </div>
-            <div className="min-w-0">
-              <p className="text-xs sm:text-sm text-gray-500">Verified</p>
-              <p className="text-xl sm:text-2xl font-bold">{nodeCounts.verified}</p>
-            </div>
-          </CardBody>
-        </Card>
-
-        <Card>
-          <CardBody className="flex flex-row items-center gap-3 sm:gap-4 p-3 sm:p-4">
-            <div className="p-2 sm:p-3 bg-gray-100 dark:bg-gray-700 rounded-lg">
-              <Archive className="w-5 h-5 sm:w-6 sm:h-6 text-gray-600 dark:text-gray-300" />
-            </div>
-            <div className="min-w-0">
-              <p className="text-xs sm:text-sm text-gray-500">Archived</p>
-              <p className="text-xl sm:text-2xl font-bold">{nodeCounts.archived}</p>
-            </div>
-          </CardBody>
-        </Card>
-
-        <Card className="col-span-2 sm:col-span-1">
-          <CardBody className="flex flex-row items-center gap-3 sm:gap-4 p-3 sm:p-4">
-            <div className="p-2 sm:p-3 bg-green-100 dark:bg-green-900 rounded-lg">
-              <HardDrive className="w-5 h-5 sm:w-6 sm:h-6 text-green-600 dark:text-green-300" />
-            </div>
-            <div className="min-w-0">
-              <p className="text-xs sm:text-sm text-gray-500">Total Nodes</p>
-              <p className="text-xl sm:text-2xl font-bold">{totalNodes}</p>
-            </div>
-          </CardBody>
-        </Card>
-      </div>
+          )}
+        </CardBody>
+      </Card>
 
       {/* System Resources */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4">
