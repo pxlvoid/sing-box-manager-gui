@@ -3529,10 +3529,14 @@ func (s *Server) debugDump(c *gin.Context) {
 	ruleGroups := s.store.GetRuleGroups()
 	countryGroups := s.store.GetCountryGroups()
 
-	// Unified nodes by status
-	pendingNodes := s.store.GetNodes(storage.NodeStatusPending)
-	verifiedNodes := s.store.GetNodes(storage.NodeStatusVerified)
-	archivedNodes := s.store.GetNodes(storage.NodeStatusArchived)
+	// Unified nodes by status (only when ?nodes=true)
+	includeNodes := c.Query("nodes") == "true"
+	var pendingNodes, verifiedNodes, archivedNodes []storage.UnifiedNode
+	if includeNodes {
+		pendingNodes = s.store.GetNodes(storage.NodeStatusPending)
+		verifiedNodes = s.store.GetNodes(storage.NodeStatusVerified)
+		archivedNodes = s.store.GetNodes(storage.NodeStatusArchived)
+	}
 
 	// Verification logs (last 20)
 	verificationLogs := s.store.GetVerificationLogs(20)

@@ -2,6 +2,7 @@ package api
 
 import (
 	"bufio"
+	"bytes"
 	cryptorand "crypto/rand"
 	"crypto/sha1"
 	"encoding/base64"
@@ -10,6 +11,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"net"
 	"net/http"
 	"sort"
@@ -38,14 +40,96 @@ type clashConnection struct {
 	Chains   []string                `json:"chains"`
 }
 
+type clashMemoryStats struct {
+	Inuse   int64 `json:"inuse"`
+	OSLimit int64 `json:"oslimit"`
+}
+
+func (m *clashMemoryStats) UnmarshalJSON(data []byte) error {
+	payload := bytes.TrimSpace(data)
+	if len(payload) == 0 || bytes.Equal(payload, []byte("null")) {
+		*m = clashMemoryStats{}
+		return nil
+	}
+
+	if payload[0] == '{' {
+		var raw map[string]json.RawMessage
+		if err := json.Unmarshal(payload, &raw); err != nil {
+			return err
+		}
+
+		if value, ok := raw["inuse"]; ok {
+			parsed, err := parseJSONInt64(value)
+			if err != nil {
+				return fmt.Errorf("memory.inuse: %w", err)
+			}
+			m.Inuse = parsed
+		}
+
+		if value, ok := raw["oslimit"]; ok {
+			parsed, err := parseJSONInt64(value)
+			if err != nil {
+				return fmt.Errorf("memory.oslimit: %w", err)
+			}
+			m.OSLimit = parsed
+		}
+		return nil
+	}
+
+	inuse, err := parseJSONInt64(payload)
+	if err != nil {
+		return fmt.Errorf("memory: %w", err)
+	}
+	m.Inuse = inuse
+	m.OSLimit = 0
+	return nil
+}
+
+func parseJSONInt64(raw json.RawMessage) (int64, error) {
+	value := bytes.TrimSpace(raw)
+	if len(value) == 0 || bytes.Equal(value, []byte("null")) {
+		return 0, nil
+	}
+
+	var i int64
+	if err := json.Unmarshal(value, &i); err == nil {
+		return i, nil
+	}
+
+	var f float64
+	if err := json.Unmarshal(value, &f); err == nil {
+		if math.IsNaN(f) || math.IsInf(f, 0) {
+			return 0, fmt.Errorf("invalid numeric value")
+		}
+		return int64(f), nil
+	}
+
+	var s string
+	if err := json.Unmarshal(value, &s); err == nil {
+		s = strings.TrimSpace(s)
+		if s == "" {
+			return 0, nil
+		}
+		if parsed, err := strconv.ParseInt(s, 10, 64); err == nil {
+			return parsed, nil
+		}
+		if parsed, err := strconv.ParseFloat(s, 64); err == nil {
+			if math.IsNaN(parsed) || math.IsInf(parsed, 0) {
+				return 0, fmt.Errorf("invalid numeric value")
+			}
+			return int64(parsed), nil
+		}
+		return 0, fmt.Errorf("invalid numeric string %q", s)
+	}
+
+	return 0, fmt.Errorf("unsupported value %q", string(value))
+}
+
 type clashConnectionsSnapshot struct {
 	DownloadTotal int64             `json:"downloadTotal"`
 	UploadTotal   int64             `json:"uploadTotal"`
 	Connections   []clashConnection `json:"connections"`
-	Memory        struct {
-		Inuse   int64 `json:"inuse"`
-		OSLimit int64 `json:"oslimit"`
-	} `json:"memory"`
+	Memory        clashMemoryStats  `json:"memory"`
 }
 
 type clientAccumulator struct {
