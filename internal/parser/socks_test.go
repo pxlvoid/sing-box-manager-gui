@@ -145,7 +145,8 @@ func TestParseURL_Socks(t *testing.T) {
 	if node.Tag != "US-test-node" {
 		t.Errorf("Tag = %v, want US-test-node", node.Tag)
 	}
-	if node.Country != "US" {
-		t.Errorf("Country = %v, want US", node.Country)
+	// Parser does not infer country from tag; country is resolved later (e.g. GeoIP).
+	if node.Country != "" {
+		t.Errorf("Country = %v, want empty", node.Country)
 	}
 }
