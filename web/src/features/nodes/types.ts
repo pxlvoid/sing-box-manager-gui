@@ -140,3 +140,31 @@ export function shortSiteLabel(site: string): string {
   if (host.includes('2ip')) return '2ip';
   return host.split('.')[0];
 }
+
+export function siteErrorLabel(errorType?: string): string {
+  const code = (errorType || '').trim().toLowerCase();
+  switch (code) {
+    case 'timeout':
+      return 'timeout';
+    case 'dns':
+      return 'dns';
+    case 'tls':
+      return 'tls';
+    case 'http':
+      return 'http';
+    case 'network':
+      return 'network';
+    case 'invalid_target':
+      return 'bad-target';
+    case 'request':
+      return 'request';
+    case 'read':
+      return 'read';
+    case 'parse':
+      return 'parse';
+    case 'unknown':
+      return 'unknown';
+    default:
+      return code;
+  }
+}

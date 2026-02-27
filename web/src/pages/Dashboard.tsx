@@ -463,13 +463,13 @@ export default function Dashboard() {
     return 'danger';
   };
 
-  const getSiteCheckSummary = (tag: string): { avg: number; count: number; failed: number; details: { label: string; delay: number }[] } | null => {
+  const getSiteCheckSummary = (tag: string): { avg: number; count: number; failed: number; details: { label: string; delay: number; errorType?: string }[] } | null => {
     const serverPortLabel = getServerPortLabel(tag);
     const siteResult: NodeSiteCheckResult | undefined = siteCheckResults[tag] || (serverPortLabel ? siteCheckResults[serverPortLabel] : undefined);
     if (!siteResult || !siteResult.sites) return null;
     const entries = Object.entries(siteResult.sites);
     if (entries.length === 0) return null;
-    const details = entries.map(([site, delay]) => ({ label: shortSiteLabel(site), delay }));
+    const details = entries.map(([site, delay]) => ({ label: shortSiteLabel(site), delay, errorType: siteResult.errors?.[site] || '' }));
     const alive = details.filter((d) => d.delay > 0);
     const failed = details.filter((d) => d.delay <= 0).length;
     const avg = alive.length > 0 ? Math.round(alive.reduce((sum, d) => sum + d.delay, 0) / alive.length) : 0;

@@ -1,6 +1,6 @@
 import { Chip, Tooltip } from '@nextui-org/react';
 import type { NodeHealthResult, HealthCheckMode, NodeSiteCheckResult } from '../../../store';
-import { shortSiteLabel } from '../types';
+import { shortSiteLabel, siteErrorLabel } from '../types';
 
 interface NodeHealthChipsProps {
   tag: string;
@@ -17,7 +17,11 @@ export default function NodeHealthChips({ tag, healthResults, healthMode, siteCh
   if (!result && !siteResult) return null;
 
   const orderedSiteEntries = siteResult
-    ? siteTargets.map((site) => [site, siteResult.sites?.[site] ?? 0] as const)
+    ? siteTargets.map((site) => ({
+        site,
+        delay: siteResult.sites?.[site] ?? 0,
+        errorType: siteResult.errors?.[site] || '',
+      }))
     : [];
 
   const checks: Array<{
@@ -44,10 +48,11 @@ export default function NodeHealthChips({ tag, healthResults, healthMode, siteCh
     }
   }
 
-  orderedSiteEntries.forEach(([site, delay]) => {
+  orderedSiteEntries.forEach(({ site, delay, errorType }) => {
+    const failReason = siteErrorLabel(errorType);
     checks.push({
       label: shortSiteLabel(site),
-      value: delay > 0 ? `${delay}ms` : 'Fail',
+      value: delay > 0 ? `${delay}ms` : failReason ? `Fail (${failReason})` : 'Fail',
       status: delay > 0 ? (delay < 800 ? 'success' : 'warning') : 'danger',
     });
   });

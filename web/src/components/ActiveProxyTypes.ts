@@ -14,7 +14,7 @@ export interface ActiveProxyProps {
   getProxySourceTag: (tag: string) => string;
   getServerPortLabel: (tag: string) => string;
   getLatestMeasuredDelay: (tag: string) => number | null;
-  getSiteCheckSummary: (tag: string) => { avg: number; count: number; failed: number; details: { label: string; delay: number }[] } | null;
+  getSiteCheckSummary: (tag: string) => { avg: number; count: number; failed: number; details: { label: string; delay: number; errorType?: string }[] } | null;
   getGeoLabel: (tag: string) => { emoji: string; country: string } | null;
   delayChipColor: (delay: number | null) => 'default' | 'success' | 'warning' | 'danger';
   siteChipColor: (summary: { avg: number; failed: number }) => 'success' | 'warning' | 'danger';

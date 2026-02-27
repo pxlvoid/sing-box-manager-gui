@@ -7,6 +7,7 @@
 import { Card, CardBody, Button, Chip, Input, Tooltip, Select, SelectItem } from '@nextui-org/react';
 import { Globe, RefreshCw, Search } from 'lucide-react';
 import type { ActiveProxyProps } from './ActiveProxyTypes';
+import { siteErrorLabel } from '../features/nodes/types';
 
 export default function ActiveProxyBlock({
   mainProxyGroup, resolvedActiveProxyTag, isAutoMode,
@@ -68,12 +69,17 @@ export default function ActiveProxyBlock({
             )}
             {summary && (
               <Tooltip placement="top" showArrow delay={100} content={
-                <div className="flex flex-col gap-1 py-1">{summary.details.map((d) => (
-                  <div key={d.label} className="flex items-center justify-between gap-4 text-xs min-w-[180px]">
-                    <span className="text-default-600">{d.label}</span>
-                    <span className={d.delay > 0 ? (d.delay < 800 ? 'text-success' : 'text-warning') : 'text-danger'}>{d.delay > 0 ? `${d.delay}ms` : 'Fail'}</span>
-                  </div>
-                ))}</div>
+                <div className="flex flex-col gap-1 py-1">{summary.details.map((d, index) => {
+                  const reason = siteErrorLabel(d.errorType);
+                  return (
+                    <div key={`${d.label}-${index}`} className="flex items-center justify-between gap-4 text-xs min-w-[180px]">
+                      <span className="text-default-600">{d.label}</span>
+                      <span className={d.delay > 0 ? (d.delay < 800 ? 'text-success' : 'text-warning') : 'text-danger'}>
+                        {d.delay > 0 ? `${d.delay}ms` : (reason ? `Fail (${reason})` : 'Fail')}
+                      </span>
+                    </div>
+                  );
+                })}</div>
               }>
                 <span className="cursor-help">
                   Sites <span className={`font-semibold ${summary.failed > 0 ? 'text-danger' : 'text-success'}`}>
