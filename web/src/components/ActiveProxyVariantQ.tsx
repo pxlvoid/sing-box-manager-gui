@@ -34,7 +34,6 @@ export default function ActiveProxyVariantQ({
 
   const tag = resolvedActiveProxyTag || mainProxyGroup.now;
   const display = getProxyDisplayTag(tag);
-  const source = getProxySourceTag(tag);
   const serverPort = getServerPortLabel(tag);
   const delay = getLatestMeasuredDelay(tag);
   const summary = getSiteCheckSummary(tag);
@@ -97,7 +96,7 @@ export default function ActiveProxyVariantQ({
             startContent={!activeProxyRefreshing ? <RefreshCw className="w-3 h-3" /> : undefined}
             isLoading={activeProxyRefreshing}
             isDisabled={!resolvedActiveProxyTag || verificationRunning}
-            onPress={(e) => { e.stopPropagation?.(); handleRefreshActiveProxy(); }}
+            onPress={() => { handleRefreshActiveProxy(); }}
           >
             <span className="hidden sm:inline text-xs">Pipeline</span>
           </Button>
