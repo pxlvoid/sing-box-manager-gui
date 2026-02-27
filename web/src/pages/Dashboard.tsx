@@ -21,6 +21,9 @@ import ActiveProxyVariantK from '../components/ActiveProxyVariantK';
 import ActiveProxyVariantL from '../components/ActiveProxyVariantL';
 import ActiveProxyVariantM from '../components/ActiveProxyVariantM';
 import ActiveProxyVariantN from '../components/ActiveProxyVariantN';
+import ActiveProxyVariantO from '../components/ActiveProxyVariantO';
+import ActiveProxyVariantP from '../components/ActiveProxyVariantP';
+import ActiveProxyVariantQ from '../components/ActiveProxyVariantQ';
 import { toast } from '../components/Toast';
 
 interface WSTrafficPayload {
@@ -1159,6 +1162,9 @@ export default function Dashboard() {
             <ActiveProxyVariantL {...variantProps} />
             <ActiveProxyVariantM {...variantProps} />
             <ActiveProxyVariantN {...variantProps} />
+            <ActiveProxyVariantO {...variantProps} />
+            <ActiveProxyVariantP {...variantProps} />
+            <ActiveProxyVariantQ {...variantProps} />
           </>
         );
       })()}
