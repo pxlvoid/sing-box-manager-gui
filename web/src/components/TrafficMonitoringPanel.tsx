@@ -1,29 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Card, CardBody, CardHeader, Chip, Button, ButtonGroup, Spinner } from '@nextui-org/react';
-import { Activity, ArrowDownToLine, ArrowUpToLine, ChevronDown, ChevronRight, Clock, Network, Users, Database } from 'lucide-react';
-import { Area, AreaChart, CartesianGrid, Legend, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
+import { Card, CardBody, CardHeader, Chip, Spinner } from '@nextui-org/react';
+import { ChevronDown, ChevronRight, Clock, Users, Database } from 'lucide-react';
+import { Area, AreaChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import { monitoringApi } from '../api';
-
-interface TrafficHistoryPoint {
-  timestamp: string;
-  up_bps: number;
-  down_bps: number;
-  active_connections: number;
-  client_count: number;
-}
-
-interface MonitoringOverview {
-  running: boolean;
-  timestamp: string;
-  up_bps: number;
-  down_bps: number;
-  upload_total: number;
-  download_total: number;
-  active_connections: number;
-  client_count: number;
-  memory_inuse: number;
-  memory_oslimit: number;
-}
 
 interface MonitoringLifetimeStats {
   sample_count: number;
@@ -79,19 +58,6 @@ interface ClashConnectionsSnapshot {
   };
 }
 
-const defaultOverview: MonitoringOverview = {
-  running: false,
-  timestamp: new Date().toISOString(),
-  up_bps: 0,
-  down_bps: 0,
-  upload_total: 0,
-  download_total: 0,
-  active_connections: 0,
-  client_count: 0,
-  memory_inuse: 0,
-  memory_oslimit: 0,
-};
-
 const defaultLifetime: MonitoringLifetimeStats = {
   sample_count: 0,
   total_clients: 0,
@@ -99,15 +65,6 @@ const defaultLifetime: MonitoringLifetimeStats = {
   total_download_bytes: 0,
   total_traffic_bytes: 0,
 };
-
-const CHART_PERIODS = [
-  { key: '1m', label: '1 мин', seconds: 60, throttleMs: 1000 },
-  { key: '5m', label: '5 мин', seconds: 300, throttleMs: 3000 },
-  { key: '15m', label: '15 мин', seconds: 900, throttleMs: 8000 },
-  { key: '1h', label: '1 час', seconds: 3600, throttleMs: 20000 },
-] as const;
-
-const MAX_HISTORY_POINTS = 3600;
 
 function toWebSocketURL(path: string): string {
   const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
@@ -147,10 +104,6 @@ function formatBytes(bytes: number): string {
   return `${value.toFixed(value >= 10 || idx === 0 ? 0 : 1)} ${units[idx]}`;
 }
 
-function formatRate(bytesPerSecond: number): string {
-  return `${formatBytes(bytesPerSecond)}/s`;
-}
-
 function formatDuration(seconds: number): string {
   if (!Number.isFinite(seconds) || seconds <= 0) return '0s';
   if (seconds < 60) return `${seconds}s`;
@@ -168,8 +121,6 @@ function formatDateTime(value?: string): string {
   if (Number.isNaN(ts)) return '-';
   return new Date(ts).toLocaleString();
 }
-
-const CHART_EMA_ALPHA = 0.28;
 
 function aggregateConnections(connections: ClashConnection[]): { clients: MonitoringClient[]; resources: MonitoringResource[] } {
   type ClientAcc = {
@@ -326,53 +277,15 @@ function mergeClients(recent: MonitoringClient[], active: MonitoringClient[], no
 
 export default function TrafficMonitoringPanel() {
   const [loading, setLoading] = useState(true);
-  const [overview, setOverview] = useState<MonitoringOverview>(defaultOverview);
   const [lifetime, setLifetime] = useState<MonitoringLifetimeStats>(defaultLifetime);
   const [activeClients, setActiveClients] = useState<MonitoringClient[]>([]);
   const [recentClients, setRecentClients] = useState<MonitoringClient[]>([]);
   const [resources, setResources] = useState<MonitoringResource[]>([]);
   const [expandedClientIP, setExpandedClientIP] = useState<string>('');
-  const [trafficConnected, setTrafficConnected] = useState(false);
   const [connectionsConnected, setConnectionsConnected] = useState(false);
-  const [chartPeriod, setChartPeriod] = useState<string>('5m');
-
-  // Chart throttling: accumulate points in ref, flush to display state on interval
-  const historyRef = useRef<TrafficHistoryPoint[]>([]);
-  const [displayHistory, setDisplayHistory] = useState<TrafficHistoryPoint[]>([]);
-  const lastChartFlushRef = useRef(0);
 
   // Resource cache: keep last known resources per client IP so they don't disappear
   const resourceCacheRef = useRef(new Map<string, MonitoringResource[]>());
-
-  const selectedPeriod = useMemo(
-    () => CHART_PERIODS.find((p) => p.key === chartPeriod) || CHART_PERIODS[1],
-    [chartPeriod],
-  );
-
-  // Flush chart display on throttle interval
-  useEffect(() => {
-    const flush = () => {
-      setDisplayHistory([...historyRef.current]);
-      lastChartFlushRef.current = Date.now();
-    };
-    // Flush immediately on period change
-    flush();
-    const timer = window.setInterval(flush, selectedPeriod.throttleMs);
-    return () => window.clearInterval(timer);
-  }, [selectedPeriod]);
-
-  const appendHistory = useCallback((point: TrafficHistoryPoint) => {
-    const buf = historyRef.current;
-    buf.push(point);
-    if (buf.length > MAX_HISTORY_POINTS) {
-      historyRef.current = buf.slice(buf.length - MAX_HISTORY_POINTS);
-    }
-    // For short periods, flush immediately
-    if (Date.now() - lastChartFlushRef.current >= (CHART_PERIODS[0].throttleMs)) {
-      setDisplayHistory([...historyRef.current]);
-      lastChartFlushRef.current = Date.now();
-    }
-  }, []);
 
   const fetchRecentClients = useCallback(async () => {
     try {
@@ -395,19 +308,13 @@ export default function TrafficMonitoringPanel() {
   const fetchInitial = useCallback(async () => {
     try {
       setLoading(true);
-      const [overviewRes, lifetimeRes, historyRes, recentClientsRes, resourcesRes] = await Promise.all([
-        monitoringApi.getOverview(),
+      const [lifetimeRes, recentClientsRes, resourcesRes] = await Promise.all([
         monitoringApi.getLifetime(),
-        monitoringApi.getHistory(MAX_HISTORY_POINTS),
         monitoringApi.getRecentClients(400, 24),
         monitoringApi.getResources(300),
       ]);
 
-      setOverview({ ...defaultOverview, ...(overviewRes.data?.data || {}) });
       setLifetime({ ...defaultLifetime, ...(lifetimeRes.data?.data || {}) });
-      const initialHistory: TrafficHistoryPoint[] = historyRes.data?.data || [];
-      historyRef.current = initialHistory;
-      setDisplayHistory(initialHistory);
       setRecentClients(recentClientsRes.data?.data || []);
       const initialResources: MonitoringResource[] = resourcesRes.data?.data || [];
       setResources(initialResources);
@@ -437,60 +344,7 @@ export default function TrafficMonitoringPanel() {
     return () => window.clearInterval(timer);
   }, [fetchRecentClients, fetchLifetime]);
 
-  useEffect(() => {
-    let ws: WebSocket | null = null;
-    let retryTimer: number | null = null;
-    let closed = false;
-
-    const connect = () => {
-      ws = new WebSocket(toWebSocketURL('/api/monitoring/ws/traffic'));
-      ws.onopen = () => setTrafficConnected(true);
-      ws.onclose = () => {
-        setTrafficConnected(false);
-        if (!closed) {
-          retryTimer = window.setTimeout(connect, 3000);
-        }
-      };
-      ws.onerror = () => {
-        ws?.close();
-      };
-      ws.onmessage = (event) => {
-        try {
-          const data = JSON.parse(event.data);
-          if (typeof data !== 'object' || data === null || !('up' in data) || !('down' in data)) {
-            return;
-          }
-          const up = toNumber(data.up);
-          const down = toNumber(data.down);
-          const ts = new Date().toISOString();
-
-          setOverview((prev) => {
-            const next = { ...prev, running: true, up_bps: up, down_bps: down, timestamp: ts };
-            appendHistory({
-              timestamp: ts,
-              up_bps: up,
-              down_bps: down,
-              active_connections: next.active_connections,
-              client_count: next.client_count,
-            });
-            return next;
-          });
-        } catch (error) {
-          console.error('Failed to parse traffic stream payload:', error);
-        }
-      };
-    };
-
-    connect();
-    return () => {
-      closed = true;
-      if (retryTimer !== null) {
-        window.clearTimeout(retryTimer);
-      }
-      ws?.close();
-    };
-  }, [appendHistory]);
-
+  // Connections WS — needed for live client data
   useEffect(() => {
     let ws: WebSocket | null = null;
     let retryTimer: number | null = null;
@@ -529,17 +383,6 @@ export default function TrafficMonitoringPanel() {
           }
 
           setRecentClients((prev) => mergeClients(prev, liveClients, ts));
-          setOverview((prev) => ({
-            ...prev,
-            running: true,
-            timestamp: ts,
-            upload_total: toNumber(snapshot.uploadTotal),
-            download_total: toNumber(snapshot.downloadTotal),
-            active_connections: liveConnections.length,
-            client_count: liveClients.length,
-            memory_inuse: toNumber(snapshot.memory?.inuse),
-            memory_oslimit: toNumber(snapshot.memory?.oslimit),
-          }));
         } catch (error) {
           console.error('Failed to parse connections stream payload:', error);
         }
@@ -555,38 +398,6 @@ export default function TrafficMonitoringPanel() {
       ws?.close();
     };
   }, []);
-
-  const chartData = useMemo(() => {
-    const now = Date.now();
-    const cutoff = now - selectedPeriod.seconds * 1000;
-    const filtered = displayHistory.filter((p) => {
-      const ts = Date.parse(p.timestamp);
-      return !Number.isNaN(ts) && ts >= cutoff;
-    });
-
-    let emaUp = 0;
-    let emaDown = 0;
-
-    return filtered.map((point, idx) => {
-      const rawUp = Math.max(0, toNumber(point.up_bps));
-      const rawDown = Math.max(0, toNumber(point.down_bps));
-
-      if (idx === 0) {
-        emaUp = rawUp;
-        emaDown = rawDown;
-      } else {
-        emaUp = (rawUp * CHART_EMA_ALPHA) + (emaUp * (1 - CHART_EMA_ALPHA));
-        emaDown = (rawDown * CHART_EMA_ALPHA) + (emaDown * (1 - CHART_EMA_ALPHA));
-      }
-
-      return {
-        ...point,
-        time: new Date(point.timestamp).toLocaleTimeString([], { hour12: false }),
-        up_kbps: emaUp / 1024,
-        down_kbps: emaDown / 1024,
-      };
-    });
-  }, [displayHistory, selectedPeriod]);
 
   const clients = useMemo(
     () => mergeClients(recentClients, activeClients, new Date().toISOString()),
@@ -643,112 +454,10 @@ export default function TrafficMonitoringPanel() {
     <div className="space-y-4">
       {/* Connection status */}
       <div className="flex items-center gap-2">
-        <Chip size="sm" variant="flat" color={trafficConnected ? 'success' : 'warning'}>
-          traffic: {trafficConnected ? 'live' : 'offline'}
-        </Chip>
         <Chip size="sm" variant="flat" color={connectionsConnected ? 'success' : 'warning'}>
           connections: {connectionsConnected ? 'live' : 'offline'}
         </Chip>
       </div>
-
-      {/* Stat cards */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-        <Card className="shadow-sm">
-          <CardBody className="py-4 px-4">
-            <div className="flex items-center gap-2 mb-2">
-              <div className="p-2 rounded-lg bg-green-100 dark:bg-green-900/30">
-                <ArrowUpToLine className="w-4 h-4 text-green-600 dark:text-green-400" />
-              </div>
-              <span className="text-sm text-gray-500 dark:text-gray-400">Upload</span>
-            </div>
-            <p className="text-2xl font-bold">{formatRate(overview.up_bps)}</p>
-            <p className="text-xs text-gray-400 mt-1">Total: {formatBytes(overview.upload_total)}</p>
-          </CardBody>
-        </Card>
-
-        <Card className="shadow-sm">
-          <CardBody className="py-4 px-4">
-            <div className="flex items-center gap-2 mb-2">
-              <div className="p-2 rounded-lg bg-blue-100 dark:bg-blue-900/30">
-                <ArrowDownToLine className="w-4 h-4 text-blue-600 dark:text-blue-400" />
-              </div>
-              <span className="text-sm text-gray-500 dark:text-gray-400">Download</span>
-            </div>
-            <p className="text-2xl font-bold">{formatRate(overview.down_bps)}</p>
-            <p className="text-xs text-gray-400 mt-1">Total: {formatBytes(overview.download_total)}</p>
-          </CardBody>
-        </Card>
-
-        <Card className="shadow-sm">
-          <CardBody className="py-4 px-4">
-            <div className="flex items-center gap-2 mb-2">
-              <div className="p-2 rounded-lg bg-orange-100 dark:bg-orange-900/30">
-                <Activity className="w-4 h-4 text-orange-600 dark:text-orange-400" />
-              </div>
-              <span className="text-sm text-gray-500 dark:text-gray-400">Connections</span>
-            </div>
-            <p className="text-2xl font-bold">{overview.active_connections}</p>
-            <p className="text-xs text-gray-400 mt-1">Memory: {formatBytes(overview.memory_inuse)}</p>
-          </CardBody>
-        </Card>
-
-        <Card className="shadow-sm">
-          <CardBody className="py-4 px-4">
-            <div className="flex items-center gap-2 mb-2">
-              <div className="p-2 rounded-lg bg-purple-100 dark:bg-purple-900/30">
-                <Users className="w-4 h-4 text-purple-600 dark:text-purple-400" />
-              </div>
-              <span className="text-sm text-gray-500 dark:text-gray-400">Clients</span>
-            </div>
-            <p className="text-2xl font-bold">{overview.client_count}</p>
-            <p className="text-xs text-gray-400 mt-1">All time: {lifetime.total_clients}</p>
-          </CardBody>
-        </Card>
-      </div>
-
-      {/* Traffic chart */}
-      <Card className="shadow-sm">
-        <CardHeader className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 pb-0">
-          <div className="flex items-center gap-2">
-            <Network className="w-5 h-5 text-gray-500" />
-            <h3 className="font-semibold">Traffic</h3>
-          </div>
-          <ButtonGroup size="sm" variant="flat">
-            {CHART_PERIODS.map((period) => (
-              <Button
-                key={period.key}
-                color={chartPeriod === period.key ? 'primary' : 'default'}
-                onPress={() => setChartPeriod(period.key)}
-              >
-                {period.label}
-              </Button>
-            ))}
-          </ButtonGroup>
-        </CardHeader>
-        <CardBody>
-          <div className="h-72 w-full">
-            <ResponsiveContainer width="100%" height="100%">
-              <AreaChart data={chartData}>
-                <CartesianGrid strokeDasharray="3 3" />
-                <XAxis dataKey="time" minTickGap={24} />
-                <YAxis tickFormatter={(value) => `${Math.round(value)} KB/s`} />
-                <Tooltip
-                  formatter={(value, name) => {
-                    const raw = Array.isArray(value) ? value[0] : value;
-                    const numeric = Number(raw);
-                    const bytesPerSecond = Number.isFinite(numeric) ? numeric * 1024 : 0;
-                    return [formatRate(Math.round(bytesPerSecond)), name === 'up_kbps' ? 'Upload' : 'Download'];
-                  }}
-                  labelFormatter={(label) => `Time: ${label}`}
-                />
-                <Legend formatter={(value) => (value === 'up_kbps' ? 'Upload' : 'Download')} />
-                <Area type="monotone" dataKey="up_kbps" stroke="#16a34a" fill="#16a34a33" strokeWidth={2} />
-                <Area type="monotone" dataKey="down_kbps" stroke="#2563eb" fill="#2563eb33" strokeWidth={2} />
-              </AreaChart>
-            </ResponsiveContainer>
-          </div>
-        </CardBody>
-      </Card>
 
       {/* Lifetime stats */}
       <Card className="shadow-sm">

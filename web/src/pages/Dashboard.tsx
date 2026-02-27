@@ -1,6 +1,8 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
-import { Card, CardBody, CardHeader, Button, Chip, Modal, ModalContent, ModalHeader, ModalBody, ModalFooter, Tooltip, Spinner, Progress } from '@nextui-org/react';
-import { Play, Square, RefreshCw, Cpu, HardDrive, Wifi, Activity, Copy, ClipboardCheck, Link, QrCode, Stethoscope, ShieldCheck, Network, ArrowUp, ArrowDown, Users, Cable } from 'lucide-react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Card, CardBody, CardHeader, Button, ButtonGroup, Chip, Modal, ModalContent, ModalHeader, ModalBody, ModalFooter, Tooltip, Spinner, Progress } from '@nextui-org/react';
+import { Play, Square, RefreshCw, Cpu, HardDrive, Wifi, Activity, Copy, ClipboardCheck, Link, QrCode, Stethoscope, ShieldCheck, Network, ArrowUp, ArrowDown, Users, Cable, ChevronDown, ChevronRight } from 'lucide-react';
+import { Area, AreaChart, CartesianGrid, Legend, ResponsiveContainer, Tooltip as RechartsTooltip, XAxis, YAxis } from 'recharts';
+import { timeSecond, timeMinute } from 'd3-time';
 import { useNavigate } from 'react-router-dom';
 import { useStore } from '../store';
 import { nodeDisplayTag, nodeInternalTag, nodeSourceTag } from '../store';
@@ -38,6 +40,24 @@ const defaultMonitoringLifetime: MonitoringLifetimeStats = {
   total_download_bytes: 0,
   total_traffic_bytes: 0,
 };
+
+interface TrafficHistoryPoint {
+  timestamp: string;
+  up_bps: number;
+  down_bps: number;
+  active_connections: number;
+  client_count: number;
+}
+
+const CHART_PERIODS = [
+  { key: '1m', label: '1 мин', seconds: 60, throttleMs: 1000 },
+  { key: '5m', label: '5 мин', seconds: 300, throttleMs: 3000 },
+  { key: '15m', label: '15 мин', seconds: 900, throttleMs: 8000 },
+  { key: '1h', label: '1 час', seconds: 3600, throttleMs: 20000 },
+] as const;
+
+const MAX_HISTORY_POINTS = 3600;
+const CHART_EMA_ALPHA = 0.28;
 
 function toWebSocketURL(path: string): string {
   const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
@@ -82,6 +102,11 @@ export default function Dashboard() {
     client_count: 0,
   });
   const [trafficLifetime, setTrafficLifetime] = useState<MonitoringLifetimeStats>(defaultMonitoringLifetime);
+  const [chartExpanded, setChartExpanded] = useState(false);
+  const [chartPeriod, setChartPeriod] = useState<string>('5m');
+  const historyRef = useRef<TrafficHistoryPoint[]>([]);
+  const [displayHistory, setDisplayHistory] = useState<TrafficHistoryPoint[]>([]);
+  const lastChartFlushRef = useRef(0);
 
   const [errorModal, setErrorModal] = useState<{
     isOpen: boolean;
@@ -123,6 +148,81 @@ export default function Dashboard() {
     }
   };
 
+  const selectedPeriod = useMemo(
+    () => CHART_PERIODS.find((p) => p.key === chartPeriod) || CHART_PERIODS[1],
+    [chartPeriod],
+  );
+
+  // Flush chart display on throttle interval
+  useEffect(() => {
+    const flush = () => {
+      setDisplayHistory([...historyRef.current]);
+      lastChartFlushRef.current = Date.now();
+    };
+    flush();
+    const timer = window.setInterval(flush, selectedPeriod.throttleMs);
+    return () => window.clearInterval(timer);
+  }, [selectedPeriod]);
+
+  const appendHistory = useCallback((point: TrafficHistoryPoint) => {
+    const buf = historyRef.current;
+    buf.push(point);
+    if (buf.length > MAX_HISTORY_POINTS) {
+      historyRef.current = buf.slice(buf.length - MAX_HISTORY_POINTS);
+    }
+    if (Date.now() - lastChartFlushRef.current >= CHART_PERIODS[0].throttleMs) {
+      setDisplayHistory([...historyRef.current]);
+      lastChartFlushRef.current = Date.now();
+    }
+  }, []);
+
+  const chartData = useMemo(() => {
+    const now = Date.now();
+    const cutoff = now - selectedPeriod.seconds * 1000;
+    const filtered = displayHistory.filter((p) => {
+      const ts = Date.parse(p.timestamp);
+      return !Number.isNaN(ts) && ts >= cutoff;
+    });
+
+    let emaUp = 0;
+    let emaDown = 0;
+
+    return filtered.map((point, idx) => {
+      const rawUp = Math.max(0, toNumber(point.up_bps));
+      const rawDown = Math.max(0, toNumber(point.down_bps));
+
+      if (idx === 0) {
+        emaUp = rawUp;
+        emaDown = rawDown;
+      } else {
+        emaUp = (rawUp * CHART_EMA_ALPHA) + (emaUp * (1 - CHART_EMA_ALPHA));
+        emaDown = (rawDown * CHART_EMA_ALPHA) + (emaDown * (1 - CHART_EMA_ALPHA));
+      }
+
+      return {
+        ...point,
+        epoch: Date.parse(point.timestamp),
+        up_kbps: emaUp / 1024,
+        down_kbps: emaDown / 1024,
+      };
+    });
+  }, [displayHistory, selectedPeriod]);
+
+  const chartXTicks = useMemo(() => {
+    if (chartData.length < 2) return [];
+    const start = chartData[0].epoch;
+    const end = chartData[chartData.length - 1].epoch;
+    const interval = selectedPeriod.seconds <= 60
+      ? timeSecond.every(10)
+      : selectedPeriod.seconds <= 300
+        ? timeMinute.every(1)
+        : selectedPeriod.seconds <= 900
+          ? timeMinute.every(3)
+          : timeMinute.every(10);
+    if (!interval) return [];
+    return interval.range(new Date(start), new Date(end)).map((d) => d.getTime());
+  }, [chartData, selectedPeriod]);
+
   // Auto-scroll activity feed
   useEffect(() => {
     if (activityFeedRef.current) {
@@ -146,6 +246,12 @@ export default function Dashboard() {
     fetchGeoData();
     fetchTrafficOverview();
     fetchTrafficLifetime();
+    // Load initial chart history
+    monitoringApi.getHistory(MAX_HISTORY_POINTS).then((res) => {
+      const initial: TrafficHistoryPoint[] = res.data?.data || [];
+      historyRef.current = initial;
+      setDisplayHistory(initial);
+    }).catch((err) => console.error('Failed to fetch chart history:', err));
 
     const interval = setInterval(() => {
       fetchServiceStatus();
@@ -179,11 +285,17 @@ export default function Dashboard() {
 
           const up = toNumber(data.up);
           const down = toNumber(data.down);
-          setTrafficOverview((prev) => ({
-            ...prev,
-            up_bps: up,
-            down_bps: down,
-          }));
+          const ts = new Date().toISOString();
+          setTrafficOverview((prev) => {
+            appendHistory({
+              timestamp: ts,
+              up_bps: up,
+              down_bps: down,
+              active_connections: prev.active_connections,
+              client_count: prev.client_count,
+            });
+            return { ...prev, up_bps: up, down_bps: down };
+          });
         } catch (error) {
           console.error('Failed to parse dashboard traffic websocket payload:', error);
         }
@@ -196,7 +308,7 @@ export default function Dashboard() {
       if (retryTimer !== null) window.clearTimeout(retryTimer);
       ws?.close();
     };
-  }, []);
+  }, [appendHistory]);
 
   useEffect(() => {
     let ws: WebSocket | null = null;
@@ -548,8 +660,8 @@ export default function Dashboard() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold text-gray-800 dark:text-white">Dashboard</h1>
-        <Button size="sm" color="primary" variant="flat" startContent={<Network className="w-4 h-4" />} onPress={() => navigate('/monitoring')}>
-          Monitoring Details
+        <Button size="sm" color="primary" variant="flat" startContent={<Users className="w-4 h-4" />} onPress={() => navigate('/clients')}>
+          Clients
         </Button>
       </div>
 
@@ -606,6 +718,69 @@ export default function Dashboard() {
           </CardBody>
         </Card>
       </div>
+
+      {/* Traffic chart (collapsible) */}
+      <Card>
+        <CardHeader
+          className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 cursor-pointer select-none"
+          onClick={() => setChartExpanded((prev) => !prev)}
+        >
+          <div className="flex items-center gap-2">
+            {chartExpanded
+              ? <ChevronDown className="w-4 h-4 text-gray-400" />
+              : <ChevronRight className="w-4 h-4 text-gray-400" />
+            }
+            <Network className="w-5 h-5 text-gray-500" />
+            <h3 className="font-semibold">Traffic</h3>
+          </div>
+          {chartExpanded && (
+            <ButtonGroup size="sm" variant="flat" onClick={(e) => e.stopPropagation()}>
+              {CHART_PERIODS.map((period) => (
+                <Button
+                  key={period.key}
+                  color={chartPeriod === period.key ? 'primary' : 'default'}
+                  onPress={() => setChartPeriod(period.key)}
+                >
+                  {period.label}
+                </Button>
+              ))}
+            </ButtonGroup>
+          )}
+        </CardHeader>
+        {chartExpanded && (
+          <CardBody className="pt-0">
+            <div className="h-72 w-full">
+              <ResponsiveContainer width="100%" height="100%">
+                <AreaChart data={chartData}>
+                  <CartesianGrid strokeDasharray="3 3" />
+                  <XAxis
+                    dataKey="epoch"
+                    type="number"
+                    scale="time"
+                    domain={['dataMin', 'dataMax']}
+                    ticks={chartXTicks}
+                    tickFormatter={(ts) => new Date(ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: selectedPeriod.seconds <= 60 ? '2-digit' : undefined, hour12: false })}
+                    minTickGap={24}
+                  />
+                  <YAxis tickFormatter={(value) => `${Math.round(value)} KB/s`} />
+                  <RechartsTooltip
+                    formatter={(value, name) => {
+                      const raw = Array.isArray(value) ? value[0] : value;
+                      const numeric = Number(raw);
+                      const bytesPerSecond = Number.isFinite(numeric) ? numeric * 1024 : 0;
+                      return [formatRate(Math.round(bytesPerSecond)), name === 'up_kbps' ? 'Upload' : 'Download'];
+                    }}
+                    labelFormatter={(ts) => `Time: ${new Date(Number(ts)).toLocaleTimeString([], { hour12: false })}`}
+                  />
+                  <Legend formatter={(value) => (value === 'up_kbps' ? 'Upload' : 'Download')} />
+                  <Area type="monotone" dataKey="up_kbps" stroke="#16a34a" fill="#16a34a33" strokeWidth={2} />
+                  <Area type="monotone" dataKey="down_kbps" stroke="#2563eb" fill="#2563eb33" strokeWidth={2} />
+                </AreaChart>
+              </ResponsiveContainer>
+            </div>
+          </CardBody>
+        )}
+      </Card>
 
       {/* Nodes summary card */}
       <Card>
