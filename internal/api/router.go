@@ -1097,7 +1097,7 @@ func validateImportedDatabase(dbPath string) error {
 	if err := testDB.QueryRow("SELECT COALESCE(MAX(version), 0) FROM schema_version").Scan(&schemaVersion); err != nil {
 		return fmt.Errorf("failed to read schema version: %w", err)
 	}
-	const maxSupportedSchemaVersion = 7
+	const maxSupportedSchemaVersion = 8
 	if schemaVersion > maxSupportedSchemaVersion {
 		return fmt.Errorf("schema version %d is newer than supported %d", schemaVersion, maxSupportedSchemaVersion)
 	}
