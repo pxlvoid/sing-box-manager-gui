@@ -27,7 +27,7 @@ RUN SKIP_FRONTEND=1 chmod +x build.sh && ./build.sh current
 # Stage 3: Финальный образ
 FROM alpine:latest
 
-RUN apk add --no-cache ca-certificates tzdata
+RUN apk add --no-cache ca-certificates tzdata procps curl
 
 WORKDIR /app
 
