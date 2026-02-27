@@ -3,7 +3,7 @@
  * Monospace font, dark terminal aesthetic, typed-out feel.
  */
 import { Card, CardBody, CardHeader, Button, Chip, Input, Tooltip, Select, SelectItem } from '@nextui-org/react';
-import { Globe, RefreshCw, Search, Terminal } from 'lucide-react';
+import { RefreshCw, Search, Terminal } from 'lucide-react';
 import type { ActiveProxyProps } from './ActiveProxyTypes';
 
 export default function ActiveProxyVariantF({
