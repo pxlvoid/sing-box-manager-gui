@@ -1221,15 +1221,8 @@ func (s *Server) previewConfig(c *gin.Context) {
 }
 
 func (s *Server) applyConfig(c *gin.Context) {
-	configJSON, newUnsupported, err := s.buildAndValidateConfig()
+	newUnsupported, err := s.regenerateAndSaveConfig()
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-
-	// Save config file
-	settings := s.store.GetSettings()
-	if err := s.saveConfigFile(s.resolvePath(settings.ConfigPath), configJSON); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
@@ -1447,6 +1440,20 @@ func (s *Server) saveConfigFile(path, content string) error {
 	return os.WriteFile(path, []byte(content), 0644)
 }
 
+// regenerateAndSaveConfig builds a validated config, persists it to the configured file,
+// and returns unsupported nodes that were excluded during validation.
+func (s *Server) regenerateAndSaveConfig() ([]UnsupportedNodeInfo, error) {
+	configJSON, newUnsupported, err := s.buildAndValidateConfig()
+	if err != nil {
+		return nil, err
+	}
+	settings := s.store.GetSettings()
+	if err := s.saveConfigFile(s.resolvePath(settings.ConfigPath), configJSON); err != nil {
+		return nil, err
+	}
+	return newUnsupported, nil
+}
+
 // resolvePath resolves a relative path to an absolute path based on the data directory
 func (s *Server) resolvePath(path string) string {
 	if filepath.IsAbs(path) {
@@ -1629,27 +1636,88 @@ func (s *Server) getServiceStatus(c *gin.Context) {
 }
 
 func (s *Server) startService(c *gin.Context) {
+	newUnsupported, err := s.regenerateAndSaveConfig()
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to regenerate config: " + err.Error()})
+		return
+	}
+
 	if err := s.processManager.Start(); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"message": "Service started"})
+
+	response := gin.H{"message": "Service started"}
+	if len(newUnsupported) > 0 {
+		tags := make([]string, len(newUnsupported))
+		for i, u := range newUnsupported {
+			if strings.TrimSpace(u.DisplayName) != "" {
+				tags[i] = u.DisplayName
+			} else {
+				tags[i] = u.Tag
+			}
+		}
+		response["warning"] = fmt.Sprintf("%d unsupported node(s) excluded: %s", len(newUnsupported), strings.Join(tags, ", "))
+		response["unsupported_nodes"] = newUnsupported
+	}
+	c.JSON(http.StatusOK, response)
 }
 
 func (s *Server) stopService(c *gin.Context) {
+	newUnsupported, regenErr := s.regenerateAndSaveConfig()
+	if regenErr != nil {
+		logger.Printf("[service] failed to regenerate config before stop: %v", regenErr)
+	}
+
 	if err := s.processManager.Stop(); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"message": "Service stopped"})
+
+	response := gin.H{"message": "Service stopped"}
+	if regenErr != nil {
+		response["warning"] = "Service stopped, but config regeneration failed: " + regenErr.Error()
+	} else if len(newUnsupported) > 0 {
+		tags := make([]string, len(newUnsupported))
+		for i, u := range newUnsupported {
+			if strings.TrimSpace(u.DisplayName) != "" {
+				tags[i] = u.DisplayName
+			} else {
+				tags[i] = u.Tag
+			}
+		}
+		response["warning"] = fmt.Sprintf("%d unsupported node(s) excluded: %s", len(newUnsupported), strings.Join(tags, ", "))
+		response["unsupported_nodes"] = newUnsupported
+	}
+	c.JSON(http.StatusOK, response)
 }
 
 func (s *Server) restartService(c *gin.Context) {
+	newUnsupported, err := s.regenerateAndSaveConfig()
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to regenerate config: " + err.Error()})
+		return
+	}
+
 	if err := s.processManager.Restart(); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"message": "Service restarted"})
+
+	response := gin.H{"message": "Service restarted"}
+	if len(newUnsupported) > 0 {
+		tags := make([]string, len(newUnsupported))
+		for i, u := range newUnsupported {
+			if strings.TrimSpace(u.DisplayName) != "" {
+				tags[i] = u.DisplayName
+			} else {
+				tags[i] = u.Tag
+			}
+		}
+		response["warning"] = fmt.Sprintf("%d unsupported node(s) excluded: %s", len(newUnsupported), strings.Join(tags, ", "))
+		response["unsupported_nodes"] = newUnsupported
+	}
+	c.JSON(http.StatusOK, response)
 }
 
 func (s *Server) reloadService(c *gin.Context) {

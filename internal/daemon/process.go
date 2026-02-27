@@ -87,8 +87,10 @@ func (pm *ProcessManager) recoverFromPidFile() int {
 		return 0
 	}
 
+	expectedConfig := normalizePath(pm.configPath)
+
 	// Use kill -0 to quickly verify if process is alive
-	if !pm.isProcessAlive(pid) {
+	if !pm.isProcessAlive(pid) || !pm.isExpectedSingboxProcess(pid, expectedConfig) {
 		os.Remove(pm.pidFile)
 		return 0
 	}
@@ -133,6 +135,69 @@ func (pm *ProcessManager) isValidSingboxProcess(pid int) bool {
 	return pm.isSingboxProcess(proc)
 }
 
+// isExpectedSingboxProcess verifies that PID belongs to a sing-box "run" process with the expected config.
+func (pm *ProcessManager) isExpectedSingboxProcess(pid int, expectedConfig string) bool {
+	if pid <= 0 {
+		return false
+	}
+	proc, err := process.NewProcess(int32(pid))
+	if err != nil {
+		return false
+	}
+	if !pm.isSingboxProcess(proc) {
+		return false
+	}
+
+	args, err := proc.CmdlineSlice()
+	if err != nil || len(args) == 0 {
+		return false
+	}
+
+	hasRun, cfg := parseSingboxRunArgs(args)
+	if !hasRun {
+		return false
+	}
+	if expectedConfig == "" {
+		return true
+	}
+	return normalizePath(cfg) == expectedConfig
+}
+
+func parseSingboxRunArgs(args []string) (hasRun bool, configPath string) {
+	if len(args) == 0 {
+		return false, ""
+	}
+
+	for i := 1; i < len(args); i++ {
+		arg := args[i]
+		switch {
+		case arg == "run":
+			hasRun = true
+		case arg == "-c" || arg == "--config":
+			if i+1 < len(args) {
+				configPath = args[i+1]
+				i++
+			}
+		case strings.HasPrefix(arg, "--config="):
+			configPath = strings.TrimSpace(strings.TrimPrefix(arg, "--config="))
+		}
+	}
+
+	return hasRun, configPath
+}
+
+func normalizePath(path string) string {
+	trimmed := strings.TrimSpace(path)
+	if trimmed == "" {
+		return ""
+	}
+	abs, err := filepath.Abs(trimmed)
+	if err == nil {
+		trimmed = abs
+	}
+	return filepath.Clean(trimmed)
+}
+
 // isProcessAlive Check if process is alive using kill -0 (more reliable)
 func (pm *ProcessManager) isProcessAlive(pid int) bool {
 	if pid <= 0 {
@@ -162,6 +227,8 @@ func (pm *ProcessManager) readPidFile() int {
 
 // findSingboxByPgrep Use pgrep to quickly find sing-box process
 func (pm *ProcessManager) findSingboxByPgrep() int {
+	expectedConfig := normalizePath(pm.configPath)
+
 	// pgrep -x exact match process name
 	cmd := exec.Command("pgrep", "-x", "sing-box")
 	output, err := cmd.Output()
@@ -169,17 +236,26 @@ func (pm *ProcessManager) findSingboxByPgrep() int {
 		return 0
 	}
 
-	// pgrep may return multiple lines (multiple processes), take the first one
+	// pgrep may return multiple lines (multiple processes), take the first managed match.
 	lines := strings.Split(strings.TrimSpace(string(output)), "\n")
-	if len(lines) == 0 || lines[0] == "" {
+	if len(lines) == 0 {
 		return 0
 	}
 
-	pid, err := strconv.Atoi(lines[0])
-	if err != nil {
-		return 0
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		pid, err := strconv.Atoi(line)
+		if err != nil {
+			continue
+		}
+		if pm.isExpectedSingboxProcess(pid, expectedConfig) {
+			return pid
+		}
 	}
-	return pid
+	return 0
 }
 
 // recoverState Recover running state
@@ -243,7 +319,21 @@ func (pm *ProcessManager) Start() error {
 	defer pm.mu.Unlock()
 
 	if pm.running {
-		return fmt.Errorf("sing-box is already running")
+		expectedConfig := normalizePath(pm.configPath)
+		pid := pm.pid
+		if pid <= 0 && pm.cmd != nil && pm.cmd.Process != nil {
+			pid = pm.cmd.Process.Pid
+		}
+		if pid > 0 && pm.isProcessAlive(pid) && pm.isExpectedSingboxProcess(pid, expectedConfig) {
+			return fmt.Errorf("sing-box is already running")
+		}
+
+		// Stale state: clear and continue with a fresh start.
+		pm.running = false
+		pm.pid = 0
+		pm.cmd = nil
+		os.Remove(pm.pidFile)
+		logger.Printf("Cleared stale sing-box running state before start")
 	}
 
 	// Check if sing-box exists
@@ -415,17 +505,34 @@ func (pm *ProcessManager) IsRunning() bool {
 	running := pm.running
 	pid := pm.pid
 	cmd := pm.cmd
+	expectedConfig := normalizePath(pm.configPath)
 	pm.mu.RUnlock()
 
-	// 1. If memory state is running, return true directly
+	// 1. If memory state is running, verify tracked process first.
 	if running {
-		return true
+		if pid > 0 && pm.isProcessAlive(pid) && pm.isExpectedSingboxProcess(pid, expectedConfig) {
+			return true
+		}
+		if cmd != nil && cmd.Process != nil {
+			cmdPid := cmd.Process.Pid
+			if pm.isProcessAlive(cmdPid) && pm.isExpectedSingboxProcess(cmdPid, expectedConfig) {
+				return true
+			}
+		}
+
+		// Memory says running, but tracked process is gone or not expected.
+		pm.mu.Lock()
+		pm.running = false
+		pm.pid = 0
+		pm.cmd = nil
+		pm.mu.Unlock()
+		os.Remove(pm.pidFile)
 	}
 
 	// 2. Memory state is not running, but try to detect if process is actually alive
 
 	// 2.1 Check saved PID
-	if pid > 0 && pm.isProcessAlive(pid) {
+	if pid > 0 && pm.isProcessAlive(pid) && pm.isExpectedSingboxProcess(pid, expectedConfig) {
 		pm.recoverState(pid)
 		return true
 	}
@@ -433,14 +540,14 @@ func (pm *ProcessManager) IsRunning() bool {
 	// 2.2 Check cmd object PID
 	if cmd != nil && cmd.Process != nil {
 		cmdPid := cmd.Process.Pid
-		if pm.isProcessAlive(cmdPid) {
+		if pm.isProcessAlive(cmdPid) && pm.isExpectedSingboxProcess(cmdPid, expectedConfig) {
 			pm.recoverState(cmdPid)
 			return true
 		}
 	}
 
 	// 2.3 Fallback: recover from PID file (read file + kill -0, very fast)
-	if filePid := pm.readPidFile(); filePid > 0 && pm.isProcessAlive(filePid) {
+	if filePid := pm.readPidFile(); filePid > 0 && pm.isProcessAlive(filePid) && pm.isExpectedSingboxProcess(filePid, expectedConfig) {
 		pm.recoverState(filePid)
 		return true
 	}
