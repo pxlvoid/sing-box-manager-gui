@@ -721,6 +721,8 @@ export default function Dashboard() {
                   <span>Uptime <span className="font-semibold text-gray-700 dark:text-gray-200">{formatUptime(systemInfo.probe.uptime_seconds)}</span></span>
                   <span>Threads <span className="font-semibold text-gray-700 dark:text-gray-200">{systemInfo.probe.num_threads}</span></span>
                   <span className="text-gray-300 dark:text-gray-600">PID {systemInfo.probe.pid}</span>
+                  {probeStatus?.port && <span className="text-gray-300 dark:text-gray-600">Port {probeStatus.port}</span>}
+                  {probeStatus?.node_count != null && <span className="text-gray-300 dark:text-gray-600">Nodes {probeStatus.node_count}</span>}
                 </div>
               ) : (
                 <span className="text-gray-400">Not running</span>
