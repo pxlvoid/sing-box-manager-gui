@@ -151,6 +151,19 @@ type resourceAccumulator struct {
 	ProxyChain        string
 }
 
+// connPrevEntry stores per-connection bytes from the previous sample for delta computation.
+type connPrevEntry struct {
+	sourceIP string
+	upload   int64
+	download int64
+}
+
+// clientCumulativeEntry stores cumulative per-client traffic across connection lifetimes.
+type clientCumulativeEntry struct {
+	upload   int64
+	download int64
+}
+
 type monitoringNodeTrafficItem struct {
 	NodeTag       string    `json:"node_tag"`
 	DisplayName   string    `json:"display_name,omitempty"`
@@ -190,6 +203,10 @@ func (s *Server) collectAndPersistTrafficSample() {
 	if err != nil {
 		if running {
 			logger.Printf("[monitoring] failed to fetch connections snapshot: %v", err)
+			// Keep previous state on transient API failures. Reset will be handled
+			// either when the process is actually down or when total counters roll
+			// back (new sing-box segment).
+			return
 		}
 		s.resetTrafficRateState()
 		return
@@ -202,6 +219,9 @@ func (s *Server) collectAndPersistTrafficSample() {
 	now := time.Now().UTC()
 	upBps, downBps := s.computeTrafficRates(snapshot.UploadTotal, snapshot.DownloadTotal, now)
 	clients, resources := aggregateConnections(snapshot.Connections, now)
+
+	// Apply cumulative per-client traffic using connection-level delta tracking.
+	s.applyCumulativeClientTraffic(snapshot.Connections, clients)
 
 	sample := storage.TrafficSample{
 		Timestamp:         now,
@@ -238,6 +258,12 @@ func (s *Server) computeTrafficRates(uploadTotal, downloadTotal int64, now time.
 
 	upDelta := uploadTotal - s.lastTrafficUploadTotal
 	downDelta := downloadTotal - s.lastTrafficDownTotal
+	if upDelta < 0 || downDelta < 0 {
+		// sing-box totals dropped, likely due restart/new runtime segment.
+		// Reset connection-level client tracker to avoid mixing segments.
+		s.connPrevBytes = nil
+		s.clientCumTraffic = nil
+	}
 	if upDelta < 0 {
 		upDelta = 0
 	}
@@ -260,7 +286,87 @@ func (s *Server) resetTrafficRateState() {
 	s.lastTrafficSampleAt = time.Time{}
 	s.lastTrafficUploadTotal = 0
 	s.lastTrafficDownTotal = 0
+	s.connPrevBytes = nil
+	s.clientCumTraffic = nil
 	s.monitoringMu.Unlock()
+}
+
+// applyCumulativeClientTraffic computes per-client cumulative traffic by tracking
+// individual connection byte deltas across samples. This ensures that traffic from
+// closed connections is not lost.
+func (s *Server) applyCumulativeClientTraffic(connections []clashConnection, clients []storage.ClientTrafficSnapshot) {
+	s.monitoringMu.Lock()
+	defer s.monitoringMu.Unlock()
+
+	// Lazy init maps.
+	if s.connPrevBytes == nil {
+		s.connPrevBytes = make(map[string]connPrevEntry)
+		s.clientCumTraffic = make(map[string]clientCumulativeEntry)
+	}
+
+	// Build set of current connection IDs for cleanup.
+	currentConns := make(map[string]struct{}, len(connections))
+
+	for _, conn := range connections {
+		currentConns[conn.ID] = struct{}{}
+
+		sourceIP := strings.TrimSpace(conn.Metadata.SourceIP)
+		if sourceIP == "" {
+			sourceIP = "unknown"
+		}
+
+		upload := maxI64(conn.Upload, 0)
+		download := maxI64(conn.Download, 0)
+
+		var uploadDelta, downloadDelta int64
+
+		if prev, ok := s.connPrevBytes[conn.ID]; ok {
+			// Existing connection: compute delta.
+			if upload >= prev.upload {
+				uploadDelta = upload - prev.upload
+			} else {
+				// Counter reset within connection (unlikely but handle it).
+				uploadDelta = upload
+			}
+			if download >= prev.download {
+				downloadDelta = download - prev.download
+			} else {
+				downloadDelta = download
+			}
+		} else {
+			// New connection: its current bytes are the delta since the connection started.
+			uploadDelta = upload
+			downloadDelta = download
+		}
+
+		// Update connection tracking.
+		s.connPrevBytes[conn.ID] = connPrevEntry{
+			sourceIP: sourceIP,
+			upload:   upload,
+			download: download,
+		}
+
+		// Accumulate into per-client cumulative traffic.
+		cum := s.clientCumTraffic[sourceIP]
+		cum.upload += uploadDelta
+		cum.download += downloadDelta
+		s.clientCumTraffic[sourceIP] = cum
+	}
+
+	// Remove closed connections from tracking.
+	for connID := range s.connPrevBytes {
+		if _, alive := currentConns[connID]; !alive {
+			delete(s.connPrevBytes, connID)
+		}
+	}
+
+	// Override client snapshot bytes with cumulative values.
+	for i := range clients {
+		if cum, ok := s.clientCumTraffic[clients[i].SourceIP]; ok {
+			clients[i].UploadBytes = cum.upload
+			clients[i].DownloadBytes = cum.download
+		}
+	}
 }
 
 func (s *Server) fetchConnectionsSnapshot() (*clashConnectionsSnapshot, error) {

@@ -85,6 +85,10 @@ type Server struct {
 	lastTrafficUploadTotal int64
 	lastTrafficDownTotal   int64
 
+	// Per-connection byte tracking for accurate cumulative per-client traffic.
+	connPrevBytes      map[string]connPrevEntry       // key = connection ID
+	clientCumTraffic   map[string]clientCumulativeEntry // key = source IP
+
 	watchdogMu           sync.Mutex
 	watchdogFailStreak   map[string]int
 	watchdogCooldownTill map[string]time.Time

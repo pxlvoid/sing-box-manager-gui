@@ -256,8 +256,16 @@ function mergeClients(recent: MonitoringClient[], active: MonitoringClient[], no
   }
 
   for (const item of active) {
+    const existing = merged.get(item.source_ip);
+    // Use live connection/status data but preserve cumulative traffic from API
+    // because API values track traffic from closed connections while WebSocket
+    // only sees currently active connections.
+    const keepApiTraffic = existing &&
+      (existing.upload_bytes + existing.download_bytes) > (item.upload_bytes + item.download_bytes);
     merged.set(item.source_ip, {
       ...item,
+      upload_bytes: keepApiTraffic ? existing!.upload_bytes : item.upload_bytes,
+      download_bytes: keepApiTraffic ? existing!.download_bytes : item.download_bytes,
       online: true,
       last_seen: nowISO,
     });
