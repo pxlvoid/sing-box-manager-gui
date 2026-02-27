@@ -651,126 +651,81 @@ export default function Dashboard() {
       {/* System Resources */}
       <Card>
         <CardBody className="p-4 sm:p-5">
-          <div className="flex items-center gap-3 mb-4">
+          <div className="flex items-center gap-3 mb-3">
             <div className="p-2 bg-purple-100 dark:bg-purple-900 rounded-lg">
               <Cpu className="w-5 h-5 text-purple-600 dark:text-purple-300" />
             </div>
             <p className="text-sm font-semibold text-gray-700 dark:text-gray-200">System Resources</p>
           </div>
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-4">
+          <div className="flex flex-col gap-2">
             {/* sbm */}
-            <div className="flex flex-col gap-2 p-3 rounded-lg bg-gray-50 dark:bg-gray-800/50">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <div className="w-2 h-2 rounded-full bg-green-500" />
-                  <span className="text-sm font-medium">sbm</span>
-                </div>
-                {systemInfo?.sbm && (
-                  <span className="text-xs text-gray-400">PID {systemInfo.sbm.pid}</span>
-                )}
+            <div className="flex items-center gap-3 text-xs px-3 py-2 rounded-lg bg-gray-50 dark:bg-gray-800/50">
+              <div className="flex items-center gap-2 min-w-[80px]">
+                <div className="w-2 h-2 rounded-full bg-green-500 shrink-0" />
+                <span className="font-medium text-sm">sbm</span>
               </div>
               {systemInfo?.sbm ? (
-                <div className="grid grid-cols-2 gap-x-3 gap-y-1 text-xs">
-                  <div>
-                    <span className="text-gray-400">CPU</span>
-                    <p className="font-semibold text-gray-700 dark:text-gray-200">{systemInfo.sbm.cpu_percent.toFixed(1)}%</p>
-                  </div>
-                  <div>
-                    <span className="text-gray-400">Memory</span>
-                    <p className="font-semibold text-gray-700 dark:text-gray-200">{systemInfo.sbm.memory_mb.toFixed(1)} MB</p>
-                  </div>
-                  <div>
-                    <span className="text-gray-400">Uptime</span>
-                    <p className="font-semibold text-gray-700 dark:text-gray-200">{formatUptime(systemInfo.sbm.uptime_seconds)}</p>
-                  </div>
-                  <div>
-                    <span className="text-gray-400">Threads</span>
-                    <p className="font-semibold text-gray-700 dark:text-gray-200">{systemInfo.sbm.num_threads}</p>
-                  </div>
+                <div className="flex items-center gap-4 flex-wrap text-gray-500 dark:text-gray-400">
+                  <span>CPU <span className="font-semibold text-gray-700 dark:text-gray-200">{systemInfo.sbm.cpu_percent.toFixed(1)}%</span></span>
+                  <span>Mem <span className="font-semibold text-gray-700 dark:text-gray-200">{systemInfo.sbm.memory_mb.toFixed(1)} MB</span></span>
+                  <span>Uptime <span className="font-semibold text-gray-700 dark:text-gray-200">{formatUptime(systemInfo.sbm.uptime_seconds)}</span></span>
+                  <span>Threads <span className="font-semibold text-gray-700 dark:text-gray-200">{systemInfo.sbm.num_threads}</span></span>
+                  <span className="text-gray-300 dark:text-gray-600">PID {systemInfo.sbm.pid}</span>
                 </div>
               ) : (
-                <span className="text-xs text-gray-400">No data</span>
+                <span className="text-gray-400">No data</span>
               )}
             </div>
 
             {/* sing-box */}
-            <div className="flex flex-col gap-2 p-3 rounded-lg bg-gray-50 dark:bg-gray-800/50">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <div className={`w-2 h-2 rounded-full ${serviceStatus?.running ? 'bg-green-500' : 'bg-gray-300 dark:bg-gray-600'}`} />
-                  <span className="text-sm font-medium">sing-box</span>
-                </div>
-                {serviceStatus?.running && systemInfo?.singbox && (
-                  <span className="text-xs text-gray-400">PID {systemInfo.singbox.pid}</span>
-                )}
+            <div className="flex items-center gap-3 text-xs px-3 py-2 rounded-lg bg-gray-50 dark:bg-gray-800/50">
+              <div className="flex items-center gap-2 min-w-[80px]">
+                <div className={`w-2 h-2 rounded-full shrink-0 ${serviceStatus?.running ? 'bg-green-500' : 'bg-gray-300 dark:bg-gray-600'}`} />
+                <span className="font-medium text-sm">sing-box</span>
               </div>
               {serviceStatus?.running && systemInfo?.singbox ? (
-                <div className="grid grid-cols-2 gap-x-3 gap-y-1 text-xs">
-                  <div>
-                    <span className="text-gray-400">CPU</span>
-                    <p className="font-semibold text-gray-700 dark:text-gray-200">{systemInfo.singbox.cpu_percent.toFixed(1)}%</p>
-                  </div>
-                  <div>
-                    <span className="text-gray-400">Memory</span>
-                    <p className="font-semibold text-gray-700 dark:text-gray-200">{systemInfo.singbox.memory_mb.toFixed(1)} MB</p>
-                  </div>
-                  <div>
-                    <span className="text-gray-400">Uptime</span>
-                    <p className="font-semibold text-gray-700 dark:text-gray-200">{formatUptime(systemInfo.singbox.uptime_seconds)}</p>
-                  </div>
-                  <div>
-                    <span className="text-gray-400">Threads</span>
-                    <p className="font-semibold text-gray-700 dark:text-gray-200">{systemInfo.singbox.num_threads}</p>
-                  </div>
+                <div className="flex items-center gap-4 flex-wrap text-gray-500 dark:text-gray-400">
+                  {serviceStatus?.version && (
+                    <span>v<span className="font-semibold text-gray-700 dark:text-gray-200">{serviceStatus.version.match(/version\s+([\d.]+)/)?.[1] || serviceStatus.version}</span></span>
+                  )}
+                  <span>CPU <span className="font-semibold text-gray-700 dark:text-gray-200">{systemInfo.singbox.cpu_percent.toFixed(1)}%</span></span>
+                  <span>Mem <span className="font-semibold text-gray-700 dark:text-gray-200">{systemInfo.singbox.memory_mb.toFixed(1)} MB</span></span>
+                  <span>Uptime <span className="font-semibold text-gray-700 dark:text-gray-200">{formatUptime(systemInfo.singbox.uptime_seconds)}</span></span>
+                  <span>Threads <span className="font-semibold text-gray-700 dark:text-gray-200">{systemInfo.singbox.num_threads}</span></span>
+                  <span className="text-gray-300 dark:text-gray-600">PID {systemInfo.singbox.pid}</span>
                 </div>
               ) : (
-                <span className="text-xs text-gray-400">Not running</span>
+                <span className="text-gray-400">Not running</span>
               )}
             </div>
 
             {/* Probe */}
-            <div className="flex flex-col gap-2 p-3 rounded-lg bg-gray-50 dark:bg-gray-800/50">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <div className={`w-2 h-2 rounded-full ${probeStatus?.running ? 'bg-green-500' : 'bg-gray-300 dark:bg-gray-600'}`} />
-                  <span className="text-sm font-medium">Probe</span>
-                </div>
-                {probeStatus?.running && systemInfo?.probe && (
-                  <span className="text-xs text-gray-400">PID {systemInfo.probe.pid}</span>
-                )}
+            <div className="flex items-center gap-3 text-xs px-3 py-2 rounded-lg bg-gray-50 dark:bg-gray-800/50">
+              <div className="flex items-center gap-2 min-w-[80px]">
+                <div className={`w-2 h-2 rounded-full shrink-0 ${probeStatus?.running ? 'bg-green-500' : 'bg-gray-300 dark:bg-gray-600'}`} />
+                <span className="font-medium text-sm">Probe</span>
               </div>
               {probeStatus?.running && systemInfo?.probe ? (
-                <div className="grid grid-cols-2 gap-x-3 gap-y-1 text-xs">
-                  <div>
-                    <span className="text-gray-400">CPU</span>
-                    <p className="font-semibold text-gray-700 dark:text-gray-200">{systemInfo.probe.cpu_percent.toFixed(1)}%</p>
-                  </div>
-                  <div>
-                    <span className="text-gray-400">Memory</span>
-                    <p className="font-semibold text-gray-700 dark:text-gray-200">{systemInfo.probe.memory_mb.toFixed(1)} MB</p>
-                  </div>
-                  <div>
-                    <span className="text-gray-400">Uptime</span>
-                    <p className="font-semibold text-gray-700 dark:text-gray-200">{formatUptime(systemInfo.probe.uptime_seconds)}</p>
-                  </div>
-                  <div>
-                    <span className="text-gray-400">Threads</span>
-                    <p className="font-semibold text-gray-700 dark:text-gray-200">{systemInfo.probe.num_threads}</p>
-                  </div>
+                <div className="flex items-center gap-4 flex-wrap text-gray-500 dark:text-gray-400">
+                  <span>CPU <span className="font-semibold text-gray-700 dark:text-gray-200">{systemInfo.probe.cpu_percent.toFixed(1)}%</span></span>
+                  <span>Mem <span className="font-semibold text-gray-700 dark:text-gray-200">{systemInfo.probe.memory_mb.toFixed(1)} MB</span></span>
+                  <span>Uptime <span className="font-semibold text-gray-700 dark:text-gray-200">{formatUptime(systemInfo.probe.uptime_seconds)}</span></span>
+                  <span>Threads <span className="font-semibold text-gray-700 dark:text-gray-200">{systemInfo.probe.num_threads}</span></span>
+                  <span className="text-gray-300 dark:text-gray-600">PID {systemInfo.probe.pid}</span>
                 </div>
               ) : (
-                <span className="text-xs text-gray-400">Not running</span>
+                <span className="text-gray-400">Not running</span>
               )}
             </div>
           </div>
         </CardBody>
       </Card>
 
-      {/* Service status card */}
+      {/* Service controls */}
       <Card>
-        <CardHeader className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
+        <CardBody className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 p-4 sm:p-5">
           <div className="flex items-center gap-3">
-            <h2 className="text-lg font-semibold">sing-box Service</h2>
+            <h2 className="text-sm font-semibold text-gray-700 dark:text-gray-200">sing-box Service</h2>
             <Chip
               color={serviceStatus?.running ? 'success' : 'danger'}
               variant="flat"
@@ -794,31 +749,6 @@ export default function Dashboard() {
                 Proxy Links
               </Button>
             )}
-          </div>
-        </CardHeader>
-        <CardBody>
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-            <div>
-              <p className="text-sm text-gray-500">Version</p>
-              <div className="flex items-center gap-1">
-                <p className="font-medium">
-                  {serviceStatus?.version?.match(/version\s+([\d.]+)/)?.[1] || serviceStatus?.version || '-'}
-                </p>
-                {serviceStatus?.version && (
-                  <Tooltip content={<div className="max-w-xs whitespace-pre-wrap text-xs p-1">{serviceStatus.version}</div>} placement="bottom">
-                    <Info className="w-3.5 h-3.5 text-gray-400 cursor-help" />
-                  </Tooltip>
-                )}
-              </div>
-            </div>
-            <div>
-              <p className="text-sm text-gray-500">Process ID</p>
-              <p className="font-medium">{serviceStatus?.pid || '-'}</p>
-            </div>
-            <div>
-              <p className="text-sm text-gray-500">Status</p>
-              <p className="font-medium">{serviceStatus?.running ? 'Running normally' : 'Not running'}</p>
-            </div>
           </div>
         </CardBody>
       </Card>
