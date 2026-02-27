@@ -670,7 +670,7 @@ export default function Dashboard() {
           <div className="flex flex-col gap-2">
             {/* sbm */}
             <div className="flex items-center gap-3 text-xs px-3 py-2 rounded-lg bg-gray-50 dark:bg-gray-800/50">
-              <div className="flex items-center gap-2 min-w-[80px]">
+              <div className="flex items-center gap-2 min-w-[90px]">
                 <div className="w-2 h-2 rounded-full bg-green-500 shrink-0" />
                 <span className="font-medium text-sm">sbm</span>
               </div>
@@ -690,7 +690,7 @@ export default function Dashboard() {
 
             {/* sing-box */}
             <div className="flex items-center gap-3 text-xs px-3 py-2 rounded-lg bg-gray-50 dark:bg-gray-800/50">
-              <div className="flex items-center gap-2 min-w-[80px]">
+              <div className="flex items-center gap-2 min-w-[90px]">
                 <div className={`w-2 h-2 rounded-full shrink-0 ${serviceStatus?.running ? 'bg-green-500' : 'bg-gray-300 dark:bg-gray-600'}`} />
                 <span className="font-medium text-sm">sing-box</span>
               </div>
@@ -710,7 +710,7 @@ export default function Dashboard() {
 
             {/* Probe */}
             <div className="flex items-center gap-3 text-xs px-3 py-2 rounded-lg bg-gray-50 dark:bg-gray-800/50">
-              <div className="flex items-center gap-2 min-w-[80px]">
+              <div className="flex items-center gap-2 min-w-[90px]">
                 <div className={`w-2 h-2 rounded-full shrink-0 ${probeStatus?.running ? 'bg-green-500' : 'bg-gray-300 dark:bg-gray-600'}`} />
                 <span className="font-medium text-sm">Probe</span>
               </div>
@@ -776,6 +776,36 @@ export default function Dashboard() {
               >
                 {verificationStatus?.scheduler_running ? 'Running' : 'Stopped'}
               </Chip>
+              {probeStatus?.running && (
+                <Tooltip
+                  content={
+                    <div className="text-xs space-y-1 p-1">
+                      <div>PID: {probeStatus.pid || '-'}</div>
+                      <div>Port: {probeStatus.port}</div>
+                      <div>Nodes: {probeStatus.node_count}</div>
+                      {probeStatus.started_at && (
+                        <div>Uptime: {Math.round((Date.now() - new Date(probeStatus.started_at).getTime()) / 60000)} min</div>
+                      )}
+                      {systemInfo?.probe && (
+                        <>
+                          <div>CPU: {systemInfo.probe.cpu_percent.toFixed(1)}%</div>
+                          <div>Mem: {systemInfo.probe.memory_mb.toFixed(1)} MB</div>
+                        </>
+                      )}
+                    </div>
+                  }
+                  placement="bottom"
+                >
+                  <Chip size="sm" variant="flat" color="warning" className="cursor-help">Probe: port {probeStatus.port}</Chip>
+                </Tooltip>
+              )}
+              {(runCounters.promoted > 0 || runCounters.demoted > 0 || runCounters.archived > 0) && (
+                <>
+                  <Chip size="sm" variant="flat" color="success">+{runCounters.promoted}</Chip>
+                  <Chip size="sm" variant="flat" color="warning">-{runCounters.demoted}</Chip>
+                  <Chip size="sm" variant="flat" color="default">x{runCounters.archived}</Chip>
+                </>
+              )}
             </div>
             {verificationStatus?.scheduler_running && (
               <p className="text-xs text-gray-500 dark:text-gray-400">
@@ -787,29 +817,6 @@ export default function Dashboard() {
                   ? <>{verificationStatus.interval_min}min{verificationStatus.last_run_at && <> · last {formatTimeShort(verificationStatus.last_run_at)}</>}{verificationStatus.next_run_at && <> · next {formatTimeShort(verificationStatus.next_run_at)} ({formatTimeUntil(verificationStatus.next_run_at)})</>}</>
                   : 'disabled'}
               </p>
-            )}
-            {probeStatus?.running && (
-              <Tooltip
-                content={
-                  <div className="text-xs space-y-1 p-1">
-                    <div>PID: {probeStatus.pid || '-'}</div>
-                    <div>Port: {probeStatus.port}</div>
-                    <div>Nodes: {probeStatus.node_count}</div>
-                    {probeStatus.started_at && (
-                      <div>Uptime: {Math.round((Date.now() - new Date(probeStatus.started_at).getTime()) / 60000)} min</div>
-                    )}
-                    {systemInfo?.probe && (
-                      <>
-                        <div>CPU: {systemInfo.probe.cpu_percent.toFixed(1)}%</div>
-                        <div>Mem: {systemInfo.probe.memory_mb.toFixed(1)} MB</div>
-                      </>
-                    )}
-                  </div>
-                }
-                placement="bottom"
-              >
-                <Chip size="sm" variant="flat" color="warning" className="cursor-help">Probe: port {probeStatus.port}</Chip>
-              </Tooltip>
             )}
           </div>
           <div className="flex gap-2">
@@ -875,14 +882,6 @@ export default function Dashboard() {
             </div>
           )}
 
-          {/* Run counters */}
-          {(runCounters.promoted > 0 || runCounters.demoted > 0 || runCounters.archived > 0 || verificationRunning) && (
-            <div className="flex gap-2 flex-wrap">
-              <Chip size="sm" variant="flat" color="success">Promoted: {runCounters.promoted}</Chip>
-              <Chip size="sm" variant="flat" color="warning">Demoted: {runCounters.demoted}</Chip>
-              <Chip size="sm" variant="flat" color="default">Archived: {runCounters.archived}</Chip>
-            </div>
-          )}
 
 
           {/* Activity feed */}
