@@ -670,7 +670,7 @@ export default function Dashboard() {
           <div className="flex flex-col gap-2">
             {/* sbm */}
             <div className="flex items-center gap-3 text-xs px-3 py-2 rounded-lg bg-gray-50 dark:bg-gray-800/50">
-              <div className="flex items-center gap-2 min-w-[90px]">
+              <div className="flex items-center gap-2 min-w-[110px]">
                 <div className="w-2 h-2 rounded-full bg-green-500 shrink-0" />
                 <span className="font-medium text-sm">sbm</span>
               </div>
@@ -690,7 +690,7 @@ export default function Dashboard() {
 
             {/* sing-box */}
             <div className="flex items-center gap-3 text-xs px-3 py-2 rounded-lg bg-gray-50 dark:bg-gray-800/50">
-              <div className="flex items-center gap-2 min-w-[90px]">
+              <div className="flex items-center gap-2 min-w-[110px]">
                 <div className={`w-2 h-2 rounded-full shrink-0 ${serviceStatus?.running ? 'bg-green-500' : 'bg-gray-300 dark:bg-gray-600'}`} />
                 <span className="font-medium text-sm">sing-box</span>
               </div>
@@ -710,7 +710,7 @@ export default function Dashboard() {
 
             {/* Probe */}
             <div className="flex items-center gap-3 text-xs px-3 py-2 rounded-lg bg-gray-50 dark:bg-gray-800/50">
-              <div className="flex items-center gap-2 min-w-[90px]">
+              <div className="flex items-center gap-2 min-w-[110px]">
                 <div className={`w-2 h-2 rounded-full shrink-0 ${probeStatus?.running ? 'bg-green-500' : 'bg-gray-300 dark:bg-gray-600'}`} />
                 <span className="font-medium text-sm">Probe</span>
               </div>
