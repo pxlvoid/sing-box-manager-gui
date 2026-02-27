@@ -351,6 +351,16 @@ export default function Dashboard() {
     if (h > 0) return `${h}h ${m}m`;
     return `${m}m`;
   };
+  const formatTimeUntil = (dateStr: string) => {
+    const diff = Math.round((new Date(dateStr).getTime() - Date.now()) / 60000);
+    if (diff <= 0) return 'now';
+    if (diff < 60) return `in ${diff}min`;
+    return `in ${Math.floor(diff / 60)}h ${diff % 60}m`;
+  };
+
+  const formatTimeShort = (dateStr: string) =>
+    new Date(dateStr).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+
   const mainProxyGroup = proxyGroups.find((group) => group.name.toLowerCase() === 'proxy');
   const allKnownNodes = useMemo(
     () => [...verifiedNodes, ...pendingNodes, ...archivedNodes],
@@ -671,6 +681,7 @@ export default function Dashboard() {
                   <span>Uptime <span className="font-semibold text-gray-700 dark:text-gray-200">{formatUptime(systemInfo.sbm.uptime_seconds)}</span></span>
                   <span>Threads <span className="font-semibold text-gray-700 dark:text-gray-200">{systemInfo.sbm.num_threads}</span></span>
                   <span className="text-gray-300 dark:text-gray-600">PID {systemInfo.sbm.pid}</span>
+                  {serviceStatus?.sbm_version && <span className="text-gray-300 dark:text-gray-600">{serviceStatus.sbm_version}</span>}
                 </div>
               ) : (
                 <span className="text-gray-400">No data</span>
@@ -685,14 +696,12 @@ export default function Dashboard() {
               </div>
               {serviceStatus?.running && systemInfo?.singbox ? (
                 <div className="flex items-center gap-4 flex-wrap text-gray-500 dark:text-gray-400">
-                  {serviceStatus?.version && (
-                    <span>v<span className="font-semibold text-gray-700 dark:text-gray-200">{serviceStatus.version.match(/version\s+([\d.]+)/)?.[1] || serviceStatus.version}</span></span>
-                  )}
                   <span>CPU <span className="font-semibold text-gray-700 dark:text-gray-200">{systemInfo.singbox.cpu_percent.toFixed(1)}%</span></span>
                   <span>Mem <span className="font-semibold text-gray-700 dark:text-gray-200">{systemInfo.singbox.memory_mb.toFixed(1)} MB</span></span>
                   <span>Uptime <span className="font-semibold text-gray-700 dark:text-gray-200">{formatUptime(systemInfo.singbox.uptime_seconds)}</span></span>
                   <span>Threads <span className="font-semibold text-gray-700 dark:text-gray-200">{systemInfo.singbox.num_threads}</span></span>
                   <span className="text-gray-300 dark:text-gray-600">PID {systemInfo.singbox.pid}</span>
+                  {serviceStatus?.version && <span className="text-gray-300 dark:text-gray-600">v{serviceStatus.version.match(/version\s+([\d.]+)/)?.[1] || serviceStatus.version}</span>}
                 </div>
               ) : (
                 <span className="text-gray-400">Not running</span>
@@ -756,16 +765,29 @@ export default function Dashboard() {
       {/* Pipeline: Scheduler + Probe + Verification — unified block */}
       <Card>
         <CardHeader className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
-          <div className="flex items-center gap-3">
-            <Stethoscope className="w-5 h-5" />
-            <h2 className="text-lg font-semibold">Pipeline</h2>
-            <Chip
-              color={verificationStatus?.scheduler_running ? 'success' : 'default'}
-              variant="flat"
-              size="sm"
-            >
-              {verificationStatus?.scheduler_running ? 'Running' : 'Stopped'}
-            </Chip>
+          <div className="flex flex-col gap-1">
+            <div className="flex items-center gap-3">
+              <Stethoscope className="w-5 h-5" />
+              <h2 className="text-lg font-semibold">Pipeline</h2>
+              <Chip
+                color={verificationStatus?.scheduler_running ? 'success' : 'default'}
+                variant="flat"
+                size="sm"
+              >
+                {verificationStatus?.scheduler_running ? 'Running' : 'Stopped'}
+              </Chip>
+            </div>
+            {verificationStatus?.scheduler_running && (
+              <p className="text-xs text-gray-500 dark:text-gray-400">
+                Subs: {verificationStatus.sub_update_enabled
+                  ? <>{verificationStatus.sub_update_interval_min}min{verificationStatus.auto_apply && ' (auto-apply)'}{verificationStatus.sub_next_update_at && <> · next {formatTimeShort(verificationStatus.sub_next_update_at)} ({formatTimeUntil(verificationStatus.sub_next_update_at)})</>}</>
+                  : 'disabled'}
+                <span className="mx-2 text-gray-300 dark:text-gray-600">|</span>
+                Verify: {verificationStatus.enabled
+                  ? <>{verificationStatus.interval_min}min{verificationStatus.last_run_at && <> · last {formatTimeShort(verificationStatus.last_run_at)}</>}{verificationStatus.next_run_at && <> · next {formatTimeShort(verificationStatus.next_run_at)} ({formatTimeUntil(verificationStatus.next_run_at)})</>}</>
+                  : 'disabled'}
+              </p>
+            )}
             {probeStatus?.running && (
               <Tooltip
                 content={
@@ -862,43 +884,6 @@ export default function Dashboard() {
             </div>
           )}
 
-          {/* Scheduler tasks */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
-            {/* Subscription auto-update */}
-            <div className="p-3 bg-gray-50 dark:bg-gray-800 rounded-lg space-y-2">
-              <div className="flex items-center gap-2 flex-wrap">
-                <RefreshCw className="w-4 h-4 text-blue-500" />
-                <span className="font-medium text-sm">Subscription Update</span>
-                <Chip size="sm" variant="flat" color={verificationStatus?.sub_update_enabled ? 'success' : 'default'}>
-                  {verificationStatus?.sub_update_enabled ? `Every ${verificationStatus.sub_update_interval_min}min` : 'Disabled'}
-                </Chip>
-                {verificationStatus?.auto_apply && (
-                  <Chip size="sm" variant="flat" color="primary">Auto-apply</Chip>
-                )}
-              </div>
-              <div className="text-sm text-gray-500">
-                Next update: {verificationStatus?.sub_next_update_at
-                  ? new Date(verificationStatus.sub_next_update_at).toLocaleString()
-                  : '-'}
-              </div>
-            </div>
-
-            {/* Verification */}
-            <div className="p-3 bg-gray-50 dark:bg-gray-800 rounded-lg space-y-2">
-              <div className="flex items-center gap-2">
-                <ShieldCheck className="w-4 h-4 text-green-500" />
-                <span className="font-medium text-sm">Verification</span>
-                <Chip size="sm" variant="flat" color={verificationStatus?.enabled ? 'success' : 'default'}>
-                  {verificationStatus?.enabled ? `Every ${verificationStatus.interval_min}min` : 'Disabled'}
-                </Chip>
-              </div>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-1 text-sm text-gray-500">
-                <div>Last: {verificationStatus?.last_run_at ? new Date(verificationStatus.last_run_at).toLocaleString() : 'Never'}</div>
-                <div>Next: {verificationStatus?.next_run_at ? new Date(verificationStatus.next_run_at).toLocaleString() : '-'}</div>
-                <div>Threshold: {settings?.archive_threshold || 10} failures</div>
-              </div>
-            </div>
-          </div>
 
           {/* Activity feed */}
           {pipelineEvents.length > 0 && (
