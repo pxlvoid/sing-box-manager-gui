@@ -35,6 +35,7 @@ type UnifiedNode struct {
 	CreatedAt           time.Time              `json:"created_at"`
 	PromotedAt          *time.Time             `json:"promoted_at,omitempty"`
 	ArchivedAt          *time.Time             `json:"archived_at,omitempty"`
+	IsFavorite          bool                   `json:"is_favorite"`
 }
 
 // ToNode converts UnifiedNode to the basic Node type used by config builder

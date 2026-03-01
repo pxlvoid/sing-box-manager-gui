@@ -1,8 +1,9 @@
 import { useState, useRef, useEffect, useMemo } from 'react';
 import { Card, CardBody, Button, Chip, Tooltip, Popover, PopoverTrigger, PopoverContent, ScrollShadow, Modal, ModalContent, ModalHeader, ModalBody, ModalFooter, Checkbox, CheckboxGroup } from '@nextui-org/react';
-import { Globe, RefreshCw, Search, ChevronDown, Check, X, ArrowUp, ArrowDown, ShieldBan } from 'lucide-react';
+import { Globe, RefreshCw, Search, ChevronDown, Check, X, ArrowUp, ArrowDown, ShieldBan, Star } from 'lucide-react';
 import type { ActiveProxyProps } from './ActiveProxyTypes';
 import { siteErrorLabel, countryOptions } from '../features/nodes/types';
+import { useStore } from '../store';
 
 type SortField = 'delay' | 'site';
 type SortDir = 'asc' | 'desc';
@@ -17,12 +18,16 @@ export default function ActiveProxyBlock({
   getLatestMeasuredDelay, getSiteCheckSummary, getGeoLabel,
   delayChipColor, siteChipColor, formatDelayLabel,
   settings, updateSettings,
+  isFavorite, onToggleFavorite,
 }: ActiveProxyProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [sort, setSort] = useState<SortState>(null);
+  const [showFavOnly, setShowFavOnly] = useState(false);
   const searchInputRef = useRef<HTMLInputElement>(null);
   const [blockModalOpen, setBlockModalOpen] = useState(false);
   const [blockedDraft, setBlockedDraft] = useState<string[]>([]);
+  const countryGroups = useStore((s) => s.countryGroups);
+  const fetchCountryGroups = useStore((s) => s.fetchCountryGroups);
 
   useEffect(() => {
     if (isOpen) {
@@ -42,29 +47,40 @@ export default function ActiveProxyBlock({
   };
 
   const sortedOptions = useMemo(() => {
-    if (!sort) return filteredMainProxyOptions;
-    const list = [...filteredMainProxyOptions];
-    list.sort((a, b) => {
-      if (sort.field === 'delay') {
-        const da = getLatestMeasuredDelay(a);
-        const db = getLatestMeasuredDelay(b);
-        const va = da !== null && da > 0 ? da : Infinity;
-        const vb = db !== null && db > 0 ? db : Infinity;
+    let list = [...filteredMainProxyOptions];
+    if (showFavOnly) {
+      list = list.filter((tag) => isFavorite(tag));
+    }
+    if (sort) {
+      list.sort((a, b) => {
+        if (sort.field === 'delay') {
+          const da = getLatestMeasuredDelay(a);
+          const db = getLatestMeasuredDelay(b);
+          const va = da !== null && da > 0 ? da : Infinity;
+          const vb = db !== null && db > 0 ? db : Infinity;
+          return sort.dir === 'asc' ? va - vb : vb - va;
+        }
+        const sa = getSiteCheckSummary(a);
+        const sb = getSiteCheckSummary(b);
+        const va = sa ? (sa.failed > 0 ? Infinity : sa.avg) : Infinity;
+        const vb = sb ? (sb.failed > 0 ? Infinity : sb.avg) : Infinity;
         return sort.dir === 'asc' ? va - vb : vb - va;
-      }
-      const sa = getSiteCheckSummary(a);
-      const sb = getSiteCheckSummary(b);
-      const va = sa ? (sa.failed > 0 ? Infinity : sa.avg) : Infinity;
-      const vb = sb ? (sb.failed > 0 ? Infinity : sb.avg) : Infinity;
-      return sort.dir === 'asc' ? va - vb : vb - va;
-    });
+      });
+    }
     return list;
-  }, [filteredMainProxyOptions, sort, getLatestMeasuredDelay, getSiteCheckSummary]);
+  }, [filteredMainProxyOptions, sort, showFavOnly, isFavorite, getLatestMeasuredDelay, getSiteCheckSummary]);
 
   const blockedCount = settings?.blocked_countries?.length ?? 0;
 
+  const countMap = useMemo(() => {
+    const m: Record<string, number> = {};
+    for (const g of countryGroups) m[g.code] = g.node_count;
+    return m;
+  }, [countryGroups]);
+
   const openBlockModal = () => {
     setBlockedDraft(settings?.blocked_countries ?? []);
+    fetchCountryGroups();
     setBlockModalOpen(true);
   };
 
@@ -259,6 +275,19 @@ export default function ActiveProxyBlock({
                   </button>
                 )}
                 <div className="flex items-center gap-1 shrink-0">
+                  <button
+                    type="button"
+                    onClick={() => setShowFavOnly((v) => !v)}
+                    className={`inline-flex items-center gap-0.5 px-2 py-0.5 rounded-full text-[11px] font-medium cursor-pointer
+                      transition-all border
+                      ${showFavOnly
+                        ? 'border-yellow-400 bg-yellow-50 dark:bg-yellow-50/15 text-yellow-600'
+                        : 'border-default-200 dark:border-default-100 text-default-500 hover:border-default-300 hover:text-default-700'
+                      }`}
+                  >
+                    <Star className={`w-2.5 h-2.5 ${showFavOnly ? 'fill-yellow-400' : ''}`} />
+                    Fav
+                  </button>
                   <SortChip field="delay" label="TCP" />
                   <SortChip field="site" label="Sites" />
                 </div>
@@ -314,7 +343,16 @@ export default function ActiveProxyBlock({
                             )}
                           </div>
 
-                          {/* Metrics with tooltips */}
+                          {/* Favorite + Metrics */}
+                          <div className="flex items-center gap-1 shrink-0" onClick={(e) => e.stopPropagation()}>
+                            <button
+                              type="button"
+                              onClick={(e) => { e.stopPropagation(); onToggleFavorite(item); }}
+                              className="p-0.5 cursor-pointer hover:scale-110 transition-transform"
+                            >
+                              <Star className={`w-3.5 h-3.5 ${isFavorite(item) ? 'fill-yellow-400 text-yellow-400' : 'text-default-300 hover:text-yellow-400'}`} />
+                            </button>
+                          </div>
                           <div className="flex items-center gap-1 shrink-0" onClick={(e) => e.stopPropagation()}>
                             {itemDelay !== null && (
                               <Tooltip content={`TCP delay: ${formatDelayLabel(itemDelay)}`} placement="left" delay={200}>
@@ -361,7 +399,7 @@ export default function ActiveProxyBlock({
               <div className="grid grid-cols-2 gap-1">
                 {countryOptions.filter(c => c.code !== 'UNKNOWN').map((c) => (
                   <Checkbox key={c.code} value={c.code} size="sm">
-                    <span className="text-sm">{c.emoji} {c.name}</span>
+                    <span className="text-sm">{c.emoji} {c.name} <span className="text-default-400">({countMap[c.code] ?? 0})</span></span>
                   </Checkbox>
                 ))}
               </div>

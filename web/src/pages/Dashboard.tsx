@@ -89,6 +89,7 @@ export default function Dashboard() {
     fetchProxyGroups, switchProxy, runVerification, runVerificationForTags, fetchVerificationStatus,
     startVerificationScheduler, stopVerificationScheduler,
     fetchLatestMeasurements, fetchPipelineEvents,
+    toggleFavorite,
   } = useStore();
 
   const activityFeedRef = useRef<HTMLDivElement>(null);
@@ -564,6 +565,18 @@ export default function Dashboard() {
     || (mainProxyGroup?.now || '').toLowerCase() === 'auto';
   const activeProxyRefreshing = verificationRunning;
   const qrImageUrl = qrLink ? `https://quickchart.io/qr?text=${encodeURIComponent(qrLink)}&size=260` : '';
+
+  const isProxyFavorite = useCallback((tag: string): boolean => {
+    const node = knownNodesByTag.get(tag);
+    return !!node?.is_favorite;
+  }, [knownNodesByTag]);
+
+  const handleToggleProxyFavorite = useCallback((tag: string) => {
+    const node = knownNodesByTag.get(tag);
+    if (node) {
+      toggleFavorite(node.id);
+    }
+  }, [knownNodesByTag, toggleFavorite]);
 
   const getProxyDisplayTag = (tag: string): string => {
     const node = knownNodesByTag.get(tag);
@@ -1188,6 +1201,8 @@ export default function Dashboard() {
         formatDelayLabel={formatDelayLabel}
         settings={settings}
         updateSettings={useStore.getState().updateSettings}
+        isFavorite={isProxyFavorite}
+        onToggleFavorite={handleToggleProxyFavorite}
       />
 
       {/* Proxy Links Modal */}

@@ -74,6 +74,7 @@ export default function Subscriptions() {
     unarchiveNode,
     bulkPromoteNodes,
     bulkArchiveNodes,
+    toggleFavorite,
     deleteFilter,
     toggleFilter,
     healthResults,
@@ -345,6 +346,7 @@ export default function Subscriptions() {
             onArchive={archiveNode}
             onDelete={(id) => { if (confirm('Delete this node?')) deleteNode(id); }}
             onEdit={handleEditNode}
+            onToggleFavorite={toggleFavorite}
             onBulkPromote={bulkPromoteNodes}
             onBulkArchive={bulkArchiveNodes}
           />
@@ -364,6 +366,7 @@ export default function Subscriptions() {
             onDemote={demoteNode}
             onDelete={(id) => { if (confirm('Delete this node?')) deleteNode(id); }}
             onEdit={handleEditNode}
+            onToggleFavorite={toggleFavorite}
           />
         </Tab>
 
@@ -373,6 +376,7 @@ export default function Subscriptions() {
             geoData={geoData}
             onUnarchive={unarchiveNode}
             onDelete={(id) => { if (confirm('Delete this node?')) deleteNode(id); }}
+            onToggleFavorite={toggleFavorite}
           />
         </Tab>
 

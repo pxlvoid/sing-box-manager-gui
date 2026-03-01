@@ -1,4 +1,4 @@
-import { useEffect, useState, useRef, useCallback } from 'react';
+import { useEffect, useState, useRef, useCallback, useMemo } from 'react';
 import { Accordion, AccordionItem, Input, Button, Switch, Chip, Modal, ModalContent, ModalHeader, ModalBody, ModalFooter, Select, SelectItem, Progress, Textarea, useDisclosure, Checkbox, CheckboxGroup } from '@nextui-org/react';
 import { Download, Upload, Terminal, CheckCircle, AlertCircle, Plus, Pencil, Trash2, Server, Eye, EyeOff, Copy, RefreshCw, Wifi, Undo2, Loader2, Check, Database, HardDriveDownload, HardDriveUpload, ShieldBan } from 'lucide-react';
 import { useStore } from '../store';
@@ -71,6 +71,8 @@ function UndoButton({ field, formData: _formData, previousSettings, settings, on
 
 export default function Settings() {
   const { settings, previousSettings, fetchSettings, updateSettings } = useStore();
+  const countryGroups = useStore((s) => s.countryGroups);
+  const fetchCountryGroups = useStore((s) => s.fetchCountryGroups);
   const [formData, setFormData] = useState<SettingsType | null>(null);
   const [daemonStatus, setDaemonStatus] = useState<{ installed: boolean; running: boolean; supported: boolean } | null>(null);
 
@@ -94,6 +96,13 @@ export default function Settings() {
   const [dbImporting, setDbImporting] = useState(false);
   const [dbExportSize, setDbExportSize] = useState<string>('');
   const dbFileInputRef = useRef<HTMLInputElement>(null);
+
+  // Country groups count map
+  const countMap = useMemo(() => {
+    const m: Record<string, number> = {};
+    for (const g of countryGroups) m[g.code] = g.node_count;
+    return m;
+  }, [countryGroups]);
 
   // Secret visibility state
   const [showSecret, setShowSecret] = useState(false);
@@ -123,6 +132,7 @@ export default function Settings() {
 
   useEffect(() => {
     fetchSettings();
+    fetchCountryGroups();
     fetchDaemonStatus();
     fetchKernelInfo();
     fetchSystemHosts();
@@ -1142,7 +1152,7 @@ export default function Settings() {
                   <div className="grid grid-cols-2 sm:grid-cols-3 gap-1">
                     {countryOptions.filter(c => c.code !== 'UNKNOWN').map((c) => (
                       <Checkbox key={c.code} value={c.code} size="sm">
-                        <span className="text-sm">{c.emoji} {c.name}</span>
+                        <span className="text-sm">{c.emoji} {c.name} <span className="text-default-400">({countMap[c.code] ?? 0})</span></span>
                       </Checkbox>
                     ))}
                   </div>

@@ -35,6 +35,7 @@ func (s *SQLiteStore) migrate() error {
 		s.migrateV8,
 		s.migrateV9,
 		s.migrateV10,
+		s.migrateV11,
 	}
 
 	for i, m := range migrations {
@@ -791,6 +792,27 @@ func (s *SQLiteStore) migrateV10() error {
 	if !hasBlockedCountries {
 		if _, err := tx.Exec(`ALTER TABLE settings ADD COLUMN blocked_countries_json TEXT NOT NULL DEFAULT '[]'`); err != nil {
 			return err
+		}
+	}
+
+	return tx.Commit()
+}
+
+// migrateV11 adds is_favorite column to nodes.
+func (s *SQLiteStore) migrateV11() error {
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	hasFavorite, err := tableHasColumn(tx, "nodes", "is_favorite")
+	if err != nil {
+		return err
+	}
+	if !hasFavorite {
+		if _, err := tx.Exec(`ALTER TABLE nodes ADD COLUMN is_favorite INTEGER NOT NULL DEFAULT 0`); err != nil {
+			return fmt.Errorf("add nodes.is_favorite: %w", err)
 		}
 	}
 

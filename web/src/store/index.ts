@@ -120,6 +120,7 @@ export interface UnifiedNode {
   created_at: string;
   promoted_at?: string;
   archived_at?: string;
+  is_favorite?: boolean;
 }
 
 export interface NodeCounts {
@@ -430,6 +431,7 @@ interface AppState {
   demoteNode: (id: number) => Promise<void>;
   archiveNode: (id: number) => Promise<void>;
   unarchiveNode: (id: number) => Promise<void>;
+  toggleFavorite: (id: number) => Promise<void>;
   bulkPromoteNodes: (ids: number[]) => Promise<void>;
   bulkArchiveNodes: (ids: number[]) => Promise<void>;
 
@@ -913,6 +915,31 @@ export const useStore = create<AppState>((set, get) => ({
       toast.success('Node unarchived');
     } catch (error: any) {
       toast.error(error.response?.data?.error || 'Failed to unarchive node');
+    }
+  },
+
+  toggleFavorite: async (id: number) => {
+    const { pendingNodes, verifiedNodes, archivedNodes } = get();
+    const toggle = (nodes: UnifiedNode[]) =>
+      nodes.map((n) => (n.id === id ? { ...n, is_favorite: !n.is_favorite } : n));
+    set({
+      pendingNodes: toggle(pendingNodes),
+      verifiedNodes: toggle(verifiedNodes),
+      archivedNodes: toggle(archivedNodes),
+    });
+    const allNodes = [...pendingNodes, ...verifiedNodes, ...archivedNodes];
+    const node = allNodes.find((n) => n.id === id);
+    const newFav = !(node?.is_favorite);
+    try {
+      await unifiedNodeApi.toggleFavorite(id, newFav);
+    } catch (error: any) {
+      // rollback
+      set({
+        pendingNodes: toggle(get().pendingNodes),
+        verifiedNodes: toggle(get().verifiedNodes),
+        archivedNodes: toggle(get().archivedNodes),
+      });
+      toast.error(error.response?.data?.error || 'Failed to toggle favorite');
     }
   },
 

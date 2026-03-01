@@ -11,7 +11,7 @@ import (
 )
 
 const nodeColumns = `id, tag, internal_tag, display_name, source_tag, type, server, server_port, country, country_emoji, extra_json,
-	status, source, group_tag, consecutive_failures, last_checked_at, created_at, promoted_at, archived_at`
+	status, source, group_tag, consecutive_failures, last_checked_at, created_at, promoted_at, archived_at, is_favorite`
 
 func normalizeUnifiedNodeForPersistence(node *UnifiedNode) {
 	node.Tag = strings.TrimSpace(node.Tag)
@@ -330,7 +330,7 @@ func scanUnifiedNodeFromRows(rows *sql.Rows) (UnifiedNode, error) {
 
 	err := rows.Scan(&n.ID, &n.Tag, &n.InternalTag, &n.DisplayName, &n.SourceTag, &n.Type, &n.Server, &n.ServerPort, &n.Country, &n.CountryEmoji,
 		&extraJSON, &status, &n.Source, &n.GroupTag, &n.ConsecutiveFailures,
-		&lastCheckedAt, &createdAt, &promotedAt, &archivedAt)
+		&lastCheckedAt, &createdAt, &promotedAt, &archivedAt, &n.IsFavorite)
 	if err != nil {
 		return n, err
 	}
@@ -361,7 +361,7 @@ func scanUnifiedNodeRow(row *sql.Row) *UnifiedNode {
 
 	err := row.Scan(&n.ID, &n.Tag, &n.InternalTag, &n.DisplayName, &n.SourceTag, &n.Type, &n.Server, &n.ServerPort, &n.Country, &n.CountryEmoji,
 		&extraJSON, &status, &n.Source, &n.GroupTag, &n.ConsecutiveFailures,
-		&lastCheckedAt, &createdAt, &promotedAt, &archivedAt)
+		&lastCheckedAt, &createdAt, &promotedAt, &archivedAt, &n.IsFavorite)
 	if err != nil {
 		return nil
 	}
@@ -381,4 +381,20 @@ func scanUnifiedNodeRow(row *sql.Row) *UnifiedNode {
 		json.Unmarshal([]byte(extraJSON.String), &n.Extra)
 	}
 	return &n
+}
+
+func (s *SQLiteStore) SetNodeFavorite(id int64, favorite bool) error {
+	val := 0
+	if favorite {
+		val = 1
+	}
+	res, err := s.db.Exec(`UPDATE nodes SET is_favorite = ? WHERE id = ?`, val, id)
+	if err != nil {
+		return err
+	}
+	n, _ := res.RowsAffected()
+	if n == 0 {
+		return fmt.Errorf("node not found: %d", id)
+	}
+	return nil
 }

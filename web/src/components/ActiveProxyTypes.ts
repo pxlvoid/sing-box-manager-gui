@@ -23,4 +23,6 @@ export interface ActiveProxyProps {
   formatDelayLabel: (delay: number | null) => string;
   settings: Settings | null;
   updateSettings: (settings: Settings) => Promise<void>;
+  isFavorite: (tag: string) => boolean;
+  onToggleFavorite: (tag: string) => void;
 }

@@ -49,6 +49,7 @@ type Store interface {
 	UnarchiveNode(id int64) error
 	IncrementConsecutiveFailures(id int64) (int, error)
 	ResetConsecutiveFailures(id int64) error
+	SetNodeFavorite(id int64, favorite bool) error
 	GetNodeCounts() NodeCounts
 
 	// Verification Logs

@@ -15,7 +15,7 @@ import {
   Button,
   Tooltip,
 } from '@nextui-org/react';
-import { Search, Activity, Trash2, ArrowUpCircle, Archive, Pencil } from 'lucide-react';
+import { Search, Activity, Trash2, ArrowUpCircle, Archive, Pencil, Star } from 'lucide-react';
 import type { UnifiedNode, NodeHealthResult, HealthCheckMode, NodeSiteCheckResult, GeoData } from '../../../store';
 import { nodeDisplayTag, nodeInternalTag, nodeSourceTag } from '../../../store';
 import { spKey, SITE_CHECK_TARGETS } from '../types';
@@ -49,6 +49,7 @@ interface PendingNodesTabProps {
   onArchive: (id: number) => void;
   onDelete: (id: number) => void;
   onEdit: (node: UnifiedNode) => void;
+  onToggleFavorite: (id: number) => void;
   onBulkPromote: (ids: number[]) => void;
   onBulkArchive: (ids: number[]) => void;
 }
@@ -67,6 +68,7 @@ export default function PendingNodesTab({
   onArchive,
   onDelete,
   onEdit,
+  onToggleFavorite,
   onBulkPromote,
   onBulkArchive,
 }: PendingNodesTabProps) {
@@ -361,6 +363,16 @@ export default function PendingNodesTab({
                   </TableCell>
                   <TableCell>
                     <div className="flex items-center gap-1">
+                      <Tooltip content={node.is_favorite ? "Remove from favorites" : "Add to favorites"}>
+                        <Button
+                          isIconOnly
+                          size="sm"
+                          variant="light"
+                          onPress={() => onToggleFavorite(node.id)}
+                        >
+                          <Star className={`w-4 h-4 ${node.is_favorite ? 'fill-yellow-400 text-yellow-400' : ''}`} />
+                        </Button>
+                      </Tooltip>
                       <Tooltip content="Health Check">
                         <Button
                           isIconOnly

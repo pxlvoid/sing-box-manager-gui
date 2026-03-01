@@ -14,7 +14,7 @@ import {
   Button,
   Tooltip,
 } from '@nextui-org/react';
-import { Search, Trash2, RotateCcw, Archive } from 'lucide-react';
+import { Search, Trash2, RotateCcw, Archive, Star } from 'lucide-react';
 import type { UnifiedNode, GeoData } from '../../../store';
 import { nodeDisplayTag, nodeSourceTag } from '../../../store';
 import MobileNodeCard from '../components/MobileNodeCard';
@@ -25,6 +25,7 @@ interface ArchivedNodesTabProps {
   geoData: Record<string, GeoData>;
   onUnarchive: (id: number) => void;
   onDelete: (id: number) => void;
+  onToggleFavorite: (id: number) => void;
 }
 
 const PAGE_SIZE = 50;
@@ -38,7 +39,7 @@ function countryCodeToEmoji(code: string): string {
   );
 }
 
-export default function ArchivedNodesTab({ nodes, geoData, onUnarchive, onDelete }: ArchivedNodesTabProps) {
+export default function ArchivedNodesTab({ nodes, geoData, onUnarchive, onDelete, onToggleFavorite }: ArchivedNodesTabProps) {
   const isMobile = useIsMobile();
   const [searchQuery, setSearchQuery] = useState('');
   const [page, setPage] = useState(1);
@@ -196,6 +197,16 @@ export default function ArchivedNodesTab({ nodes, geoData, onUnarchive, onDelete
                 </TableCell>
                 <TableCell>
                   <div className="flex items-center gap-1">
+                    <Tooltip content={node.is_favorite ? "Remove from favorites" : "Add to favorites"}>
+                      <Button
+                        isIconOnly
+                        size="sm"
+                        variant="light"
+                        onPress={() => onToggleFavorite(node.id)}
+                      >
+                        <Star className={`w-4 h-4 ${node.is_favorite ? 'fill-yellow-400 text-yellow-400' : ''}`} />
+                      </Button>
+                    </Tooltip>
                     <Tooltip content="Unarchive">
                       <Button
                         isIconOnly

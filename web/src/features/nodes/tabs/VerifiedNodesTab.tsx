@@ -14,7 +14,7 @@ import {
   Button,
   Tooltip,
 } from '@nextui-org/react';
-import { Search, Activity, Trash2, ArrowDownCircle, Pencil } from 'lucide-react';
+import { Search, Activity, Trash2, ArrowDownCircle, Pencil, Star } from 'lucide-react';
 import type { UnifiedNode, GeoData } from '../../../store';
 import type { NodeHealthResult, HealthCheckMode, NodeSiteCheckResult } from '../../../store';
 import { nodeDisplayTag, nodeInternalTag, nodeSourceTag } from '../../../store';
@@ -47,6 +47,7 @@ interface VerifiedNodesTabProps {
   onDemote: (id: number) => void;
   onDelete: (id: number) => void;
   onEdit: (node: UnifiedNode) => void;
+  onToggleFavorite: (id: number) => void;
 }
 
 export default function VerifiedNodesTab({
@@ -62,6 +63,7 @@ export default function VerifiedNodesTab({
   onDemote,
   onDelete,
   onEdit,
+  onToggleFavorite,
 }: VerifiedNodesTabProps) {
   const isMobile = useIsMobile();
   const [searchQuery, setSearchQuery] = useState('');
@@ -248,6 +250,16 @@ export default function VerifiedNodesTab({
                   </TableCell>
                   <TableCell>
                     <div className="flex items-center gap-1">
+                      <Tooltip content={node.is_favorite ? "Remove from favorites" : "Add to favorites"}>
+                        <Button
+                          isIconOnly
+                          size="sm"
+                          variant="light"
+                          onPress={() => onToggleFavorite(node.id)}
+                        >
+                          <Star className={`w-4 h-4 ${node.is_favorite ? 'fill-yellow-400 text-yellow-400' : ''}`} />
+                        </Button>
+                      </Tooltip>
                       <Tooltip content="Health check">
                         <Button
                           isIconOnly

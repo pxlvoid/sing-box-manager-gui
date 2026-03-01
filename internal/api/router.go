@@ -314,6 +314,7 @@ func (s *Server) setupRoutes() {
 		api.POST("/nodes/unified/:id/demote", s.demoteUnifiedNode)
 		api.POST("/nodes/unified/:id/archive", s.archiveUnifiedNode)
 		api.POST("/nodes/unified/:id/unarchive", s.unarchiveUnifiedNode)
+		api.POST("/nodes/unified/:id/favorite", s.toggleNodeFavorite)
 		api.POST("/nodes/unified/bulk-promote", s.bulkPromoteNodes)
 		api.POST("/nodes/unified/bulk-archive", s.bulkArchiveNodes)
 		api.GET("/nodes/unified/counts", s.getNodeCounts)
@@ -3138,6 +3139,27 @@ func (s *Server) unarchiveUnifiedNode(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"message": "Unarchived to pending"})
+}
+
+func (s *Server) toggleNodeFavorite(c *gin.Context) {
+	idStr := c.Param("id")
+	id, err := strconv.ParseInt(idStr, 10, 64)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid id"})
+		return
+	}
+	var req struct {
+		Favorite bool `json:"favorite"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	if err := s.store.SetNodeFavorite(id, req.Favorite); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"message": "ok"})
 }
 
 func (s *Server) bulkPromoteNodes(c *gin.Context) {
