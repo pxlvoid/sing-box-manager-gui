@@ -14,11 +14,12 @@ import (
 )
 
 const (
-	watchdogInterval         = 45 * time.Second
-	watchdogFailThreshold    = 2
-	watchdogCooldownDuration = 45 * time.Minute
-	watchdogProbeTimeoutMs   = 5000
-	watchdogProbeAttempts    = 3
+	watchdogInterval          = 45 * time.Second
+	watchdogFailThreshold     = 2
+	watchdogCooldownDuration  = 45 * time.Minute
+	watchdogProbeTimeoutMs    = 5000
+	watchdogProbeAttempts     = 3
+	autoProxyPipelineInterval = 1 * time.Minute
 )
 
 var watchdogTargets = []string{
@@ -39,6 +40,15 @@ func (s *Server) startActiveProxyWatchdog() {
 
 		for range ticker.C {
 			s.runActiveProxyWatchdog()
+		}
+	}()
+
+	go func() {
+		ticker := time.NewTicker(autoProxyPipelineInterval)
+		defer ticker.Stop()
+
+		for range ticker.C {
+			s.runAutoProxyPipelineTick()
 		}
 	}()
 }
@@ -134,6 +144,43 @@ func (s *Server) runActiveProxyWatchdog() {
 	}
 }
 
+func (s *Server) runAutoProxyPipelineTick() {
+	if !s.processManager.IsRunning() {
+		return
+	}
+
+	settings := s.store.GetSettings()
+	if settings == nil || settings.ClashAPIPort == 0 {
+		return
+	}
+	if storage.NormalizeProxyMode(settings.ProxyMode) == storage.ProxyModeDirect {
+		return
+	}
+
+	proxies, err := s.fetchClashProxiesSnapshot()
+	if err != nil {
+		return
+	}
+	root, ok := proxies["Proxy"]
+	if !ok || strings.TrimSpace(root.Now) == "" {
+		return
+	}
+	if !isAutoProxySelection(proxies, root) {
+		return
+	}
+
+	activeLeaf := strings.TrimSpace(resolveProxyLeaf(proxies, root.Now))
+	if activeLeaf == "" || strings.EqualFold(activeLeaf, "DIRECT") || strings.EqualFold(activeLeaf, "REJECT") {
+		return
+	}
+	if p, ok := proxies[activeLeaf]; ok && isProxyGroupType(p.Type) {
+		return
+	}
+
+	logger.Printf("[watchdog] auto-proxy pipeline tick: verifying %s", activeLeaf)
+	s.RunVerificationForTags([]string{activeLeaf})
+}
+
 func (s *Server) fetchClashProxiesSnapshot() (map[string]clashProxySnapshot, error) {
 	resp, err := s.clashAPIRequest("GET", "/proxies", nil)
 	if err != nil {
@@ -168,6 +215,21 @@ func resolveProxyLeaf(proxies map[string]clashProxySnapshot, start string) strin
 		current = strings.TrimSpace(entry.Now)
 	}
 	return current
+}
+
+func isAutoProxySelection(proxies map[string]clashProxySnapshot, root clashProxySnapshot) bool {
+	selected := strings.TrimSpace(root.Now)
+	if selected == "" {
+		return false
+	}
+	if strings.EqualFold(selected, "Auto") {
+		return true
+	}
+	selectedProxy, ok := proxies[selected]
+	if !ok {
+		return false
+	}
+	return strings.EqualFold(strings.TrimSpace(selectedProxy.Type), "urltest")
 }
 
 func isProxyGroupType(proxyType string) bool {

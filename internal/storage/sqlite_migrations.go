@@ -778,8 +778,23 @@ func (s *SQLiteStore) migrateV9() error {
 
 // migrateV10 adds blocked_countries_json column to settings.
 func (s *SQLiteStore) migrateV10() error {
-	_, err := s.db.Exec(`ALTER TABLE settings ADD COLUMN blocked_countries_json TEXT NOT NULL DEFAULT '[]'`)
-	return err
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	hasBlockedCountries, err := tableHasColumn(tx, "settings", "blocked_countries_json")
+	if err != nil {
+		return err
+	}
+	if !hasBlockedCountries {
+		if _, err := tx.Exec(`ALTER TABLE settings ADD COLUMN blocked_countries_json TEXT NOT NULL DEFAULT '[]'`); err != nil {
+			return err
+		}
+	}
+
+	return tx.Commit()
 }
 
 func tableHasColumn(tx *sql.Tx, tableName, columnName string) (bool, error) {

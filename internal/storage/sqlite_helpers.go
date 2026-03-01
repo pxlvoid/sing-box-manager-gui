@@ -2,6 +2,7 @@ package storage
 
 import (
 	"encoding/json"
+	"fmt"
 	"strings"
 )
 
@@ -133,7 +134,7 @@ func (s *SQLiteStore) GetAllNodes() []Node {
 	if nodes == nil {
 		nodes = []Node{}
 	}
-	return nodes
+	return s.enrichNodesWithGeoCountry(nodes)
 }
 
 // GetAllNodesIncludeDisabled returns all nodes regardless of status.
@@ -157,20 +158,57 @@ func (s *SQLiteStore) GetAllNodesIncludeDisabled() []Node {
 	return nodes
 }
 
+// enrichNodesWithGeoCountry overrides node country from geo_data when the latest geo result is successful.
+func (s *SQLiteStore) enrichNodesWithGeoCountry(nodes []Node) []Node {
+	if len(nodes) == 0 {
+		return nodes
+	}
+
+	keys := make([]string, 0, len(nodes))
+	seen := make(map[string]struct{}, len(nodes))
+	for _, n := range nodes {
+		key := fmt.Sprintf("%s:%d", n.Server, n.ServerPort)
+		if _, ok := seen[key]; ok {
+			continue
+		}
+		seen[key] = struct{}{}
+		keys = append(keys, key)
+	}
+
+	geoMap, err := s.GetGeoDataBulk(keys)
+	if err != nil || len(geoMap) == 0 {
+		return nodes
+	}
+
+	for i := range nodes {
+		key := fmt.Sprintf("%s:%d", nodes[i].Server, nodes[i].ServerPort)
+		geo := geoMap[key]
+		if geo == nil || geo.Status != "success" {
+			continue
+		}
+		countryCode := strings.ToUpper(strings.TrimSpace(geo.CountryCode))
+		if countryCode == "" {
+			continue
+		}
+		nodes[i].Country = countryCode
+		nodes[i].CountryEmoji = GetCountryEmoji(countryCode)
+	}
+
+	return nodes
+}
+
 // GetNodesByCountry returns verified nodes for a country code.
 func (s *SQLiteStore) GetNodesByCountry(countryCode string) []Node {
-	rows, err := s.db.Query(`SELECT tag, internal_tag, display_name, source_tag, type, server, server_port, country, country_emoji, extra_json
-		FROM nodes WHERE status = 'verified' AND country = ?`, countryCode)
-	if err != nil {
+	target := strings.ToUpper(strings.TrimSpace(countryCode))
+	if target == "" {
 		return []Node{}
 	}
-	defer rows.Close()
 
-	var nodes []Node
-	for rows.Next() {
-		n := scanNodeRow(rows)
-		if n != nil {
-			nodes = append(nodes, *n)
+	all := s.GetAllNodes()
+	nodes := make([]Node, 0, len(all))
+	for _, n := range all {
+		if strings.EqualFold(n.Country, target) {
+			nodes = append(nodes, n)
 		}
 	}
 	if nodes == nil {
@@ -183,16 +221,12 @@ func (s *SQLiteStore) GetNodesByCountry(countryCode string) []Node {
 func (s *SQLiteStore) GetCountryGroups() []CountryGroup {
 	countryCount := make(map[string]int)
 
-	rows, err := s.db.Query(`SELECT country, COUNT(*) FROM nodes WHERE status = 'verified' AND country != '' GROUP BY country`)
-	if err == nil {
-		defer rows.Close()
-		for rows.Next() {
-			var code string
-			var cnt int
-			if rows.Scan(&code, &cnt) == nil {
-				countryCount[code] += cnt
-			}
+	for _, n := range s.GetAllNodes() {
+		code := strings.ToUpper(strings.TrimSpace(n.Country))
+		if code == "" {
+			continue
 		}
+		countryCount[code]++
 	}
 
 	var groups []CountryGroup
