@@ -434,6 +434,37 @@ func (s *SQLiteStore) GetRecentTrafficClients(limit int, lookback time.Duration)
 		WITH latest_sample AS (
 			SELECT id AS sample_id FROM traffic_samples ORDER BY timestamp DESC LIMIT 1
 		),
+		-- Compute per-client lifetime traffic using delta method.
+		-- This correctly handles server restarts where cumulative counters reset.
+		client_deltas AS (
+			SELECT
+				source_ip,
+				upload_bytes,
+				download_bytes,
+				LAG(upload_bytes) OVER (PARTITION BY source_ip ORDER BY timestamp ASC, id ASC) AS prev_upload,
+				LAG(download_bytes) OVER (PARTITION BY source_ip ORDER BY timestamp ASC, id ASC) AS prev_download
+			FROM traffic_clients
+		),
+		lifetime_traffic AS (
+			SELECT
+				source_ip,
+				SUM(
+					CASE
+						WHEN prev_upload IS NULL THEN upload_bytes
+						WHEN upload_bytes >= prev_upload THEN upload_bytes - prev_upload
+						ELSE upload_bytes
+					END
+				) AS total_upload,
+				SUM(
+					CASE
+						WHEN prev_download IS NULL THEN download_bytes
+						WHEN download_bytes >= prev_download THEN download_bytes - prev_download
+						ELSE download_bytes
+					END
+				) AS total_download
+			FROM client_deltas
+			GROUP BY source_ip
+		),
 		ranked AS (
 			SELECT
 				tc.source_ip,
@@ -455,13 +486,14 @@ func (s *SQLiteStore) GetRecentTrafficClients(limit int, lookback time.Duration)
 			r.timestamp,
 			CASE WHEN r.sample_id = (SELECT sample_id FROM latest_sample) THEN 1 ELSE 0 END AS online,
 			r.active_connections,
-			r.upload_bytes,
-			r.download_bytes,
+			COALESCE(lt.total_upload, r.upload_bytes) AS upload_bytes,
+			COALESCE(lt.total_download, r.download_bytes) AS download_bytes,
 			r.duration_seconds,
 			r.proxy_chain,
 			r.host_count,
 			r.top_host
 		FROM ranked r
+		LEFT JOIN lifetime_traffic lt ON lt.source_ip = r.source_ip
 		WHERE r.rn = 1
 		ORDER BY online DESC, r.timestamp DESC
 		LIMIT ?`, cutoff, limit)
