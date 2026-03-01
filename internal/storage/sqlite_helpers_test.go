@@ -186,7 +186,19 @@ func TestGetCountryGroups_UsesGeoCountry(t *testing.T) {
 		Country:     "Japan",
 		CountryCode: "JP",
 	}); err != nil {
-		t.Fatalf("upsert geo data: %v", err)
+		t.Fatalf("upsert geo data for JP: %v", err)
+	}
+
+	if err := store.UpsertGeoData(GeoData{
+		Server:      "5.5.5.5",
+		ServerPort:  443,
+		NodeTag:     "node-group-fallback",
+		Timestamp:   time.Now(),
+		Status:      "success",
+		Country:     "France",
+		CountryCode: "FR",
+	}); err != nil {
+		t.Fatalf("upsert geo data for FR: %v", err)
 	}
 
 	groups := store.GetCountryGroups()
@@ -202,6 +214,6 @@ func TestGetCountryGroups_UsesGeoCountry(t *testing.T) {
 		t.Fatalf("FR count mismatch: got %d, want 1", counts["FR"])
 	}
 	if _, exists := counts["US"]; exists {
-		t.Fatalf("unexpected US group after geo override")
+		t.Fatalf("unexpected US group — should count from geo_data, not nodes table")
 	}
 }

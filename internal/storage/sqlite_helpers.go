@@ -217,16 +217,27 @@ func (s *SQLiteStore) GetNodesByCountry(countryCode string) []Node {
 	return nodes
 }
 
-// GetCountryGroups returns country groups with node counts (verified nodes only).
+// GetCountryGroups returns country groups with node counts based on geo_data table.
 func (s *SQLiteStore) GetCountryGroups() []CountryGroup {
 	countryCount := make(map[string]int)
 
-	for _, n := range s.GetAllNodes() {
-		code := strings.ToUpper(strings.TrimSpace(n.Country))
-		if code == "" {
+	rows, err := s.db.Query(`SELECT country_code, COUNT(*) FROM geo_data WHERE status = 'success' AND country_code != '' GROUP BY country_code`)
+	if err != nil {
+		return []CountryGroup{}
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var code string
+		var count int
+		if err := rows.Scan(&code, &count); err != nil {
 			continue
 		}
-		countryCount[code]++
+		code = strings.ToUpper(strings.TrimSpace(code))
+		if code == "" || code == "UNKNOWN" {
+			continue
+		}
+		countryCount[code] += count
 	}
 
 	var groups []CountryGroup
