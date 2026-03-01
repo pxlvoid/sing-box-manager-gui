@@ -932,6 +932,26 @@ func (s *Server) getMonitoringNodesTraffic(c *gin.Context) {
 	})
 }
 
+func (s *Server) getMonitoringClientResourcesHistory(c *gin.Context) {
+	sourceIP := strings.TrimSpace(c.Param("sourceIp"))
+	if sourceIP == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "sourceIp is required"})
+		return
+	}
+	limit := 500
+	if raw := strings.TrimSpace(c.Query("limit")); raw != "" {
+		if parsed, err := strconv.Atoi(raw); err == nil && parsed > 0 {
+			limit = parsed
+		}
+	}
+	resources, err := s.store.GetClientResourcesHistory(sourceIP, limit)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"data": resources})
+}
+
 func (s *Server) streamTrafficWebSocket(c *gin.Context) {
 	s.proxyClashWebSocket(c, "/traffic", "")
 }

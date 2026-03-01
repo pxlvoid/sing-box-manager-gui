@@ -90,6 +90,7 @@ type Store interface {
 	GetRecentTrafficClients(limit int, lookback time.Duration) ([]TrafficClientRecent, error)
 	GetLatestTrafficResources(limit int, sourceIP string) ([]ClientResourceSnapshot, error)
 	GetClientTrafficHistory(sourceIP string, limit int) ([]ClientTrafficSnapshot, error)
+	GetClientResourcesHistory(sourceIP string, limit int) ([]ClientResourceHistory, error)
 	GetTrafficLifetimeStats() (*TrafficLifetimeStats, error)
 	GetTrafficChainStats(limit int, lookback time.Duration) ([]TrafficChainStats, error)
 

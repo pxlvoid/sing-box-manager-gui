@@ -352,6 +352,7 @@ func (s *Server) setupRoutes() {
 		api.GET("/monitoring/clients/history", s.getMonitoringClientHistory)
 		api.GET("/monitoring/resources", s.getMonitoringResources)
 		api.GET("/monitoring/nodes", s.getMonitoringNodesTraffic)
+		api.GET("/monitoring/clients/:sourceIp/resources/history", s.getMonitoringClientResourcesHistory)
 		api.GET("/monitoring/ws/traffic", s.streamTrafficWebSocket)
 		api.GET("/monitoring/ws/connections", s.streamConnectionsWebSocket)
 

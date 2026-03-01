@@ -192,6 +192,8 @@ export const monitoringApi = {
     api.get('/monitoring/clients/history', { params: { source_ip: sourceIP, limit } }),
   getNodeTraffic: (limit: number = 100, hours: number = 0) =>
     api.get('/monitoring/nodes', { params: { limit, hours } }),
+  getClientResourcesHistory: (sourceIP: string, limit: number = 500) =>
+    api.get(`/monitoring/clients/${encodeURIComponent(sourceIP)}/resources/history`, { params: { limit } }),
 };
 
 // Database API

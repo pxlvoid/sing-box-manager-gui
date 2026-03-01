@@ -11,6 +11,7 @@ const Settings = lazy(() => import('./pages/Settings'));
 const Logs = lazy(() => import('./pages/Logs'));
 const Diagnostics = lazy(() => import('./pages/Diagnostics'));
 const Clients = lazy(() => import('./pages/Clients'));
+const ClientDetail = lazy(() => import('./pages/ClientDetail'));
 
 function AppInner() {
   useEventStream();
@@ -24,6 +25,7 @@ function AppInner() {
           <Route path="/rules" element={<Rules />} />
           <Route path="/logs" element={<Logs />} />
           <Route path="/clients" element={<Clients />} />
+          <Route path="/clients/:sourceIp" element={<ClientDetail />} />
           <Route path="/settings" element={<Settings />} />
           <Route path="/diagnostics" element={<Diagnostics />} />
         </Routes>

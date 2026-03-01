@@ -298,6 +298,16 @@ type TrafficChainStats struct {
 	DownloadBytes int64     `json:"download_bytes"`
 }
 
+// ClientResourceHistory represents lifetime traffic for a host accessed by a client.
+type ClientResourceHistory struct {
+	Host          string    `json:"host"`
+	TotalUpload   int64     `json:"total_upload"`
+	TotalDownload int64     `json:"total_download"`
+	ProxyChain    string    `json:"proxy_chain"`
+	FirstSeen     time.Time `json:"first_seen"`
+	LastSeen      time.Time `json:"last_seen"`
+}
+
 // HealthStats represents aggregated health statistics for a node
 type HealthStats struct {
 	TotalChecks   int     `json:"total_checks"`

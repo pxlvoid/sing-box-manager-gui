@@ -530,6 +530,77 @@ func (s *SQLiteStore) GetRecentTrafficClients(limit int, lookback time.Duration)
 	return clients, nil
 }
 
+func (s *SQLiteStore) GetClientResourcesHistory(sourceIP string, limit int) ([]ClientResourceHistory, error) {
+	if limit <= 0 {
+		limit = 500
+	}
+	if limit > 5000 {
+		limit = 5000
+	}
+
+	rows, err := s.db.Query(`
+		WITH resource_deltas AS (
+			SELECT
+				host,
+				upload_bytes,
+				download_bytes,
+				proxy_chain,
+				timestamp,
+				LAG(upload_bytes) OVER (PARTITION BY source_ip, host ORDER BY timestamp ASC, id ASC) AS prev_upload,
+				LAG(download_bytes) OVER (PARTITION BY source_ip, host ORDER BY timestamp ASC, id ASC) AS prev_download
+			FROM traffic_resources
+			WHERE source_ip = ?
+		)
+		SELECT
+			host,
+			SUM(
+				CASE
+					WHEN prev_upload IS NULL THEN upload_bytes
+					WHEN upload_bytes >= prev_upload THEN upload_bytes - prev_upload
+					ELSE upload_bytes
+				END
+			) AS total_upload,
+			SUM(
+				CASE
+					WHEN prev_download IS NULL THEN download_bytes
+					WHEN download_bytes >= prev_download THEN download_bytes - prev_download
+					ELSE download_bytes
+				END
+			) AS total_download,
+			MAX(proxy_chain) AS proxy_chain,
+			MIN(timestamp) AS first_seen,
+			MAX(timestamp) AS last_seen
+		FROM resource_deltas
+		GROUP BY host
+		ORDER BY (total_upload + total_download) DESC
+		LIMIT ?`, sourceIP, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	results := make([]ClientResourceHistory, 0, limit)
+	for rows.Next() {
+		var r ClientResourceHistory
+		if err := rows.Scan(
+			&r.Host,
+			&r.TotalUpload,
+			&r.TotalDownload,
+			&r.ProxyChain,
+			&r.FirstSeen,
+			&r.LastSeen,
+		); err != nil {
+			return nil, fmt.Errorf("scan client resources history row: %w", err)
+		}
+		results = append(results, r)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate client resources history rows: %w", err)
+	}
+
+	return results, nil
+}
+
 func (s *SQLiteStore) GetTrafficLifetimeStats() (*TrafficLifetimeStats, error) {
 	stats := &TrafficLifetimeStats{}
 

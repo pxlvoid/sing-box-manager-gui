@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { Card, CardBody, CardHeader, Chip, Spinner } from '@nextui-org/react';
 import { ChevronDown, ChevronRight, Clock, Users, Database } from 'lucide-react';
 import { Area, AreaChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
@@ -638,7 +639,15 @@ function ClientRow({
             : <ChevronRight className="w-4 h-4" />
           }
         </td>
-        <td className="py-2 pr-3 font-mono text-xs">{client.source_ip}</td>
+        <td className="py-2 pr-3 font-mono text-xs">
+          <Link
+            to={`/clients/${client.source_ip}`}
+            className="text-primary hover:underline"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {client.source_ip}
+          </Link>
+        </td>
         <td className="py-2 pr-3">
           <Chip size="sm" variant="flat" color={client.online ? 'success' : 'default'}>
             {client.online ? 'online' : 'offline'}
