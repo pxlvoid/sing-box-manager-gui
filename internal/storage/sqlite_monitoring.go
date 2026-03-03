@@ -762,7 +762,7 @@ func (s *SQLiteStore) GetTrafficChainStats(limit int, lookback time.Duration) ([
 	args = append(args, limit)
 
 	query := fmt.Sprintf(`
-		WITH ranked AS (
+		WITH client_deltas AS (
 			SELECT
 				source_ip,
 				COALESCE(NULLIF(TRIM(proxy_chain), ''), 'direct') AS proxy_chain,
@@ -771,17 +771,17 @@ func (s *SQLiteStore) GetTrafficChainStats(limit int, lookback time.Duration) ([
 				upload_bytes,
 				download_bytes,
 				LAG(upload_bytes) OVER (
-					PARTITION BY source_ip, COALESCE(NULLIF(TRIM(proxy_chain), ''), 'direct')
+					PARTITION BY source_ip
 					ORDER BY timestamp, id
 				) AS prev_upload,
 				LAG(download_bytes) OVER (
-					PARTITION BY source_ip, COALESCE(NULLIF(TRIM(proxy_chain), ''), 'direct')
+					PARTITION BY source_ip
 					ORDER BY timestamp, id
 				) AS prev_download
 			FROM traffic_clients
 			%s
 		),
-		deltas AS (
+		sample_deltas AS (
 			SELECT
 				proxy_chain,
 				timestamp,
@@ -795,14 +795,14 @@ func (s *SQLiteStore) GetTrafficChainStats(limit int, lookback time.Duration) ([
 					WHEN download_bytes >= prev_download THEN download_bytes - prev_download
 					ELSE download_bytes
 				END AS download_delta
-			FROM ranked
+			FROM client_deltas
 		)
 		SELECT
 			proxy_chain,
 			MAX(timestamp) AS last_seen,
 			COALESCE(SUM(upload_delta), 0) AS upload_bytes,
 			COALESCE(SUM(download_delta), 0) AS download_bytes
-		FROM deltas
+		FROM sample_deltas
 		GROUP BY proxy_chain
 		ORDER BY (COALESCE(SUM(upload_delta), 0) + COALESCE(SUM(download_delta), 0)) DESC, MAX(timestamp) DESC
 		LIMIT ?`, whereClause)
