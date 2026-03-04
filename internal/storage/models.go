@@ -280,6 +280,8 @@ type ClientResourceSnapshot struct {
 	ActiveConnections int       `json:"active_connections"`
 	UploadBytes       int64     `json:"upload_bytes"`
 	DownloadBytes     int64     `json:"download_bytes"`
+	UploadTotal       int64     `json:"-"`
+	DownloadTotal     int64     `json:"-"`
 	ProxyChain        string    `json:"proxy_chain"`
 }
 

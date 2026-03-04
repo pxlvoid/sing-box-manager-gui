@@ -37,6 +37,7 @@ func (s *SQLiteStore) migrate() error {
 		s.migrateV10,
 		s.migrateV11,
 		s.migrateV12,
+		s.migrateV13,
 	}
 
 	for i, m := range migrations {
@@ -938,6 +939,30 @@ func backfillMonitoringTimestampUnixTx(tx *sql.Tx, tableName string) error {
 	}
 
 	return nil
+}
+
+// migrateV13 adds precise cumulative host totals for traffic_resources.
+func (s *SQLiteStore) migrateV13() error {
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	for _, column := range []string{"upload_total", "download_total"} {
+		hasColumn, err := tableHasColumn(tx, "traffic_resources", column)
+		if err != nil {
+			return fmt.Errorf("check traffic_resources.%s: %w", column, err)
+		}
+		if hasColumn {
+			continue
+		}
+		if _, err := tx.Exec(`ALTER TABLE traffic_resources ADD COLUMN ` + column + ` INTEGER`); err != nil {
+			return fmt.Errorf("add traffic_resources.%s: %w", column, err)
+		}
+	}
+
+	return tx.Commit()
 }
 
 func tableHasColumn(tx *sql.Tx, tableName, columnName string) (bool, error) {

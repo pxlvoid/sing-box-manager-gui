@@ -154,6 +154,7 @@ type resourceAccumulator struct {
 // connPrevEntry stores per-connection bytes from the previous sample for delta computation.
 type connPrevEntry struct {
 	sourceIP string
+	host     string
 	upload   int64
 	download int64
 }
@@ -221,7 +222,7 @@ func (s *Server) collectAndPersistTrafficSample() {
 	clients, resources := aggregateConnections(snapshot.Connections, now)
 
 	// Apply cumulative per-client traffic using connection-level delta tracking.
-	s.applyCumulativeClientTraffic(snapshot.Connections, clients)
+	s.applyCumulativeTraffic(snapshot.Connections, clients, resources)
 
 	sample := storage.TrafficSample{
 		Timestamp:         now,
@@ -263,6 +264,7 @@ func (s *Server) computeTrafficRates(uploadTotal, downloadTotal int64, now time.
 		// Reset connection-level client tracker to avoid mixing segments.
 		s.connPrevBytes = nil
 		s.clientCumTraffic = nil
+		s.resourceCumTraffic = nil
 	}
 	if upDelta < 0 {
 		upDelta = 0
@@ -288,13 +290,13 @@ func (s *Server) resetTrafficRateState() {
 	s.lastTrafficDownTotal = 0
 	s.connPrevBytes = nil
 	s.clientCumTraffic = nil
+	s.resourceCumTraffic = nil
 	s.monitoringMu.Unlock()
 }
 
-// applyCumulativeClientTraffic computes per-client cumulative traffic by tracking
-// individual connection byte deltas across samples. This ensures that traffic from
-// closed connections is not lost.
-func (s *Server) applyCumulativeClientTraffic(connections []clashConnection, clients []storage.ClientTrafficSnapshot) {
+// applyCumulativeTraffic computes cumulative traffic for clients and per-host
+// resources by tracking individual connection byte deltas across samples.
+func (s *Server) applyCumulativeTraffic(connections []clashConnection, clients []storage.ClientTrafficSnapshot, resources []storage.ClientResourceSnapshot) {
 	s.monitoringMu.Lock()
 	defer s.monitoringMu.Unlock()
 
@@ -302,6 +304,7 @@ func (s *Server) applyCumulativeClientTraffic(connections []clashConnection, cli
 	if s.connPrevBytes == nil {
 		s.connPrevBytes = make(map[string]connPrevEntry)
 		s.clientCumTraffic = make(map[string]clientCumulativeEntry)
+		s.resourceCumTraffic = make(map[string]clientCumulativeEntry)
 	}
 
 	// Build set of current connection IDs for cleanup.
@@ -314,6 +317,7 @@ func (s *Server) applyCumulativeClientTraffic(connections []clashConnection, cli
 		if sourceIP == "" {
 			sourceIP = "unknown"
 		}
+		host := normalizeConnectionHost(conn.Metadata.Host, conn.Metadata.DestinationIP)
 
 		upload := maxI64(conn.Upload, 0)
 		download := maxI64(conn.Download, 0)
@@ -322,13 +326,18 @@ func (s *Server) applyCumulativeClientTraffic(connections []clashConnection, cli
 
 		if prev, ok := s.connPrevBytes[conn.ID]; ok {
 			// Existing connection: compute delta.
-			if upload >= prev.upload {
+			if prev.sourceIP != sourceIP || prev.host != host {
+				uploadDelta = upload
+				downloadDelta = download
+			} else if upload >= prev.upload {
 				uploadDelta = upload - prev.upload
 			} else {
 				// Counter reset within connection (unlikely but handle it).
 				uploadDelta = upload
 			}
-			if download >= prev.download {
+			if prev.sourceIP != sourceIP || prev.host != host {
+				downloadDelta = download
+			} else if download >= prev.download {
 				downloadDelta = download - prev.download
 			} else {
 				downloadDelta = download
@@ -342,6 +351,7 @@ func (s *Server) applyCumulativeClientTraffic(connections []clashConnection, cli
 		// Update connection tracking.
 		s.connPrevBytes[conn.ID] = connPrevEntry{
 			sourceIP: sourceIP,
+			host:     host,
 			upload:   upload,
 			download: download,
 		}
@@ -351,6 +361,14 @@ func (s *Server) applyCumulativeClientTraffic(connections []clashConnection, cli
 		cum.upload += uploadDelta
 		cum.download += downloadDelta
 		s.clientCumTraffic[sourceIP] = cum
+
+		if host != "" {
+			resourceKey := sourceIP + "\x00" + host
+			resourceCum := s.resourceCumTraffic[resourceKey]
+			resourceCum.upload += uploadDelta
+			resourceCum.download += downloadDelta
+			s.resourceCumTraffic[resourceKey] = resourceCum
+		}
 	}
 
 	// Remove closed connections from tracking.
@@ -366,6 +384,17 @@ func (s *Server) applyCumulativeClientTraffic(connections []clashConnection, cli
 			clients[i].UploadBytes = cum.upload
 			clients[i].DownloadBytes = cum.download
 		}
+	}
+
+	for i := range resources {
+		resourceKey := resources[i].SourceIP + "\x00" + resources[i].Host
+		if cum, ok := s.resourceCumTraffic[resourceKey]; ok {
+			resources[i].UploadTotal = cum.upload
+			resources[i].DownloadTotal = cum.download
+			continue
+		}
+		resources[i].UploadTotal = resources[i].UploadBytes
+		resources[i].DownloadTotal = resources[i].DownloadBytes
 	}
 }
 

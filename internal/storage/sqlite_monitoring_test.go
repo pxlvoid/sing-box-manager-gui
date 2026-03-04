@@ -324,6 +324,181 @@ func TestGetClientResourcesHistory_AggregateUnixTimestamps(t *testing.T) {
 	}
 }
 
+func TestGetClientResourcesHistory_DoesNotDoubleCountHostDrops(t *testing.T) {
+	store, err := NewSQLiteStore(t.TempDir())
+	if err != nil {
+		t.Fatalf("create sqlite store: %v", err)
+	}
+	t.Cleanup(func() { _ = store.Close() })
+
+	base := time.Now().UTC().Truncate(time.Second)
+	ts1 := base.Add(-6 * time.Second).Format(time.RFC3339Nano)
+	ts2 := base.Add(-4 * time.Second).Format(time.RFC3339Nano)
+	ts3 := base.Add(-2 * time.Second).Format(time.RFC3339Nano)
+
+	for idx, ts := range []string{ts1, ts2, ts3} {
+		if _, err := store.db.Exec(`INSERT INTO traffic_samples (
+			id, timestamp, timestamp_unix, up_bps, down_bps, upload_total, download_total,
+			active_connections, client_count, memory_inuse, memory_oslimit
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			idx+1,
+			ts,
+			mustUnix(t, ts),
+			0,
+			0,
+			0,
+			0,
+			1,
+			1,
+			0,
+			0,
+		); err != nil {
+			t.Fatalf("insert sample %d: %v", idx+1, err)
+		}
+	}
+
+	for idx, row := range []struct {
+		ts                string
+		activeConnections int
+		uploadBytes       int64
+		downloadBytes     int64
+	}{
+		{ts1, 2, 100, 200},
+		{ts2, 1, 60, 120},
+		{ts3, 1, 80, 160},
+	} {
+		if _, err := store.db.Exec(`INSERT INTO traffic_resources (
+			sample_id, timestamp, timestamp_unix, source_ip, host, active_connections,
+			upload_bytes, download_bytes, proxy_chain
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			idx+1,
+			row.ts,
+			mustUnix(t, row.ts),
+			"10.0.0.1",
+			"example.com",
+			row.activeConnections,
+			row.uploadBytes,
+			row.downloadBytes,
+			"node_1",
+		); err != nil {
+			t.Fatalf("insert resource row %s: %v", row.ts, err)
+		}
+	}
+
+	items, err := store.GetClientResourcesHistory("10.0.0.1", 10)
+	if err != nil {
+		t.Fatalf("get client resources history: %v", err)
+	}
+	if len(items) != 1 {
+		t.Fatalf("items length mismatch: got %d, want 1", len(items))
+	}
+	if items[0].TotalUpload != 120 {
+		t.Fatalf("total upload mismatch: got %d, want 120", items[0].TotalUpload)
+	}
+	if items[0].TotalDownload != 240 {
+		t.Fatalf("total download mismatch: got %d, want 240", items[0].TotalDownload)
+	}
+}
+
+func TestGetClientResourcesHistory_StartsPreciseSegmentAfterLegacyRows(t *testing.T) {
+	store, err := NewSQLiteStore(t.TempDir())
+	if err != nil {
+		t.Fatalf("create sqlite store: %v", err)
+	}
+	t.Cleanup(func() { _ = store.Close() })
+
+	base := time.Now().UTC().Truncate(time.Second)
+	ts1 := base.Add(-6 * time.Second).Format(time.RFC3339Nano)
+	ts2 := base.Add(-4 * time.Second).Format(time.RFC3339Nano)
+	ts3 := base.Add(-2 * time.Second).Format(time.RFC3339Nano)
+
+	for idx, ts := range []string{ts1, ts2, ts3} {
+		if _, err := store.db.Exec(`INSERT INTO traffic_samples (
+			id, timestamp, timestamp_unix, up_bps, down_bps, upload_total, download_total,
+			active_connections, client_count, memory_inuse, memory_oslimit
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			idx+1,
+			ts,
+			mustUnix(t, ts),
+			0,
+			0,
+			0,
+			0,
+			1,
+			1,
+			0,
+			0,
+		); err != nil {
+			t.Fatalf("insert sample %d: %v", idx+1, err)
+		}
+	}
+
+	if _, err := store.db.Exec(`INSERT INTO traffic_resources (
+		sample_id, timestamp, timestamp_unix, source_ip, host, active_connections,
+		upload_bytes, download_bytes, proxy_chain
+	) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		1,
+		ts1,
+		mustUnix(t, ts1),
+		"10.0.0.1",
+		"example.com",
+		1,
+		100,
+		200,
+		"node_1",
+	); err != nil {
+		t.Fatalf("insert legacy resource row 1: %v", err)
+	}
+	if _, err := store.db.Exec(`INSERT INTO traffic_resources (
+		sample_id, timestamp, timestamp_unix, source_ip, host, active_connections,
+		upload_bytes, download_bytes, proxy_chain
+	) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		2,
+		ts2,
+		mustUnix(t, ts2),
+		"10.0.0.1",
+		"example.com",
+		1,
+		60,
+		120,
+		"node_1",
+	); err != nil {
+		t.Fatalf("insert legacy resource row 2: %v", err)
+	}
+	if _, err := store.db.Exec(`INSERT INTO traffic_resources (
+		sample_id, timestamp, timestamp_unix, source_ip, host, active_connections,
+		upload_bytes, download_bytes, upload_total, download_total, proxy_chain
+	) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		3,
+		ts3,
+		mustUnix(t, ts3),
+		"10.0.0.1",
+		"example.com",
+		1,
+		20,
+		40,
+		25,
+		50,
+		"node_1",
+	); err != nil {
+		t.Fatalf("insert precise resource row: %v", err)
+	}
+
+	items, err := store.GetClientResourcesHistory("10.0.0.1", 10)
+	if err != nil {
+		t.Fatalf("get client resources history: %v", err)
+	}
+	if len(items) != 1 {
+		t.Fatalf("items length mismatch: got %d, want 1", len(items))
+	}
+	if items[0].TotalUpload != 125 {
+		t.Fatalf("total upload mismatch: got %d, want 125", items[0].TotalUpload)
+	}
+	if items[0].TotalDownload != 250 {
+		t.Fatalf("total download mismatch: got %d, want 250", items[0].TotalDownload)
+	}
+}
+
 func TestGetClientTrafficHistoryByTimeRange_UsesRequestedWindow(t *testing.T) {
 	store, err := NewSQLiteStore(t.TempDir())
 	if err != nil {

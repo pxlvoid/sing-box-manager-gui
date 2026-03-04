@@ -89,8 +89,8 @@ func (s *SQLiteStore) AddTrafficSample(sample TrafficSample, clients []ClientTra
 	if len(resources) > 0 {
 		stmt, err := tx.Prepare(`INSERT INTO traffic_resources (
 			sample_id, timestamp, timestamp_unix, source_ip, host, active_connections,
-			upload_bytes, download_bytes, proxy_chain
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+			upload_bytes, download_bytes, upload_total, download_total, proxy_chain
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
 		if err != nil {
 			return 0, err
 		}
@@ -111,6 +111,8 @@ func (s *SQLiteStore) AddTrafficSample(sample TrafficSample, clients []ClientTra
 				resource.ActiveConnections,
 				resource.UploadBytes,
 				resource.DownloadBytes,
+				resource.UploadTotal,
+				resource.DownloadTotal,
 				resource.ProxyChain,
 			); err != nil {
 				return 0, err
@@ -703,33 +705,62 @@ func (s *SQLiteStore) GetClientResourcesHistory(sourceIP string, limit int) ([]C
 		limit = 5000
 	}
 
+	const resourceSegmentGap = int64(8 * time.Second)
 	rows, err := s.db.Query(`
-		WITH resource_deltas AS (
+		WITH resource_rows AS (
 			SELECT
+				id,
 				host,
-				upload_bytes,
-				download_bytes,
+				active_connections,
+				COALESCE(upload_total, upload_bytes) AS upload_value,
+				COALESCE(download_total, download_bytes) AS download_value,
 				proxy_chain,
 				timestamp_unix,
-				LAG(upload_bytes) OVER (PARTITION BY source_ip, host ORDER BY timestamp_unix ASC, id ASC) AS prev_upload,
-				LAG(download_bytes) OVER (PARTITION BY source_ip, host ORDER BY timestamp_unix ASC, id ASC) AS prev_download
+				CASE
+					WHEN upload_total IS NOT NULL OR download_total IS NOT NULL THEN 1
+					ELSE 0
+				END AS has_precise_totals
 			FROM traffic_resources
 			WHERE source_ip = ?
+		),
+		resource_deltas AS (
+			SELECT
+				host,
+				active_connections,
+				upload_value,
+				download_value,
+				proxy_chain,
+				timestamp_unix,
+				has_precise_totals,
+				LAG(active_connections) OVER (PARTITION BY host ORDER BY timestamp_unix ASC, id ASC) AS prev_active_connections,
+				LAG(upload_value) OVER (PARTITION BY host ORDER BY timestamp_unix ASC, id ASC) AS prev_upload,
+				LAG(download_value) OVER (PARTITION BY host ORDER BY timestamp_unix ASC, id ASC) AS prev_download,
+				LAG(timestamp_unix) OVER (PARTITION BY host ORDER BY timestamp_unix ASC, id ASC) AS prev_timestamp_unix,
+				LAG(has_precise_totals) OVER (PARTITION BY host ORDER BY timestamp_unix ASC, id ASC) AS prev_has_precise_totals
+			FROM resource_rows
 		)
 		SELECT
 			host,
 			SUM(
 				CASE
-					WHEN prev_upload IS NULL THEN upload_bytes
-					WHEN upload_bytes >= prev_upload THEN upload_bytes - prev_upload
-					ELSE upload_bytes
+					WHEN prev_upload IS NULL THEN upload_value
+					WHEN has_precise_totals = 1 AND prev_has_precise_totals = 1 AND upload_value >= prev_upload THEN upload_value - prev_upload
+					WHEN has_precise_totals = 1 THEN upload_value
+					WHEN upload_value >= prev_upload THEN upload_value - prev_upload
+					WHEN (timestamp_unix - COALESCE(prev_timestamp_unix, 0)) > ? THEN upload_value
+					WHEN active_connections > COALESCE(prev_active_connections, 0) AND upload_value > prev_upload THEN upload_value - prev_upload
+					ELSE 0
 				END
 			) AS total_upload,
 			SUM(
 				CASE
-					WHEN prev_download IS NULL THEN download_bytes
-					WHEN download_bytes >= prev_download THEN download_bytes - prev_download
-					ELSE download_bytes
+					WHEN prev_download IS NULL THEN download_value
+					WHEN has_precise_totals = 1 AND prev_has_precise_totals = 1 AND download_value >= prev_download THEN download_value - prev_download
+					WHEN has_precise_totals = 1 THEN download_value
+					WHEN download_value >= prev_download THEN download_value - prev_download
+					WHEN (timestamp_unix - COALESCE(prev_timestamp_unix, 0)) > ? THEN download_value
+					WHEN active_connections > COALESCE(prev_active_connections, 0) AND download_value > prev_download THEN download_value - prev_download
+					ELSE 0
 				END
 			) AS total_download,
 			MAX(proxy_chain) AS proxy_chain,
@@ -738,7 +769,7 @@ func (s *SQLiteStore) GetClientResourcesHistory(sourceIP string, limit int) ([]C
 		FROM resource_deltas
 		GROUP BY host
 		ORDER BY (total_upload + total_download) DESC
-		LIMIT ?`, sourceIP, limit)
+		LIMIT ?`, sourceIP, resourceSegmentGap, resourceSegmentGap, limit)
 	if err != nil {
 		return nil, err
 	}
