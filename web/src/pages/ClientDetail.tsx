@@ -192,9 +192,9 @@ export default function ClientDetail() {
     const resUpload = resources.reduce((s, r) => s + r.total_upload, 0);
     const resDownload = resources.reduce((s, r) => s + r.total_download, 0);
     return {
-      totalUpload: client?.upload_bytes && client.upload_bytes > resUpload ? client.upload_bytes : resUpload,
-      totalDownload: client?.download_bytes && client.download_bytes > resDownload ? client.download_bytes : resDownload,
-      hostCount: client?.host_count && client.host_count > resources.length ? client.host_count : resources.length,
+      totalUpload: client ? client.upload_bytes : resUpload,
+      totalDownload: client ? client.download_bytes : resDownload,
+      hostCount: client ? Math.max(client.host_count, resources.length) : resources.length,
     };
   }, [client, resources]);
 
