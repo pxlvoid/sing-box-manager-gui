@@ -45,6 +45,8 @@ interface TrafficHistoryPoint {
   timestamp: string;
   up_bps: number;
   down_bps: number;
+  upload_total?: number;
+  download_total?: number;
   active_connections: number;
   client_count: number;
 }
@@ -226,6 +228,8 @@ export default function Dashboard() {
         return {
           ...point,
           epoch: Date.parse(point.timestamp),
+          raw_up_kbps: rawUp / 1024,
+          raw_down_kbps: rawDown / 1024,
           up_kbps: rawUp / 1024,
           down_kbps: rawDown / 1024,
         };
@@ -242,6 +246,8 @@ export default function Dashboard() {
       return {
         ...point,
         epoch: Date.parse(point.timestamp),
+        raw_up_kbps: rawUp / 1024,
+        raw_down_kbps: rawDown / 1024,
         up_kbps: emaUp / 1024,
         down_kbps: emaDown / 1024,
       };
@@ -255,10 +261,34 @@ export default function Dashboard() {
     let cumDown = 0;
     return speedData.map((point, idx) => {
       if (idx > 0) {
-        const dt = (point.epoch - speedData[idx - 1].epoch) / 1000;
-        if (dt > 0) {
-          cumUp += point.up_kbps * 1024 * dt;
-          cumDown += point.down_kbps * 1024 * dt;
+        const prev = speedData[idx - 1];
+        const currentUploadTotal = toNumber(point.upload_total);
+        const previousUploadTotal = toNumber(prev.upload_total);
+        const currentDownloadTotal = toNumber(point.download_total);
+        const previousDownloadTotal = toNumber(prev.download_total);
+        const hasUploadTotals = currentUploadTotal > 0 || previousUploadTotal > 0;
+        const hasDownloadTotals = currentDownloadTotal > 0 || previousDownloadTotal > 0;
+
+        if (hasUploadTotals) {
+          cumUp += currentUploadTotal >= previousUploadTotal
+            ? currentUploadTotal - previousUploadTotal
+            : currentUploadTotal;
+        } else {
+          const dt = (point.epoch - prev.epoch) / 1000;
+          if (dt > 0) {
+            cumUp += point.raw_up_kbps * 1024 * dt;
+          }
+        }
+
+        if (hasDownloadTotals) {
+          cumDown += currentDownloadTotal >= previousDownloadTotal
+            ? currentDownloadTotal - previousDownloadTotal
+            : currentDownloadTotal;
+        } else {
+          const dt = (point.epoch - prev.epoch) / 1000;
+          if (dt > 0) {
+            cumDown += point.raw_down_kbps * 1024 * dt;
+          }
         }
       }
       return {

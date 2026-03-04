@@ -105,6 +105,10 @@ function formatBytes(bytes: number): string {
   return `${value.toFixed(value >= 10 || idx === 0 ? 0 : 1)} ${units[idx]}`;
 }
 
+function formatRate(bytesPerSecond: number): string {
+  return `${formatBytes(bytesPerSecond)}/s`;
+}
+
 function formatDuration(seconds: number): string {
   if (!Number.isFinite(seconds) || seconds <= 0) return '0s';
   if (seconds < 60) return `${seconds}s`;
@@ -584,7 +588,7 @@ function ClientRow({
     let cancelled = false;
     setHistoryLoading(true);
     monitoringApi
-      .getClientHistory(client.source_ip, 500)
+      .getClientHistory(client.source_ip, { limit: 500 })
       .then((res) => {
         if (cancelled) return;
         setHistoryData(res.data?.data || []);
@@ -605,8 +609,10 @@ function ClientRow({
     if (historyData.length < 2) return [];
 
     return historyData.map((point, idx) => {
-      // Compute deltas between consecutive snapshots to show traffic rate
       const prev = idx > 0 ? historyData[idx - 1] : point;
+      const currentTs = new Date(point.timestamp).getTime();
+      const prevTs = new Date(prev.timestamp).getTime();
+      const dt = idx > 0 ? Math.max(1, Math.round((currentTs - prevTs) / 1000)) : 1;
       const uploadDelta = point.upload_bytes >= prev.upload_bytes
         ? point.upload_bytes - prev.upload_bytes
         : point.upload_bytes;
@@ -616,8 +622,8 @@ function ClientRow({
 
       return {
         time: new Date(point.timestamp).toLocaleTimeString([], { hour12: false }),
-        upload: uploadDelta / 1024,
-        download: downloadDelta / 1024,
+        upload: uploadDelta / dt / 1024,
+        download: downloadDelta / dt / 1024,
         connections: point.active_connections,
       };
     });
@@ -692,18 +698,18 @@ function ClientRow({
                 </div>
               ) : miniChartData.length > 2 ? (
                 <div className="mb-3">
-                  <p className="text-xs text-gray-500 mb-1">Traffic history (delta per sample)</p>
+                  <p className="text-xs text-gray-500 mb-1">Traffic rate</p>
                   <div className="h-36 w-full bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-2">
                     <ResponsiveContainer width="100%" height="100%">
                       <AreaChart data={miniChartData}>
                         <CartesianGrid strokeDasharray="3 3" />
                         <XAxis dataKey="time" minTickGap={40} tick={{ fontSize: 10 }} />
-                        <YAxis tickFormatter={(v) => `${Math.round(v)} KB`} tick={{ fontSize: 10 }} width={50} />
+                        <YAxis tickFormatter={(v) => formatRate(Number(v) * 1024)} tick={{ fontSize: 10 }} width={70} />
                         <Tooltip
                           formatter={(value, name) => {
                             const numeric = Number(value);
                             if (name === 'connections') return [numeric, 'Connections'];
-                            return [formatBytes(numeric * 1024), name === 'upload' ? 'Upload' : 'Download'];
+                            return [formatRate(numeric * 1024), name === 'upload' ? 'Upload' : 'Download'];
                           }}
                           labelFormatter={(label) => `Time: ${label}`}
                         />

@@ -45,6 +45,10 @@ function formatBytes(bytes: number): string {
   return `${(bytes / Math.pow(1024, idx)).toFixed(idx === 0 ? 0 : 1)} ${units[idx]}`;
 }
 
+function formatRate(bytesPerSecond: number): string {
+  return `${formatBytes(bytesPerSecond)}/s`;
+}
+
 function formatDateTime(ts?: string): string {
   if (!ts) return '-';
   const d = new Date(ts);
@@ -108,7 +112,7 @@ export default function ClientDetail() {
     let cancelled = false;
     const period = PERIOD_OPTIONS[periodIdx];
 
-    monitoringApi.getClientHistory(ip, period.points)
+    monitoringApi.getClientHistory(ip, { hours: period.hours, maxPoints: period.points })
       .then((res) => {
         if (!cancelled) setHistory(res.data?.data || []);
       })
@@ -122,14 +126,13 @@ export default function ClientDetail() {
   // Chart data with deltas
   const chartData = useMemo(() => {
     if (history.length < 2) return [];
-
-    const period = PERIOD_OPTIONS[periodIdx];
-    const cutoff = Date.now() - period.hours * 3600 * 1000;
-
-    const filtered = history.filter((p) => new Date(p.timestamp).getTime() >= cutoff);
+    const filtered = history.filter((p) => !Number.isNaN(new Date(p.timestamp).getTime()));
 
     return filtered.map((point, idx) => {
       const prev = idx > 0 ? filtered[idx - 1] : point;
+      const currentTs = new Date(point.timestamp).getTime();
+      const prevTs = new Date(prev.timestamp).getTime();
+      const dt = idx > 0 ? Math.max(1, Math.round((currentTs - prevTs) / 1000)) : 1;
       const uploadDelta = point.upload_bytes >= prev.upload_bytes
         ? point.upload_bytes - prev.upload_bytes
         : point.upload_bytes;
@@ -140,8 +143,8 @@ export default function ClientDetail() {
       return {
         time: new Date(point.timestamp).toLocaleTimeString([], { hour12: false }),
         fullTime: new Date(point.timestamp).toLocaleString(),
-        upload: uploadDelta,
-        download: downloadDelta,
+        upload: uploadDelta / dt,
+        download: downloadDelta / dt,
         connections: point.active_connections,
       };
     });
@@ -292,11 +295,11 @@ export default function ClientDetail() {
                 </defs>
                 <CartesianGrid strokeDasharray="3 3" opacity={0.1} />
                 <XAxis dataKey="time" tick={{ fontSize: 10 }} interval="preserveStartEnd" />
-                <YAxis tick={{ fontSize: 10 }} tickFormatter={(v: number) => formatBytes(v)} width={60} />
+                <YAxis tick={{ fontSize: 10 }} tickFormatter={(v: number) => formatRate(v)} width={70} />
                 <Tooltip
                   contentStyle={{ fontSize: 12, backgroundColor: 'rgba(0,0,0,0.85)', border: 'none', borderRadius: 8, color: '#fff' }}
-                  formatter={(value, name) => [formatBytes(Number(value ?? 0)), name === 'upload' ? 'Upload' : 'Download']}
-                  labelFormatter={(label) => String(label)}
+                  formatter={(value, name) => [formatRate(Number(value ?? 0)), name === 'upload' ? 'Upload' : 'Download']}
+                  labelFormatter={(_, payload) => String(payload?.[0]?.payload?.fullTime || '')}
                 />
                 <Area type="monotone" dataKey="upload" stroke="#6366f1" fill="url(#uploadGrad)" strokeWidth={1.5} dot={false} />
                 <Area type="monotone" dataKey="download" stroke="#06b6d4" fill="url(#downloadGrad)" strokeWidth={1.5} dot={false} />
