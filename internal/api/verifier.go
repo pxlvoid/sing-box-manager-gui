@@ -261,21 +261,27 @@ func (s *Server) runVerificationWithTagFilter(tagSet map[string]struct{}) {
 		}
 
 		if !alive || !sitesOk {
-			// Demote: verified -> pending
-			if err := s.store.DemoteNode(vn.ID); err != nil {
-				logger.Printf("[verifier] Failed to demote node %d: %v", vn.ID, err)
-				continue
+			if vn.IsFavorite {
+				// Избранные серверы не демоутятся — просто логируем
+				logger.Printf("[verifier] Favorite node %d (%s) failed check but skipping demotion", vn.ID, unifiedDisplayName(vn))
+				s.store.ResetConsecutiveFailures(vn.ID)
+			} else {
+				// Demote: verified -> pending
+				if err := s.store.DemoteNode(vn.ID); err != nil {
+					logger.Printf("[verifier] Failed to demote node %d: %v", vn.ID, err)
+					continue
+				}
+				vlog.VerifiedDemoted++
+				configChanged = true
+				s.eventBus.Publish("verify:node_demoted", map[string]interface{}{
+					"tag":          unifiedDisplayName(vn),
+					"internal_tag": unifiedRoutingTag(vn),
+					"display_name": unifiedDisplayName(vn),
+					"source_tag":   unifiedSourceTag(vn),
+					"server":       vn.Server,
+					"server_port":  vn.ServerPort,
+				})
 			}
-			vlog.VerifiedDemoted++
-			configChanged = true
-			s.eventBus.Publish("verify:node_demoted", map[string]interface{}{
-				"tag":          unifiedDisplayName(vn),
-				"internal_tag": unifiedRoutingTag(vn),
-				"display_name": unifiedDisplayName(vn),
-				"source_tag":   unifiedSourceTag(vn),
-				"server":       vn.Server,
-				"server_port":  vn.ServerPort,
-			})
 		} else {
 			// Reset failures counter
 			s.store.ResetConsecutiveFailures(vn.ID)
