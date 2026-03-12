@@ -87,28 +87,37 @@ export default function VerifiedNodesTab({
     return result;
   }, [nodes, searchQuery, showFavoritesOnly]);
 
-  const handleExportLinks = useCallback(async () => {
+  const handleExportLinks = useCallback(() => {
     setExporting(true);
-    try {
-      const ids = filteredNodes.map((n) => n.id);
-      const res = await unifiedNodeApi.exportLinks(ids);
+    const ids = filteredNodes.map((n) => n.id);
+
+    const dataPromise = unifiedNodeApi.exportLinks(ids).then((res) => {
       const { links, errors } = res.data as { links: string[] | null; errors: string[] | null; total: number };
       if (!links || links.length === 0) {
-        toast.error('No links to export');
-        return;
+        throw new Error('No links to export');
       }
-      await navigator.clipboard.writeText(links.join('\n'));
-      const msg = `Copied ${links.length} link(s) to clipboard`;
+      const text = links.join('\n');
       if (errors && errors.length > 0) {
-        toast.info(`${msg} (${errors.length} failed)`);
+        toast.info(`Copied ${links.length} link(s) to clipboard (${errors.length} failed)`);
       } else {
-        toast.success(msg);
+        toast.success(`Copied ${links.length} link(s) to clipboard`);
       }
-    } catch (err: any) {
-      toast.error(err?.message || 'Failed to export links');
-    } finally {
-      setExporting(false);
-    }
+      return text;
+    });
+
+    // ClipboardItem with a Promise preserves the user-gesture context on iOS Safari
+    const blobPromise = dataPromise.then((text) => new Blob([text], { type: 'text/plain' }));
+
+    navigator.clipboard
+      .write([new ClipboardItem({ 'text/plain': blobPromise })])
+      .catch(() => {
+        // Fallback for browsers that don't support Promise in ClipboardItem
+        return dataPromise.then((text) => navigator.clipboard.writeText(text));
+      })
+      .catch((err: any) => {
+        toast.error(err?.message || 'Failed to copy to clipboard');
+      })
+      .finally(() => setExporting(false));
   }, [filteredNodes]);
 
   const extractSortValue = useCallback(
