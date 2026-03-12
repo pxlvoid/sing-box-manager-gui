@@ -1,10 +1,10 @@
-import { useState, useMemo, useCallback } from 'react';
+import { useState, useMemo } from 'react';
 import type { SortDescriptor } from '@nextui-org/react';
 
 type SortValueExtractor<T> = (item: T, columnKey: string) => string | number | null;
 
 export function useNodeSort<T>(items: T[], extractSortValue: SortValueExtractor<T>) {
-  const [sortDescriptor, setSortDescriptor] = useState<SortDescriptor>({});
+  const [sortDescriptor, setSortDescriptor] = useState<SortDescriptor>({} as SortDescriptor);
 
   const sortedItems = useMemo(() => {
     if (!sortDescriptor.column) return items;
