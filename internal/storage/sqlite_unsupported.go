@@ -46,3 +46,15 @@ func (s *SQLiteStore) DeleteUnsupportedNodesByTags(tags []string) error {
 	}
 	return nil
 }
+
+func (s *SQLiteStore) DeleteUnsupportedNodesByEndpoints(endpoints []ServerPortKey) error {
+	if len(endpoints) == 0 {
+		return nil
+	}
+	for _, ep := range endpoints {
+		if _, err := s.db.Exec("DELETE FROM unsupported_nodes WHERE server = ? AND server_port = ?", ep.Server, ep.ServerPort); err != nil {
+			return err
+		}
+	}
+	return nil
+}

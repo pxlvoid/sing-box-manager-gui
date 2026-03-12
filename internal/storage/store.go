@@ -66,12 +66,14 @@ type Store interface {
 	GetDataDir() string
 	Save() error
 	RemoveNodesByTags(tags []string) (int, error)
+	RemoveNodesByEndpoints(endpoints []ServerPortKey) (int, error)
 
 	// Unsupported Nodes
 	GetUnsupportedNodes() []UnsupportedNode
 	AddUnsupportedNode(node UnsupportedNode) error
 	ClearUnsupportedNodes() error
 	DeleteUnsupportedNodesByTags(tags []string) error
+	DeleteUnsupportedNodesByEndpoints(endpoints []ServerPortKey) error
 
 	// Measurements
 	AddHealthMeasurements(measurements []HealthMeasurement) error

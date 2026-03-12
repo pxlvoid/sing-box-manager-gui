@@ -1561,68 +1561,80 @@ func (s *Server) clearUnsupportedNodes(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"message": "Cleared"})
 }
 
-// deleteUnsupportedNodes permanently removes unsupported nodes from subscriptions and manual nodes
+// deleteUnsupportedNodes permanently removes unsupported nodes from subscriptions and unified nodes.
+// Deletion is based on exact (server, server_port) match from the unsupported_nodes table,
+// which eliminates any risk of accidentally deleting healthy nodes with similar tags.
 func (s *Server) deleteUnsupportedNodes(c *gin.Context) {
-	var req struct {
-		Tags []string `json:"tags"`
-	}
-	if err := c.ShouldBindJSON(&req); err != nil || len(req.Tags) == 0 {
-		// If no tags specified, delete all unsupported
-		s.unsupportedNodesMu.RLock()
-		for tag := range s.unsupportedNodes {
-			req.Tags = append(req.Tags, tag)
-		}
-		s.unsupportedNodesMu.RUnlock()
-	}
-
-	if len(req.Tags) == 0 {
+	// Get the authoritative list of unsupported endpoints from the database.
+	persisted := s.store.GetUnsupportedNodes()
+	if len(persisted) == 0 {
 		c.JSON(http.StatusOK, gin.H{"message": "No unsupported nodes to delete", "removed": 0})
 		return
 	}
 
-	requestedTagSet := parseTagSet(req.Tags)
-	matchedUnsupportedKeys := make([]string, 0, len(requestedTagSet))
-	s.unsupportedNodesMu.RLock()
-	for key, info := range s.unsupportedNodes {
-		candidates := dedupeNonEmptyStrings([]string{
-			key,
-			strings.TrimSpace(info.Tag),
-			strings.TrimSpace(info.InternalTag),
-			strings.TrimSpace(info.DisplayName),
-			strings.TrimSpace(info.SourceTag),
-		})
-		for _, candidate := range candidates {
-			if _, ok := requestedTagSet[candidate]; ok {
-				matchedUnsupportedKeys = append(matchedUnsupportedKeys, key)
-				break
+	// Optionally filter by tags (for single-node deletion from UI).
+	var req struct {
+		Tags []string `json:"tags"`
+	}
+	_ = c.ShouldBindJSON(&req)
+
+	var endpoints []storage.ServerPortKey
+	if len(req.Tags) > 0 {
+		tagSet := parseTagSet(req.Tags)
+		for _, un := range persisted {
+			if _, ok := tagSet[strings.TrimSpace(un.NodeTag)]; ok {
+				endpoints = append(endpoints, storage.ServerPortKey{Server: un.Server, ServerPort: un.ServerPort})
 			}
 		}
+	} else {
+		// Delete all unsupported
+		for _, un := range persisted {
+			endpoints = append(endpoints, storage.ServerPortKey{Server: un.Server, ServerPort: un.ServerPort})
+		}
 	}
-	s.unsupportedNodesMu.RUnlock()
 
-	removed, err := s.store.RemoveNodesByTags(req.Tags)
+	if len(endpoints) == 0 {
+		c.JSON(http.StatusOK, gin.H{"message": "No matching unsupported nodes found", "removed": 0})
+		return
+	}
+
+	removed, err := s.store.RemoveNodesByEndpoints(endpoints)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
 
-	// Clear them from unsupported list (in-memory + store)
-	s.unsupportedNodesMu.Lock()
-	for _, tag := range req.Tags {
-		delete(s.unsupportedNodes, tag)
-	}
-	for _, key := range matchedUnsupportedKeys {
-		delete(s.unsupportedNodes, key)
-	}
-	s.unsupportedNodesMu.Unlock()
-
-	tagsToDeleteFromStore := matchedUnsupportedKeys
-	if len(tagsToDeleteFromStore) == 0 {
-		tagsToDeleteFromStore = req.Tags
-	}
-	if err := s.store.DeleteUnsupportedNodesByTags(tagsToDeleteFromStore); err != nil {
+	// Clean up unsupported tracking (in-memory + store)
+	if err := s.store.DeleteUnsupportedNodesByEndpoints(endpoints); err != nil {
 		logger.Printf("[unsupported] Failed to delete from store: %v", err)
 	}
+
+	// Build a set of "server:port" strings for fast lookup.
+	epStrSet := make(map[string]struct{}, len(endpoints))
+	for _, ep := range endpoints {
+		epStrSet[fmt.Sprintf("%s:%d", ep.Server, ep.ServerPort)] = struct{}{}
+	}
+	// The in-memory map is keyed by internal_tag which may be "server:port" or a sing-box tag.
+	// Build reverse mapping from persisted data: nodeTag -> "server:port".
+	tagToEpStr := make(map[string]string, len(persisted))
+	for _, un := range persisted {
+		tag := strings.TrimSpace(un.NodeTag)
+		spStr := fmt.Sprintf("%s:%d", un.Server, un.ServerPort)
+		if tag != "" {
+			tagToEpStr[tag] = spStr
+		}
+		tagToEpStr[spStr] = spStr
+	}
+
+	s.unsupportedNodesMu.Lock()
+	for key := range s.unsupportedNodes {
+		if epStr, ok := tagToEpStr[key]; ok {
+			if _, match := epStrSet[epStr]; match {
+				delete(s.unsupportedNodes, key)
+			}
+		}
+	}
+	s.unsupportedNodesMu.Unlock()
 
 	c.JSON(http.StatusOK, gin.H{
 		"message": fmt.Sprintf("Removed %d node(s)", removed),

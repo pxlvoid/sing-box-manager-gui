@@ -115,6 +115,50 @@ func (s *SQLiteStore) RemoveNodesByTags(tags []string) (int, error) {
 	return removed, nil
 }
 
+// RemoveNodesByEndpoints removes nodes matching exact (server, server_port) pairs.
+// This is safer than RemoveNodesByTags because it avoids tag-string collisions.
+func (s *SQLiteStore) RemoveNodesByEndpoints(endpoints []ServerPortKey) (int, error) {
+	if len(endpoints) == 0 {
+		return 0, nil
+	}
+
+	tx, err := s.db.Begin()
+	if err != nil {
+		return 0, err
+	}
+	defer tx.Rollback()
+
+	removed := 0
+
+	for _, ep := range endpoints {
+		res, err := tx.Exec("DELETE FROM subscription_nodes WHERE server = ? AND server_port = ?", ep.Server, ep.ServerPort)
+		if err != nil {
+			return 0, err
+		}
+		n, _ := res.RowsAffected()
+		removed += int(n)
+
+		res, err = tx.Exec("DELETE FROM nodes WHERE server = ? AND server_port = ?", ep.Server, ep.ServerPort)
+		if err != nil {
+			return 0, err
+		}
+		n, _ = res.RowsAffected()
+		removed += int(n)
+	}
+
+	// Update node_count for affected subscriptions
+	if _, err := tx.Exec(`UPDATE subscriptions SET node_count = (
+		SELECT COUNT(*) FROM subscription_nodes WHERE subscription_nodes.subscription_id = subscriptions.id
+	)`); err != nil {
+		return 0, err
+	}
+
+	if err := tx.Commit(); err != nil {
+		return 0, err
+	}
+	return removed, nil
+}
+
 // GetAllNodes returns all verified nodes (used by config builder).
 func (s *SQLiteStore) GetAllNodes() []Node {
 	rows, err := s.db.Query(`SELECT tag, internal_tag, display_name, source_tag, type, server, server_port, country, country_emoji, extra_json
