@@ -18,6 +18,7 @@ import { Search, Trash2, RotateCcw, Archive, Star } from 'lucide-react';
 import type { UnifiedNode, GeoData } from '../../../store';
 import { nodeDisplayTag, nodeSourceTag, nodeInternalTag } from '../../../store';
 import MobileNodeCard from '../components/MobileNodeCard';
+import GeoChip from '../components/GeoChip';
 import { useNodeSort } from '../hooks/useNodeSort';
 import useIsMobile from '../../../hooks/useIsMobile';
 import { formatBytes } from '../types';
@@ -33,15 +34,6 @@ interface ArchivedNodesTabProps {
 }
 
 const PAGE_SIZE = 50;
-
-function countryCodeToEmoji(code: string): string {
-  const upper = code.toUpperCase();
-  if (upper.length !== 2) return '🌐';
-  return String.fromCodePoint(
-    0x1F1E6 + upper.charCodeAt(0) - 65,
-    0x1F1E6 + upper.charCodeAt(1) - 65
-  );
-}
 
 export default function ArchivedNodesTab({ nodes, geoData, nodeTrafficMap, onUnarchive, onDelete, onToggleFavorite }: ArchivedNodesTabProps) {
   const isMobile = useIsMobile();
@@ -72,7 +64,7 @@ export default function ArchivedNodesTab({ nodes, geoData, nodeTrafficMap, onUna
       const geo = geoData[key];
       const traffic = nodeTrafficMap?.get(nodeInternalTag(node));
       switch (col) {
-        case 'country': return geo?.country_code ?? node.country ?? '';
+        case 'geoip': return geo?.country ?? '';
         case 'tag': return nodeDisplayTag(node);
         case 'type': return node.type;
         case 'server': return `${node.server}:${node.server_port}`;
@@ -197,7 +189,7 @@ export default function ArchivedNodesTab({ nodes, geoData, nodeTrafficMap, onUna
           }
         >
           <TableHeader>
-            <TableColumn key="country" width={60} allowsSorting>Country</TableColumn>
+            <TableColumn key="geoip" width={160} allowsSorting>GeoIP</TableColumn>
             <TableColumn key="tag" allowsSorting>Tag</TableColumn>
             <TableColumn key="type" width={100} allowsSorting>Type</TableColumn>
             <TableColumn key="server" allowsSorting>Server:Port</TableColumn>
@@ -211,17 +203,11 @@ export default function ArchivedNodesTab({ nodes, geoData, nodeTrafficMap, onUna
           <TableBody>
             {paginatedNodes.map((node) => {
               const key = `${node.server}:${node.server_port}`;
-              const geo = geoData[key];
-              const hasGeo = geo?.status === 'success' && geo.country_code;
-              const countryEmoji = hasGeo ? countryCodeToEmoji(geo.country_code) : '🌐';
-              const countryLabel = hasGeo ? `${geo.country} (${geo.country_code})` : 'No GeoIP data';
               const traffic = nodeTrafficMap?.get(nodeInternalTag(node));
               return (
               <TableRow key={node.id}>
                 <TableCell>
-                  <Tooltip content={countryLabel}>
-                    <span className="text-lg cursor-default">{countryEmoji}</span>
-                  </Tooltip>
+                  <GeoChip geo={geoData[key]} claimedCountry={node.country} />
                 </TableCell>
                 <TableCell>
                   <div className="max-w-[180px] sm:max-w-[300px]">

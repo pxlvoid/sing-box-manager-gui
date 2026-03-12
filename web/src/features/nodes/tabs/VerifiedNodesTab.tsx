@@ -15,6 +15,7 @@ import {
   Tooltip,
 } from '@nextui-org/react';
 import { Search, Activity, Trash2, ArrowDownCircle, Pencil, Star } from 'lucide-react';
+// Activity is used for empty state icon
 import type { UnifiedNode, GeoData } from '../../../store';
 import type { NodeHealthResult, HealthCheckMode, NodeSiteCheckResult } from '../../../store';
 import { nodeDisplayTag, nodeInternalTag, nodeSourceTag } from '../../../store';
@@ -26,15 +27,6 @@ import MobileNodeCard from '../components/MobileNodeCard';
 import { useNodeSort } from '../hooks/useNodeSort';
 import useIsMobile from '../../../hooks/useIsMobile';
 const PAGE_SIZE = 50;
-
-function countryCodeToEmoji(code: string): string {
-  const upper = code.toUpperCase();
-  if (upper.length !== 2) return '🌐';
-  return String.fromCodePoint(
-    0x1F1E6 + upper.charCodeAt(0) - 65,
-    0x1F1E6 + upper.charCodeAt(1) - 65
-  );
-}
 
 interface VerifiedNodesTabProps {
   nodes: UnifiedNode[];
@@ -97,11 +89,10 @@ export default function VerifiedNodesTab({
       const geo = geoData[key];
       const traffic = nodeTrafficMap?.get(nodeInternalTag(node));
       switch (col) {
-        case 'country': return geo?.country_code ?? node.country ?? '';
+        case 'geoip': return geo?.country ?? '';
         case 'tag': return nodeDisplayTag(node);
         case 'type': return node.type;
         case 'server': return `${node.server}:${node.server_port}`;
-        case 'geoip': return geo?.country ?? '';
         case 'upload': return traffic?.upload_bytes ?? 0;
         case 'download': return traffic?.download_bytes ?? 0;
         case 'total': return traffic?.total_bytes ?? 0;
@@ -242,11 +233,10 @@ export default function VerifiedNodesTab({
           }
         >
           <TableHeader>
-            <TableColumn key="country" width={60} allowsSorting>Country</TableColumn>
+            <TableColumn key="geoip" width={160} allowsSorting>GeoIP</TableColumn>
             <TableColumn key="tag" allowsSorting>Tag</TableColumn>
             <TableColumn key="type" width={100} allowsSorting>Type</TableColumn>
             <TableColumn key="server" width={200} allowsSorting>Server:Port</TableColumn>
-            <TableColumn key="geoip" width={160} allowsSorting>GeoIP</TableColumn>
             <TableColumn key="upload" width={80} className="hidden xl:table-cell" allowsSorting>Upload</TableColumn>
             <TableColumn key="download" width={80} className="hidden xl:table-cell" allowsSorting>Download</TableColumn>
             <TableColumn key="total" width={80} className="hidden xl:table-cell" allowsSorting>Total</TableColumn>
@@ -257,17 +247,11 @@ export default function VerifiedNodesTab({
           <TableBody>
             {paginatedNodes.map((node) => {
               const key = `${node.server}:${node.server_port}`;
-              const geo = geoData[key];
-              const hasGeo = geo?.status === 'success' && geo.country_code;
-              const countryEmoji = hasGeo ? countryCodeToEmoji(geo.country_code) : '🌐';
-              const countryLabel = hasGeo ? `${geo.country} (${geo.country_code})` : 'No GeoIP data';
               const traffic = nodeTrafficMap?.get(nodeInternalTag(node));
               return (
                 <TableRow key={node.id}>
                   <TableCell>
-                    <Tooltip content={countryLabel}>
-                      <span className="text-lg cursor-default">{countryEmoji}</span>
-                    </Tooltip>
+                    <GeoChip geo={geoData[key]} claimedCountry={node.country} />
                   </TableCell>
                   <TableCell>
                     <div className="max-w-[180px] sm:max-w-[300px]">
@@ -288,9 +272,6 @@ export default function VerifiedNodesTab({
                     <span className="text-xs text-gray-500 truncate">
                       {node.server}:{node.server_port}
                     </span>
-                  </TableCell>
-                  <TableCell>
-                    <GeoChip geo={geoData[key]} claimedCountry={node.country} />
                   </TableCell>
                   <TableCell className="hidden xl:table-cell">
                     <span className="text-xs text-gray-500">{traffic ? formatBytes(traffic.upload_bytes) : '-'}</span>
@@ -325,17 +306,6 @@ export default function VerifiedNodesTab({
                           onPress={() => onToggleFavorite(node.id)}
                         >
                           <Star className={`w-4 h-4 ${node.is_favorite ? 'fill-yellow-400 text-yellow-400' : ''}`} />
-                        </Button>
-                      </Tooltip>
-                      <Tooltip content="Health check">
-                        <Button
-                          isIconOnly
-                          size="sm"
-                          variant="light"
-                          isLoading={healthCheckingNodes.includes(nodeInternalTag(node))}
-                          onPress={() => checkSingleNodeHealth(nodeInternalTag(node))}
-                        >
-                          <Activity className="w-4 h-4" />
                         </Button>
                       </Tooltip>
                       <Tooltip content="Demote to pending">
