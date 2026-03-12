@@ -160,6 +160,25 @@ func (s *SQLiteStore) UpdateNode(node UnifiedNode) error {
 		}
 	}
 
+	// Preserve fields that the frontend does not send during edits.
+	if node.Status == "" {
+		node.Status = current.Status
+	}
+	if node.Source == "" {
+		node.Source = current.Source
+	}
+	if node.LastCheckedAt == nil {
+		node.LastCheckedAt = current.LastCheckedAt
+	}
+	if node.PromotedAt == nil {
+		node.PromotedAt = current.PromotedAt
+	}
+	if node.ArchivedAt == nil {
+		node.ArchivedAt = current.ArchivedAt
+	}
+	if node.ConsecutiveFailures == 0 {
+		node.ConsecutiveFailures = current.ConsecutiveFailures
+	}
 	normalizeUnifiedNodeForPersistence(&node)
 
 	extraJSON := marshalJSON(node.Extra)
