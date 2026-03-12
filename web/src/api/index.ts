@@ -134,6 +134,8 @@ export const unifiedNodeApi = {
   bulkPromote: (ids: number[]) => api.post('/nodes/unified/bulk-promote', { ids }),
   bulkArchive: (ids: number[]) => api.post('/nodes/unified/bulk-archive', { ids }),
   getCounts: () => api.get('/nodes/unified/counts'),
+  exportLinks: (ids?: number[], status?: string) =>
+    api.post('/nodes/unified/export-links', { ids, status }),
   toggleFavorite: (id: number, favorite: boolean) => api.post(`/nodes/unified/${id}/favorite`, { favorite }),
 };
 

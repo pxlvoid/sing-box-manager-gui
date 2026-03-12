@@ -318,6 +318,7 @@ func (s *Server) setupRoutes() {
 		api.POST("/nodes/unified/:id/favorite", s.toggleNodeFavorite)
 		api.POST("/nodes/unified/bulk-promote", s.bulkPromoteNodes)
 		api.POST("/nodes/unified/bulk-archive", s.bulkArchiveNodes)
+		api.POST("/nodes/unified/export-links", s.exportNodeLinks)
 		api.GET("/nodes/unified/counts", s.getNodeCounts)
 
 		// Verification
@@ -3215,6 +3216,50 @@ func (s *Server) bulkArchiveNodes(c *gin.Context) {
 func (s *Server) getNodeCounts(c *gin.Context) {
 	counts := s.store.GetNodeCounts()
 	c.JSON(http.StatusOK, gin.H{"data": counts})
+}
+
+func (s *Server) exportNodeLinks(c *gin.Context) {
+	var req struct {
+		IDs    []int64 `json:"ids"`
+		Status string  `json:"status"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	var nodes []storage.UnifiedNode
+	if len(req.IDs) > 0 {
+		for _, id := range req.IDs {
+			if n := s.store.GetNodeByID(id); n != nil {
+				nodes = append(nodes, *n)
+			}
+		}
+	} else {
+		status := storage.NodeStatus(req.Status)
+		if status == "" {
+			status = storage.NodeStatusVerified
+		}
+		nodes = s.store.GetNodes(status)
+	}
+
+	var links []string
+	var errors []string
+	for _, n := range nodes {
+		node := n.ToNode()
+		link, err := parser.SerializeNode(&node)
+		if err != nil {
+			errors = append(errors, fmt.Sprintf("%s: %s", n.DisplayOrTag(), err.Error()))
+			continue
+		}
+		links = append(links, link)
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"links":  links,
+		"errors": errors,
+		"total":  len(links),
+	})
 }
 
 // ==================== Verification API ====================

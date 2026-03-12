@@ -14,11 +14,13 @@ import {
   Button,
   Tooltip,
 } from '@nextui-org/react';
-import { Search, Activity, Trash2, ArrowDownCircle, Pencil, Star } from 'lucide-react';
+import { Search, Activity, Trash2, ArrowDownCircle, Pencil, Star, Copy } from 'lucide-react';
 // Activity is used for empty state icon
 import type { UnifiedNode, GeoData } from '../../../store';
 import type { NodeHealthResult, HealthCheckMode, NodeSiteCheckResult } from '../../../store';
 import { nodeDisplayTag, nodeInternalTag, nodeSourceTag } from '../../../store';
+import { unifiedNodeApi } from '../../../api';
+import { toast } from '../../../components/Toast';
 import { SITE_CHECK_TARGETS, formatBytes } from '../types';
 import type { NodeTrafficRow } from '../types';
 import NodeHealthChips from '../components/NodeHealthChips';
@@ -66,6 +68,8 @@ export default function VerifiedNodesTab({
   const [page, setPage] = useState(1);
   const [showFavoritesOnly, setShowFavoritesOnly] = useState(false);
 
+  const [exporting, setExporting] = useState(false);
+
   const filteredNodes = useMemo(() => {
     let result = nodes;
     if (showFavoritesOnly) {
@@ -82,6 +86,30 @@ export default function VerifiedNodesTab({
     }
     return result;
   }, [nodes, searchQuery, showFavoritesOnly]);
+
+  const handleExportLinks = useCallback(async () => {
+    setExporting(true);
+    try {
+      const ids = filteredNodes.map((n) => n.id);
+      const res = await unifiedNodeApi.exportLinks(ids);
+      const { links, errors } = res.data as { links: string[] | null; errors: string[] | null; total: number };
+      if (!links || links.length === 0) {
+        toast.error('No links to export');
+        return;
+      }
+      await navigator.clipboard.writeText(links.join('\n'));
+      const msg = `Copied ${links.length} link(s) to clipboard`;
+      if (errors && errors.length > 0) {
+        toast.info(`${msg} (${errors.length} failed)`);
+      } else {
+        toast.success(msg);
+      }
+    } catch (err: any) {
+      toast.error(err?.message || 'Failed to export links');
+    } finally {
+      setExporting(false);
+    }
+  }, [filteredNodes]);
 
   const extractSortValue = useCallback(
     (node: UnifiedNode, col: string): string | number | null => {
@@ -169,6 +197,17 @@ export default function VerifiedNodesTab({
             onPress={() => setShowFavoritesOnly((v) => !v)}
           >
             <Star className={`w-4 h-4 ${showFavoritesOnly ? 'fill-current' : ''}`} />
+          </Button>
+        </Tooltip>
+        <Tooltip content="Copy links to clipboard">
+          <Button
+            isIconOnly
+            size="sm"
+            variant="light"
+            isLoading={exporting}
+            onPress={handleExportLinks}
+          >
+            <Copy className="w-4 h-4" />
           </Button>
         </Tooltip>
         <span className="text-xs text-gray-400 ml-auto">
