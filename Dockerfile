@@ -3,11 +3,12 @@
 # Stage 1: Сборка фронтенда
 FROM node:20-alpine AS frontend-builder
 
+RUN corepack enable && corepack prepare pnpm@latest --activate
 WORKDIR /build/web
-COPY web/package.json web/package-lock.json* ./
-RUN npm install
+COPY web/package.json web/pnpm-lock.yaml ./
+RUN pnpm install --frozen-lockfile
 COPY web/ ./
-RUN npm run build
+RUN pnpm run build
 
 # Stage 2: Сборка Go бэкенда с встроенным фронтендом
 FROM golang:1.24-alpine AS backend-builder
