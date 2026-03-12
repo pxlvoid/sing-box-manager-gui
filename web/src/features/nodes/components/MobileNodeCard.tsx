@@ -2,7 +2,8 @@ import { Chip, Button, Checkbox } from '@nextui-org/react';
 import { Activity, Trash2, ArrowUpCircle, ArrowDownCircle, Archive, Pencil, RotateCcw } from 'lucide-react';
 import type { UnifiedNode, NodeHealthResult, HealthCheckMode, NodeSiteCheckResult, GeoData } from '../../../store';
 import { nodeDisplayTag, nodeInternalTag, nodeSourceTag } from '../../../store';
-import { spKey, SITE_CHECK_TARGETS } from '../types';
+import { spKey, SITE_CHECK_TARGETS, formatBytes } from '../types';
+import type { NodeTrafficRow } from '../types';
 import NodeHealthChips from './NodeHealthChips';
 import GeoChip from './GeoChip';
 
@@ -25,6 +26,7 @@ interface MobileNodeCardProps {
   healthCheckingNodes?: string[];
   siteCheckResults?: Record<string, NodeSiteCheckResult>;
   onHealthCheck?: (tag: string) => void;
+  trafficRow?: NodeTrafficRow;
   // Selection — only for pending
   selected?: boolean;
   onToggleSelect?: (id: number) => void;
@@ -46,6 +48,7 @@ export default function MobileNodeCard({
   healthCheckingNodes,
   siteCheckResults,
   onHealthCheck,
+  trafficRow,
   selected,
   onToggleSelect,
   onPromote,
@@ -105,6 +108,11 @@ export default function MobileNodeCard({
         {variant === 'archived' && node.archived_at && (
           <span className="text-xs text-gray-400">
             {new Date(node.archived_at).toLocaleDateString()}
+          </span>
+        )}
+        {trafficRow && trafficRow.total_bytes > 0 && (
+          <span className="text-xs text-gray-400">
+            {formatBytes(trafficRow.upload_bytes)} / {formatBytes(trafficRow.download_bytes)}
           </span>
         )}
       </div>

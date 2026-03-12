@@ -18,7 +18,8 @@ import {
 import { Search, Activity, Trash2, ArrowUpCircle, Archive, Pencil, Star } from 'lucide-react';
 import type { UnifiedNode, NodeHealthResult, HealthCheckMode, NodeSiteCheckResult, GeoData } from '../../../store';
 import { nodeDisplayTag, nodeInternalTag, nodeSourceTag } from '../../../store';
-import { spKey, SITE_CHECK_TARGETS } from '../types';
+import { spKey, SITE_CHECK_TARGETS, formatBytes } from '../types';
+import type { NodeTrafficRow } from '../types';
 import NodeHealthChips from '../components/NodeHealthChips';
 import GeoChip from '../components/GeoChip';
 import MobileNodeCard from '../components/MobileNodeCard';
@@ -50,6 +51,7 @@ interface PendingNodesTabProps {
   onDelete: (id: number) => void;
   onEdit: (node: UnifiedNode) => void;
   onToggleFavorite: (id: number) => void;
+  nodeTrafficMap?: Map<string, NodeTrafficRow>;
   onBulkPromote: (ids: number[]) => void;
   onBulkArchive: (ids: number[]) => void;
 }
@@ -69,6 +71,7 @@ export default function PendingNodesTab({
   onDelete,
   onEdit,
   onToggleFavorite,
+  nodeTrafficMap,
   onBulkPromote,
   onBulkArchive,
 }: PendingNodesTabProps) {
@@ -264,6 +267,7 @@ export default function PendingNodesTab({
               healthMode={healthMode}
               healthCheckingNodes={healthCheckingNodes}
               siteCheckResults={siteCheckResults}
+              trafficRow={nodeTrafficMap?.get(nodeInternalTag(node))}
               onHealthCheck={checkSingleNodeHealth}
               selected={selectedIds.has(node.id)}
               onToggleSelect={handleToggleSelect}
@@ -313,6 +317,9 @@ export default function PendingNodesTab({
             <TableColumn width={100}>Type</TableColumn>
             <TableColumn>Server</TableColumn>
             <TableColumn width={160}>GeoIP</TableColumn>
+            <TableColumn width={80} className="hidden xl:table-cell">Upload</TableColumn>
+            <TableColumn width={80} className="hidden xl:table-cell">Download</TableColumn>
+            <TableColumn width={80} className="hidden xl:table-cell">Total</TableColumn>
             <TableColumn width={80}>Failures</TableColumn>
             <TableColumn width={140}>Status / Health</TableColumn>
             <TableColumn width={160}>Actions</TableColumn>
@@ -324,6 +331,7 @@ export default function PendingNodesTab({
               const hasGeo = geo?.status === 'success' && geo.country_code;
               const countryEmoji = hasGeo ? countryCodeToEmoji(geo.country_code) : '🌐';
               const countryLabel = hasGeo ? `${geo.country} (${geo.country_code})` : 'No GeoIP data';
+              const traffic = nodeTrafficMap?.get(nodeInternalTag(node));
               const failures = node.consecutive_failures;
               const failureColor =
                 failures >= 8 ? 'danger' : failures >= 5 ? 'warning' : 'default';
@@ -360,6 +368,15 @@ export default function PendingNodesTab({
                   </TableCell>
                   <TableCell>
                     <GeoChip geo={geoData[key]} claimedCountry={node.country} />
+                  </TableCell>
+                  <TableCell className="hidden xl:table-cell">
+                    <span className="text-xs text-gray-500">{traffic ? formatBytes(traffic.upload_bytes) : '-'}</span>
+                  </TableCell>
+                  <TableCell className="hidden xl:table-cell">
+                    <span className="text-xs text-gray-500">{traffic ? formatBytes(traffic.download_bytes) : '-'}</span>
+                  </TableCell>
+                  <TableCell className="hidden xl:table-cell">
+                    <span className="text-xs font-medium">{traffic ? formatBytes(traffic.total_bytes) : '-'}</span>
                   </TableCell>
                   <TableCell>
                     {failures > 0 ? (

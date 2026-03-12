@@ -8,6 +8,16 @@ export function formatBytes(bytes: number): string {
   return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
 }
 
+export interface NodeTrafficRow {
+  node_tag: string;
+  display_name?: string;
+  source_tag?: string;
+  last_seen?: string;
+  upload_bytes: number;
+  download_bytes: number;
+  total_bytes: number;
+}
+
 export const nodeTypeOptions = [
   { value: 'shadowsocks', label: 'Shadowsocks' },
   { value: 'vmess', label: 'VMess' },

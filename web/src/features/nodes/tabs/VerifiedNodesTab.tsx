@@ -18,7 +18,8 @@ import { Search, Activity, Trash2, ArrowDownCircle, Pencil, Star } from 'lucide-
 import type { UnifiedNode, GeoData } from '../../../store';
 import type { NodeHealthResult, HealthCheckMode, NodeSiteCheckResult } from '../../../store';
 import { nodeDisplayTag, nodeInternalTag, nodeSourceTag } from '../../../store';
-import { SITE_CHECK_TARGETS } from '../types';
+import { SITE_CHECK_TARGETS, formatBytes } from '../types';
+import type { NodeTrafficRow } from '../types';
 import NodeHealthChips from '../components/NodeHealthChips';
 import GeoChip from '../components/GeoChip';
 import MobileNodeCard from '../components/MobileNodeCard';
@@ -47,6 +48,7 @@ interface VerifiedNodesTabProps {
   onDemote: (id: number) => void;
   onDelete: (id: number) => void;
   onEdit: (node: UnifiedNode) => void;
+  nodeTrafficMap?: Map<string, NodeTrafficRow>;
   onToggleFavorite: (id: number) => void;
 }
 
@@ -64,6 +66,7 @@ export default function VerifiedNodesTab({
   onDelete,
   onEdit,
   onToggleFavorite,
+  nodeTrafficMap,
 }: VerifiedNodesTabProps) {
   const isMobile = useIsMobile();
   const [searchQuery, setSearchQuery] = useState('');
@@ -173,6 +176,7 @@ export default function VerifiedNodesTab({
                 healthMode={healthMode}
                 healthCheckingNodes={healthCheckingNodes}
                 siteCheckResults={siteCheckResults}
+                trafficRow={nodeTrafficMap?.get(nodeInternalTag(node))}
                 onHealthCheck={checkSingleNodeHealth}
                 onDemote={onDemote}
                 onDelete={onDelete}
@@ -211,6 +215,9 @@ export default function VerifiedNodesTab({
             <TableColumn width={100}>Type</TableColumn>
             <TableColumn width={200}>Server:Port</TableColumn>
             <TableColumn width={160}>GeoIP</TableColumn>
+            <TableColumn width={80} className="hidden xl:table-cell">Upload</TableColumn>
+            <TableColumn width={80} className="hidden xl:table-cell">Download</TableColumn>
+            <TableColumn width={80} className="hidden xl:table-cell">Total</TableColumn>
             <TableColumn width={180}>Last Checked</TableColumn>
             <TableColumn width={140}>Health</TableColumn>
             <TableColumn width={140}>Actions</TableColumn>
@@ -222,6 +229,7 @@ export default function VerifiedNodesTab({
               const hasGeo = geo?.status === 'success' && geo.country_code;
               const countryEmoji = hasGeo ? countryCodeToEmoji(geo.country_code) : '🌐';
               const countryLabel = hasGeo ? `${geo.country} (${geo.country_code})` : 'No GeoIP data';
+              const traffic = nodeTrafficMap?.get(nodeInternalTag(node));
               return (
                 <TableRow key={node.id}>
                   <TableCell>
@@ -251,6 +259,15 @@ export default function VerifiedNodesTab({
                   </TableCell>
                   <TableCell>
                     <GeoChip geo={geoData[key]} claimedCountry={node.country} />
+                  </TableCell>
+                  <TableCell className="hidden xl:table-cell">
+                    <span className="text-xs text-gray-500">{traffic ? formatBytes(traffic.upload_bytes) : '-'}</span>
+                  </TableCell>
+                  <TableCell className="hidden xl:table-cell">
+                    <span className="text-xs text-gray-500">{traffic ? formatBytes(traffic.download_bytes) : '-'}</span>
+                  </TableCell>
+                  <TableCell className="hidden xl:table-cell">
+                    <span className="text-xs font-medium">{traffic ? formatBytes(traffic.total_bytes) : '-'}</span>
                   </TableCell>
                   <TableCell>
                     <span className="text-xs text-gray-500">

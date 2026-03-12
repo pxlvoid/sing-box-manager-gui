@@ -16,13 +16,16 @@ import {
 } from '@nextui-org/react';
 import { Search, Trash2, RotateCcw, Archive, Star } from 'lucide-react';
 import type { UnifiedNode, GeoData } from '../../../store';
-import { nodeDisplayTag, nodeSourceTag } from '../../../store';
+import { nodeDisplayTag, nodeSourceTag, nodeInternalTag } from '../../../store';
 import MobileNodeCard from '../components/MobileNodeCard';
 import useIsMobile from '../../../hooks/useIsMobile';
+import { formatBytes } from '../types';
+import type { NodeTrafficRow } from '../types';
 
 interface ArchivedNodesTabProps {
   nodes: UnifiedNode[];
   geoData: Record<string, GeoData>;
+  nodeTrafficMap?: Map<string, NodeTrafficRow>;
   onUnarchive: (id: number) => void;
   onDelete: (id: number) => void;
   onToggleFavorite: (id: number) => void;
@@ -39,7 +42,7 @@ function countryCodeToEmoji(code: string): string {
   );
 }
 
-export default function ArchivedNodesTab({ nodes, geoData, onUnarchive, onDelete, onToggleFavorite }: ArchivedNodesTabProps) {
+export default function ArchivedNodesTab({ nodes, geoData, nodeTrafficMap, onUnarchive, onDelete, onToggleFavorite }: ArchivedNodesTabProps) {
   const isMobile = useIsMobile();
   const [searchQuery, setSearchQuery] = useState('');
   const [page, setPage] = useState(1);
@@ -136,6 +139,7 @@ export default function ArchivedNodesTab({ nodes, geoData, onUnarchive, onDelete
               node={node}
               geoData={geoData}
               variant="archived"
+              trafficRow={nodeTrafficMap?.get(nodeInternalTag(node))}
               onUnarchive={onUnarchive}
               onDelete={onDelete}
             />
@@ -171,6 +175,9 @@ export default function ArchivedNodesTab({ nodes, geoData, onUnarchive, onDelete
             <TableColumn>Tag</TableColumn>
             <TableColumn width={100}>Type</TableColumn>
             <TableColumn>Server:Port</TableColumn>
+            <TableColumn width={80} className="hidden xl:table-cell">Upload</TableColumn>
+            <TableColumn width={80} className="hidden xl:table-cell">Download</TableColumn>
+            <TableColumn width={80} className="hidden xl:table-cell">Total</TableColumn>
             <TableColumn width={90}>Failures</TableColumn>
             <TableColumn width={180}>Archived At</TableColumn>
             <TableColumn width={110}>Actions</TableColumn>
@@ -182,6 +189,7 @@ export default function ArchivedNodesTab({ nodes, geoData, onUnarchive, onDelete
               const hasGeo = geo?.status === 'success' && geo.country_code;
               const countryEmoji = hasGeo ? countryCodeToEmoji(geo.country_code) : '🌐';
               const countryLabel = hasGeo ? `${geo.country} (${geo.country_code})` : 'No GeoIP data';
+              const traffic = nodeTrafficMap?.get(nodeInternalTag(node));
               return (
               <TableRow key={node.id}>
                 <TableCell>
@@ -204,6 +212,15 @@ export default function ArchivedNodesTab({ nodes, geoData, onUnarchive, onDelete
                 </TableCell>
                 <TableCell>
                   <span className="text-sm text-gray-500">{node.server}:{node.server_port}</span>
+                </TableCell>
+                <TableCell className="hidden xl:table-cell">
+                  <span className="text-xs text-gray-500">{traffic ? formatBytes(traffic.upload_bytes) : '-'}</span>
+                </TableCell>
+                <TableCell className="hidden xl:table-cell">
+                  <span className="text-xs text-gray-500">{traffic ? formatBytes(traffic.download_bytes) : '-'}</span>
+                </TableCell>
+                <TableCell className="hidden xl:table-cell">
+                  <span className="text-xs font-medium">{traffic ? formatBytes(traffic.total_bytes) : '-'}</span>
                 </TableCell>
                 <TableCell>
                   <Chip size="sm" variant="flat" color="danger">

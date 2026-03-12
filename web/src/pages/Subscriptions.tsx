@@ -1,19 +1,14 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
-  Card,
-  CardBody,
-  CardHeader,
   Button,
-  Chip,
-  Spinner,
   Tabs,
   Tab,
 } from '@nextui-org/react';
-import { Plus, List, Filter as FilterIcon, Download, ClipboardPaste, Network } from 'lucide-react';
+import { Plus, List, Filter as FilterIcon, Download, ClipboardPaste } from 'lucide-react';
 import { useStore } from '../store';
 import type { Subscription, UnifiedNode } from '../store';
-import { nodeDisplayTag, nodeInternalTag, nodeSourceTag } from '../store';
 import { monitoringApi } from '../api';
+import type { NodeTrafficRow } from '../features/nodes/types';
 
 // Hooks
 import { useSubscriptionForm } from '../features/nodes/hooks/useSubscriptionForm';
@@ -39,16 +34,6 @@ import BulkAddModal from '../features/nodes/modals/BulkAddModal';
 import FilterModal from '../features/nodes/modals/FilterModal';
 import ExportModal from '../features/nodes/modals/ExportModal';
 import ImportModal from '../features/nodes/modals/ImportModal';
-
-interface NodeTrafficRow {
-  node_tag: string;
-  display_name?: string;
-  source_tag?: string;
-  last_seen?: string;
-  upload_bytes: number;
-  download_bytes: number;
-  total_bytes: number;
-}
 
 export default function Subscriptions() {
   const {
@@ -102,7 +87,6 @@ export default function Subscriptions() {
   const filterForm = useFilterForm();
   const exportImport = useExportImport();
   const [nodeTraffic, setNodeTraffic] = useState<NodeTrafficRow[]>([]);
-  const [nodeTrafficLoading, setNodeTrafficLoading] = useState(true);
 
   const fetchNodeTraffic = useCallback(async () => {
     try {
@@ -111,45 +95,16 @@ export default function Subscriptions() {
     } catch (error) {
       console.error('Failed to fetch node traffic stats:', error);
       setNodeTraffic([]);
-    } finally {
-      setNodeTrafficLoading(false);
     }
   }, []);
 
-  const nodeStatusByTag = useMemo(() => {
-    const map = new Map<string, 'pending' | 'verified' | 'archived'>();
-    for (const node of pendingNodes) map.set(nodeInternalTag(node), 'pending');
-    for (const node of verifiedNodes) map.set(nodeInternalTag(node), 'verified');
-    for (const node of archivedNodes) map.set(nodeInternalTag(node), 'archived');
-    return map;
-  }, [pendingNodes, verifiedNodes, archivedNodes]);
-
-  const nodeByInternalTag = useMemo(() => {
-    const map = new Map<string, UnifiedNode>();
-    for (const node of [...pendingNodes, ...verifiedNodes, ...archivedNodes]) {
-      map.set(nodeInternalTag(node), node);
+  const nodeTrafficMap = useMemo(() => {
+    const map = new Map<string, NodeTrafficRow>();
+    for (const row of nodeTraffic) {
+      map.set(row.node_tag, row);
     }
     return map;
-  }, [pendingNodes, verifiedNodes, archivedNodes]);
-
-  const formatBytes = (bytes: number): string => {
-    if (!Number.isFinite(bytes) || bytes <= 0) return '0 B';
-    const units = ['B', 'KB', 'MB', 'GB', 'TB'];
-    let value = bytes;
-    let idx = 0;
-    while (value >= 1024 && idx < units.length - 1) {
-      value /= 1024;
-      idx += 1;
-    }
-    return `${value.toFixed(value >= 10 || idx === 0 ? 0 : 1)} ${units[idx]}`;
-  };
-
-  const formatDateTime = (value?: string): string => {
-    if (!value) return '-';
-    const ts = Date.parse(value);
-    if (Number.isNaN(ts)) return '-';
-    return new Date(ts).toLocaleString();
-  };
+  }, [nodeTraffic]);
 
   // Initial data loading
   useEffect(() => {
@@ -254,71 +209,6 @@ export default function Subscriptions() {
         </div>
       </div>
 
-      <Card className="shadow-none border border-gray-200 dark:border-gray-700">
-        <CardHeader className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <Network className="w-5 h-5" />
-            <h2 className="text-lg font-semibold">Traffic by Node</h2>
-          </div>
-          <Chip size="sm" variant="flat">All-time (sampled)</Chip>
-        </CardHeader>
-        <CardBody className="pt-0">
-          {nodeTrafficLoading ? (
-            <div className="flex justify-center py-6">
-              <Spinner size="sm" />
-            </div>
-          ) : nodeTraffic.length === 0 ? (
-            <p className="text-sm text-gray-500 py-2">No node traffic data yet.</p>
-          ) : (
-            <div className="max-h-72 overflow-auto">
-              <table className="w-full text-sm">
-                <thead className="text-left text-gray-500 border-b border-gray-200 dark:border-gray-700">
-                  <tr>
-                    <th className="py-2 pr-3">Node</th>
-                    <th className="py-2 pr-3">Status</th>
-                    <th className="py-2 pr-3">Upload</th>
-                    <th className="py-2 pr-3">Download</th>
-                    <th className="py-2 pr-3">Total</th>
-                    <th className="py-2">Last Seen</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {nodeTraffic.slice(0, 40).map((item) => {
-                    const status = nodeStatusByTag.get(item.node_tag);
-                    const statusColor = status === 'verified' ? 'success' : status === 'pending' ? 'warning' : status === 'archived' ? 'default' : 'danger';
-                    const knownNode = nodeByInternalTag.get(item.node_tag);
-                    const displayName = (item.display_name || (knownNode ? nodeDisplayTag(knownNode) : item.node_tag)).trim();
-                    const sourceTag = (item.source_tag || (knownNode ? nodeSourceTag(knownNode) : '')).trim();
-                    return (
-                      <tr key={item.node_tag} className="border-b border-gray-100 dark:border-gray-800">
-                        <td className="py-2 pr-3 font-medium max-w-[240px]">
-                          <div className="truncate" title={displayName}>{displayName}</div>
-                          {sourceTag && sourceTag !== displayName && (
-                            <div className="text-xs text-gray-500 truncate" title={sourceTag}>{sourceTag}</div>
-                          )}
-                        </td>
-                        <td className="py-2 pr-3">
-                          <Chip size="sm" variant="flat" color={statusColor}>
-                            {status || 'missing'}
-                          </Chip>
-                        </td>
-                        <td className="py-2 pr-3">{formatBytes(item.upload_bytes)}</td>
-                        <td className="py-2 pr-3">{formatBytes(item.download_bytes)}</td>
-                        <td className="py-2 pr-3 font-semibold">{formatBytes(item.total_bytes)}</td>
-                        <td className="py-2">{formatDateTime(item.last_seen)}</td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-          )}
-          <p className="text-xs text-gray-500 mt-3">
-            Based on saved monitoring snapshots in SQLite. Direct traffic and chains outside managed node tags are excluded.
-          </p>
-        </CardBody>
-      </Card>
-
       <UnsupportedNodesAlert
         unsupportedNodes={unsupportedNodes}
         onRecheck={recheckUnsupportedNodes}
@@ -340,6 +230,7 @@ export default function Subscriptions() {
             siteCheckResults={siteCheckResults}
             siteCheckingNodes={siteCheckingNodes}
             geoData={geoData}
+            nodeTrafficMap={nodeTrafficMap}
             checkSingleNodeHealth={checkSingleNodeHealth}
             checkSingleNodeSites={checkSingleNodeSites}
             onPromote={promoteNode}
@@ -361,6 +252,7 @@ export default function Subscriptions() {
             siteCheckResults={siteCheckResults}
             siteCheckingNodes={siteCheckingNodes}
             geoData={geoData}
+            nodeTrafficMap={nodeTrafficMap}
             checkSingleNodeHealth={checkSingleNodeHealth}
             checkSingleNodeSites={checkSingleNodeSites}
             onDemote={demoteNode}
@@ -374,6 +266,7 @@ export default function Subscriptions() {
           <ArchivedNodesTab
             nodes={archivedNodes}
             geoData={geoData}
+            nodeTrafficMap={nodeTrafficMap}
             onUnarchive={unarchiveNode}
             onDelete={(id) => { if (confirm('Delete this node?')) deleteNode(id); }}
             onToggleFavorite={toggleFavorite}
