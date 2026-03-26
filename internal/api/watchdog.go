@@ -23,8 +23,17 @@ const (
 )
 
 var watchdogTargets = []string{
-	"https://www.youtube.com/generate_204",
-	"https://i.ytimg.com/generate_204",
+	"https://www.gstatic.com/generate_204",
+	"https://cp.cloudflare.com/generate_204",
+	"https://www.msftconnecttest.com/connecttest.txt",
+	"https://www.apple.com/library/test/success.html",
+}
+
+func watchdogSuccessQuorum() int {
+	if len(watchdogTargets) == 0 {
+		return 0
+	}
+	return len(watchdogTargets)/2 + 1
 }
 
 type clashProxySnapshot struct {
@@ -81,6 +90,7 @@ func (s *Server) runActiveProxyWatchdog() {
 	}
 
 	allTargetsOK := true
+	successfulTargets := 0
 	failReasons := make(map[string]string)
 	for _, target := range watchdogTargets {
 		delay, errType := s.probeDelayMedianWithRetries(
@@ -94,16 +104,18 @@ func (s *Server) runActiveProxyWatchdog() {
 		if delay <= 0 {
 			allTargetsOK = false
 			failReasons[target] = errType
+			continue
 		}
+		successfulTargets++
 	}
 
-	if allTargetsOK {
+	if allTargetsOK || successfulTargets >= watchdogSuccessQuorum() {
 		s.resetWatchdogFailure(activeLeaf)
 		return
 	}
 
 	streak := s.bumpWatchdogFailure(activeLeaf)
-	logger.Printf("[watchdog] active proxy %s failed (%d/%d), reasons=%v", activeLeaf, streak, watchdogFailThreshold, failReasons)
+	logger.Printf("[watchdog] active proxy %s failed (%d/%d), successful_targets=%d/%d, reasons=%v", activeLeaf, streak, watchdogFailThreshold, successfulTargets, len(watchdogTargets), failReasons)
 	if streak < watchdogFailThreshold {
 		return
 	}
@@ -111,7 +123,7 @@ func (s *Server) runActiveProxyWatchdog() {
 	s.setWatchdogCooldown(activeLeaf, time.Now().Add(watchdogCooldownDuration))
 	s.resetWatchdogFailure(activeLeaf)
 
-	candidate, score, err := s.pickWatchdogFailoverCandidate(settings.ClashAPIPort, settings.ClashAPISecret, proxies, activeLeaf)
+	candidate, successCount, score, err := s.pickWatchdogFailoverCandidate(settings.ClashAPIPort, settings.ClashAPISecret, proxies, activeLeaf)
 	if err != nil {
 		logger.Printf("[watchdog] failover candidate selection failed: %v", err)
 		return
@@ -133,13 +145,15 @@ func (s *Server) runActiveProxyWatchdog() {
 		return
 	}
 
-	logger.Printf("[watchdog] failover switched Proxy %s -> %s (score=%d)", activeLeaf, candidate, score)
+	logger.Printf("[watchdog] failover switched Proxy %s -> %s (success=%d/%d, score=%d)", activeLeaf, candidate, successCount, len(watchdogTargets), score)
 	if s.eventBus != nil {
 		s.eventBus.PublishTimestamped("watchdog:failover", map[string]interface{}{
-			"from":   activeLeaf,
-			"to":     candidate,
-			"score":  score,
-			"reason": failReasons,
+			"from":          activeLeaf,
+			"to":            candidate,
+			"score":         score,
+			"success_count": successCount,
+			"target_count":  len(watchdogTargets),
+			"reason":        failReasons,
 		})
 	}
 }
@@ -241,14 +255,16 @@ func isProxyGroupType(proxyType string) bool {
 	}
 }
 
-func (s *Server) pickWatchdogFailoverCandidate(port int, secret string, proxies map[string]clashProxySnapshot, activeLeaf string) (string, int, error) {
+func (s *Server) pickWatchdogFailoverCandidate(port int, secret string, proxies map[string]clashProxySnapshot, activeLeaf string) (string, int, int, error) {
 	root, ok := proxies["Proxy"]
 	if !ok {
-		return "", 0, nil
+		return "", 0, 0, nil
 	}
 
 	bestCandidate := ""
+	bestSuccessCount := -1
 	bestScore := int(^uint(0) >> 1)
+	quorum := watchdogSuccessQuorum()
 
 	for _, name := range root.All {
 		candidate := strings.TrimSpace(name)
@@ -266,7 +282,7 @@ func (s *Server) pickWatchdogFailoverCandidate(port int, secret string, proxies 
 		}
 
 		score := 0
-		passed := true
+		successCount := 0
 		for _, target := range watchdogTargets {
 			delay, _ := s.probeDelayMedianWithRetries(
 				port,
@@ -277,24 +293,25 @@ func (s *Server) pickWatchdogFailoverCandidate(port int, secret string, proxies 
 				watchdogProbeAttempts,
 			)
 			if delay <= 0 {
-				passed = false
-				break
+				continue
 			}
+			successCount++
 			score += delay
 		}
-		if !passed {
+		if successCount < quorum {
 			continue
 		}
-		if score < bestScore {
+		if successCount > bestSuccessCount || (successCount == bestSuccessCount && score < bestScore) {
+			bestSuccessCount = successCount
 			bestScore = score
 			bestCandidate = candidate
 		}
 	}
 
 	if bestCandidate == "" {
-		return "", 0, nil
+		return "", 0, 0, nil
 	}
-	return bestCandidate, bestScore, nil
+	return bestCandidate, bestSuccessCount, bestScore, nil
 }
 
 func (s *Server) switchClashProxyGroup(groupName, targetName string) error {
