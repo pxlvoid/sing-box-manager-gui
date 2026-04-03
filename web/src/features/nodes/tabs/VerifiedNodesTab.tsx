@@ -14,10 +14,10 @@ import {
   Button,
   Tooltip,
 } from '@nextui-org/react';
-import { Search, Activity, Trash2, ArrowDownCircle, Pencil, Star, Copy } from 'lucide-react';
+import { Search, Activity, Trash2, ArrowDownCircle, Pencil, Star, Copy, Gauge } from 'lucide-react';
 // Activity is used for empty state icon
 import type { UnifiedNode, GeoData } from '../../../store';
-import type { NodeHealthResult, HealthCheckMode, NodeSiteCheckResult } from '../../../store';
+import type { NodeHealthResult, HealthCheckMode, NodeSiteCheckResult, SpeedTestResult } from '../../../store';
 import { nodeDisplayTag, nodeInternalTag, nodeSourceTag } from '../../../store';
 import { unifiedNodeApi } from '../../../api';
 import { toast } from '../../../components/Toast';
@@ -37,6 +37,9 @@ interface VerifiedNodesTabProps {
   healthCheckingNodes: string[];
   siteCheckResults: Record<string, NodeSiteCheckResult>;
   siteCheckingNodes: string[];
+  speedResults?: Record<string, SpeedTestResult>;
+  speedTesting?: boolean;
+  runSpeedTest?: (tags?: string[]) => Promise<void>;
   geoData: Record<string, GeoData>;
   checkSingleNodeHealth: (tag: string) => void;
   checkSingleNodeSites: (tag: string, targets: string[]) => void;
@@ -54,6 +57,9 @@ export default function VerifiedNodesTab({
   healthCheckingNodes,
   siteCheckResults,
   siteCheckingNodes: _siteCheckingNodes,
+  speedResults,
+  speedTesting,
+  runSpeedTest,
   geoData,
   checkSingleNodeHealth,
   checkSingleNodeSites: _checkSingleNodeSites,
@@ -219,6 +225,20 @@ export default function VerifiedNodesTab({
             <Copy className="w-4 h-4" />
           </Button>
         </Tooltip>
+        {runSpeedTest && (
+          <Tooltip content="Speed Test (download 10MB through each node)">
+            <Button
+              isIconOnly
+              size="sm"
+              variant="light"
+              color="secondary"
+              isLoading={speedTesting}
+              onPress={() => runSpeedTest()}
+            >
+              <Gauge className="w-4 h-4" />
+            </Button>
+          </Tooltip>
+        )}
         <span className="text-xs text-gray-400 ml-auto">
           {filteredNodes.length === nodes.length
             ? `${nodes.length} verified nodes`
@@ -342,6 +362,7 @@ export default function VerifiedNodesTab({
                       healthMode={healthMode}
                       siteCheckResults={siteCheckResults}
                       siteTargets={SITE_CHECK_TARGETS}
+                      speedResults={speedResults}
                     />
                   </TableCell>
                   <TableCell>

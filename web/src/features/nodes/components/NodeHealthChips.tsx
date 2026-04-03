@@ -1,6 +1,14 @@
 import { Chip, Tooltip } from '@nextui-org/react';
-import type { NodeHealthResult, HealthCheckMode, NodeSiteCheckResult } from '../../../store';
+import type { NodeHealthResult, HealthCheckMode, NodeSiteCheckResult, SpeedTestResult } from '../../../store';
 import { shortSiteLabel, siteErrorLabel } from '../types';
+
+function formatSpeed(bps: number): string {
+  if (bps <= 0) return '0';
+  const mbps = (bps * 8) / 1_000_000;
+  if (mbps >= 1) return `${mbps.toFixed(1)} Mbps`;
+  const kbps = (bps * 8) / 1000;
+  return `${kbps.toFixed(0)} Kbps`;
+}
 
 interface NodeHealthChipsProps {
   tag: string;
@@ -8,13 +16,15 @@ interface NodeHealthChipsProps {
   healthMode: HealthCheckMode | null;
   siteCheckResults: Record<string, NodeSiteCheckResult>;
   siteTargets: string[];
+  speedResults?: Record<string, SpeedTestResult>;
 }
 
-export default function NodeHealthChips({ tag, healthResults, healthMode, siteCheckResults, siteTargets }: NodeHealthChipsProps) {
+export default function NodeHealthChips({ tag, healthResults, healthMode, siteCheckResults, siteTargets, speedResults }: NodeHealthChipsProps) {
   const result = healthResults[tag];
   const siteResult = siteCheckResults[tag];
+  const speedResult = speedResults?.[tag];
   const isClashMode = healthMode === 'clash_api' || healthMode === 'clash_api_temp';
-  if (!result && !siteResult) return null;
+  if (!result && !siteResult && !speedResult) return null;
 
   const orderedSiteEntries = siteResult
     ? siteTargets.map((site) => ({
@@ -56,6 +66,19 @@ export default function NodeHealthChips({ tag, healthResults, healthMode, siteCh
       status: delay > 0 ? (delay < 800 ? 'success' : 'warning') : 'danger',
     });
   });
+
+  if (speedResult) {
+    if (speedResult.error && speedResult.download_bps <= 0) {
+      checks.push({ label: 'Speed', value: 'Fail', status: 'danger' });
+    } else if (speedResult.download_bps > 0) {
+      const mbps = (speedResult.download_bps * 8) / 1_000_000;
+      checks.push({
+        label: 'Speed',
+        value: formatSpeed(speedResult.download_bps),
+        status: mbps >= 10 ? 'success' : mbps >= 2 ? 'warning' : 'danger',
+      });
+    }
+  }
 
   if (checks.length === 0) return null;
 

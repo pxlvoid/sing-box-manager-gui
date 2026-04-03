@@ -17,7 +17,7 @@ import {
 } from '@nextui-org/react';
 import { Search, Activity, Trash2, ArrowUpCircle, Archive, Pencil, Star } from 'lucide-react';
 // Activity is used for empty state icon
-import type { UnifiedNode, NodeHealthResult, HealthCheckMode, NodeSiteCheckResult, GeoData } from '../../../store';
+import type { UnifiedNode, NodeHealthResult, HealthCheckMode, NodeSiteCheckResult, SpeedTestResult, GeoData } from '../../../store';
 import { nodeDisplayTag, nodeInternalTag, nodeSourceTag } from '../../../store';
 import { spKey, SITE_CHECK_TARGETS, formatBytes } from '../types';
 import type { NodeTrafficRow } from '../types';
@@ -36,6 +36,7 @@ interface PendingNodesTabProps {
   healthCheckingNodes: string[];
   siteCheckResults: Record<string, NodeSiteCheckResult>;
   siteCheckingNodes: string[];
+  speedResults?: Record<string, SpeedTestResult>;
   geoData: Record<string, GeoData>;
   checkSingleNodeHealth: (tag: string) => void;
   checkSingleNodeSites: (tag: string, targets: string[]) => void;
@@ -56,6 +57,7 @@ export default function PendingNodesTab({
   healthCheckingNodes,
   siteCheckResults,
   siteCheckingNodes: _siteCheckingNodes,
+  speedResults,
   geoData,
   checkSingleNodeHealth,
   checkSingleNodeSites: _checkSingleNodeSites,
@@ -407,6 +409,7 @@ export default function PendingNodesTab({
                       healthMode={healthMode}
                       siteCheckResults={siteCheckResults}
                       siteTargets={SITE_CHECK_TARGETS}
+                      speedResults={speedResults}
                     />
                   </TableCell>
                   <TableCell>

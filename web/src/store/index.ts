@@ -13,6 +13,24 @@ export interface NodeSiteCheckResult {
   errors?: Record<string, string>;
 }
 
+export interface SpeedTestResult {
+  download_bps: number;
+  download_bytes: number;
+  duration_ms: number;
+  error?: string;
+}
+
+export interface SpeedMeasurement {
+  server: string;
+  server_port: number;
+  node_tag: string;
+  timestamp: string;
+  download_bps: number;
+  download_bytes: number;
+  duration_ms: number;
+  error?: string;
+}
+
 export type HealthCheckMode = 'clash_api' | 'clash_api_temp' | 'probe';
 export type SiteCheckMode = 'clash_api' | 'clash_api_temp' | 'probe';
 
@@ -362,6 +380,10 @@ interface AppState {
   siteCheckingNodes: string[];
   siteCheckHistory: Record<string, TimedSiteMeasurement[]>;
 
+  // Speed test state
+  speedResults: Record<string, SpeedTestResult>;
+  speedTesting: boolean;
+
   // Proxy groups (from Clash API)
   proxyGroups: ProxyGroup[];
 
@@ -432,6 +454,8 @@ interface AppState {
   checkSingleNodeHealth: (tag: string, options?: { skipStatsRefresh?: boolean }) => Promise<void>;
   checkNodesSites: (tags?: string[], sites?: string[]) => Promise<void>;
   checkSingleNodeSites: (tag: string, sites?: string[]) => Promise<void>;
+  runSpeedTest: (tags?: string[]) => Promise<void>;
+  fetchLatestSpeedMeasurements: () => Promise<void>;
 
   // Latest measurements from backend
   fetchLatestMeasurements: () => Promise<void>;
@@ -510,6 +534,8 @@ export const useStore = create<AppState>((set, get) => ({
   healthCheckingNodes: [],
   healthHistory: {},
   siteCheckResults: {},
+  speedResults: {},
+  speedTesting: false,
   siteCheckMode: null,
   siteChecking: false,
   siteCheckingNodes: [],
@@ -1146,6 +1172,41 @@ export const useStore = create<AppState>((set, get) => ({
       toast.error(error.response?.data?.error || 'Site check failed');
     } finally {
       set({ siteCheckingNodes: get().siteCheckingNodes.filter(t => t !== tag) });
+    }
+  },
+
+  runSpeedTest: async (tags?: string[]) => {
+    set({ speedTesting: true });
+    try {
+      const res = await nodeApi.speedTest(tags);
+      const updates = (res.data.data || {}) as Record<string, SpeedTestResult>;
+      set({ speedResults: { ...get().speedResults, ...updates } });
+      toast.success('Speed test completed');
+    } catch (error: any) {
+      console.error('Failed to run speed test:', error);
+      toast.error(error.response?.data?.error || 'Speed test failed');
+    } finally {
+      set({ speedTesting: false });
+    }
+  },
+
+  fetchLatestSpeedMeasurements: async () => {
+    try {
+      const res = await measurementApi.getLatestSpeed();
+      const measurements = (res.data.data || []) as SpeedMeasurement[];
+      const speedResults: Record<string, SpeedTestResult> = {};
+      for (const m of measurements) {
+        const key = `${m.server}:${m.server_port}`;
+        speedResults[key] = {
+          download_bps: m.download_bps,
+          download_bytes: m.download_bytes,
+          duration_ms: m.duration_ms,
+          error: m.error,
+        };
+      }
+      set({ speedResults: { ...get().speedResults, ...speedResults } });
+    } catch (error) {
+      console.error('Failed to fetch speed measurements:', error);
     }
   },
 

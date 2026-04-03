@@ -284,6 +284,7 @@ func (s *Server) setupRoutes() {
 		api.POST("/nodes/health-check", s.healthCheckNodes)
 		api.POST("/nodes/health-check-single", s.healthCheckSingleNode)
 		api.POST("/nodes/site-check", s.siteCheckNodes)
+		api.POST("/nodes/speed-test", s.speedCheckNodes)
 		api.GET("/nodes/unsupported", s.getUnsupportedNodes)
 		api.POST("/nodes/unsupported/recheck", s.recheckUnsupportedNodes)
 		api.DELETE("/nodes/unsupported", s.clearUnsupportedNodes)
@@ -376,6 +377,7 @@ func (s *Server) setupRoutes() {
 		api.POST("/measurements/health", s.saveHealthMeasurements)
 		api.GET("/measurements/site", s.getSiteMeasurements)
 		api.POST("/measurements/site", s.saveSiteMeasurements)
+		api.GET("/measurements/speed/latest", s.getLatestSpeedMeasurements)
 	}
 
 	// Static file service (frontend, using embedded file system)

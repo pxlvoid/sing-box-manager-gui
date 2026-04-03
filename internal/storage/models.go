@@ -224,6 +224,19 @@ type SiteMeasurement struct {
 	Mode       string    `json:"mode"`
 }
 
+// SpeedMeasurement represents a speed test result for a node
+type SpeedMeasurement struct {
+	ID            int64     `json:"id,omitempty"`
+	Server        string    `json:"server"`
+	ServerPort    int       `json:"server_port"`
+	NodeTag       string    `json:"node_tag"`
+	Timestamp     time.Time `json:"timestamp"`
+	DownloadBps   int64     `json:"download_bps"`   // bytes per second
+	DownloadBytes int64     `json:"download_bytes"`  // total bytes downloaded
+	DurationMs    int       `json:"duration_ms"`     // test duration in milliseconds
+	Error         string    `json:"error,omitempty"` // error message if failed
+}
+
 // TrafficSample represents an aggregated traffic point in time.
 type TrafficSample struct {
 	ID                int64     `json:"id,omitempty"`

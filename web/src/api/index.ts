@@ -85,6 +85,8 @@ export const nodeApi = {
     api.post('/nodes/health-check-single', { tag, internal_tag: tag }, { timeout: 15000 }),
   siteCheck: (tags?: string[], sites?: string[]) =>
     api.post('/nodes/site-check', { tags, sites }, { timeout: 180000 }),
+  speedTest: (tags?: string[]) =>
+    api.post('/nodes/speed-test', { tags }, { timeout: 600000 }),
   getGeoData: () => api.get('/nodes/geo'),
   getNodeGeo: (server: string, port: number) =>
     api.get(`/nodes/geo/${encodeURIComponent(server)}/${port}`),
@@ -219,6 +221,7 @@ export const measurementApi = {
     api.get('/measurements/health/stats/bulk', { params: { days: days || 7 } }),
   getSite: (server: string, port: number, limit?: number) =>
     api.get('/measurements/site', { params: { server, port, limit } }),
+  getLatestSpeed: () => api.get('/measurements/speed/latest'),
 };
 
 // Diagnostic API

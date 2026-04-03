@@ -86,6 +86,11 @@ type Store interface {
 	GetTrafficLifetimeStats() (*TrafficLifetimeStats, error)
 	GetTrafficChainStats(limit int, lookback time.Duration) ([]TrafficChainStats, error)
 
+	// Speed Measurements
+	AddSpeedMeasurements(measurements []SpeedMeasurement) error
+	GetLatestSpeedMeasurements() ([]SpeedMeasurement, error)
+	GetSpeedMeasurements(server string, port int, limit int) ([]SpeedMeasurement, error)
+
 	// GeoIP Data
 	UpsertGeoData(data GeoData) error
 	UpsertGeoDataBulk(data []GeoData) error

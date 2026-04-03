@@ -39,6 +39,7 @@ func (s *SQLiteStore) migrate() error {
 		s.migrateV12,
 		s.migrateV13,
 		s.migrateV14,
+		s.migrateV15,
 	}
 
 	for i, m := range migrations {
@@ -970,6 +971,28 @@ func (s *SQLiteStore) migrateV13() error {
 // (status was overwritten with an empty string when editing a node's name).
 func (s *SQLiteStore) migrateV14() error {
 	_, err := s.db.Exec(`UPDATE nodes SET status = 'pending' WHERE status = '' OR status IS NULL`)
+	return err
+}
+
+// migrateV15 creates speed_measurements table for node speed tests
+func (s *SQLiteStore) migrateV15() error {
+	_, err := s.db.Exec(`
+		CREATE TABLE IF NOT EXISTS speed_measurements (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			server TEXT NOT NULL,
+			server_port INTEGER NOT NULL,
+			node_tag TEXT NOT NULL,
+			timestamp DATETIME NOT NULL,
+			download_bps INTEGER NOT NULL DEFAULT 0,
+			download_bytes INTEGER NOT NULL DEFAULT 0,
+			duration_ms INTEGER NOT NULL DEFAULT 0,
+			error TEXT DEFAULT ''
+		)
+	`)
+	if err != nil {
+		return err
+	}
+	_, err = s.db.Exec(`CREATE INDEX IF NOT EXISTS idx_speed_measurements_sp_ts ON speed_measurements(server, server_port, timestamp)`)
 	return err
 }
 
