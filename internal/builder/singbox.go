@@ -411,13 +411,34 @@ func (b *ConfigBuilder) buildDNS() *DNSConfig {
 	})
 
 	// Base DNS rules
-	rules := []DNSRule{
-		{
-			QueryType: []string{"A", "AAAA"},
-			Server:    "dns_fakeip",
-			Action:    "route",
-		},
+	// Direct domains (from direct rule groups) should resolve via direct DNS, not FakeIP.
+	// This prevents unnecessary FakeIP overhead for traffic that goes DIRECT.
+	var directRuleSetTags []string
+	for _, rg := range b.ruleGroups {
+		if rg.Enabled && (rg.Outbound == "DIRECT" || rg.Outbound == "REJECT") {
+			for _, sr := range rg.SiteRules {
+				directRuleSetTags = append(directRuleSetTags, fmt.Sprintf("geosite-%s", sr))
+			}
+		}
 	}
+
+	rules := []DNSRule{}
+
+	// Route direct-bound domains to direct DNS (before FakeIP rule)
+	if len(directRuleSetTags) > 0 {
+		rules = append(rules, DNSRule{
+			RuleSet: directRuleSetTags,
+			Server:  directServers[0].Tag,
+			Action:  "route",
+		})
+	}
+
+	// Everything else gets FakeIP (proxy traffic)
+	rules = append(rules, DNSRule{
+		QueryType: []string{"A", "AAAA"},
+		Server:    "dns_fakeip",
+		Action:    "route",
+	})
 
 	// 1. Read system hosts
 	systemHosts := ParseSystemHosts()
@@ -568,7 +589,7 @@ func (b *ConfigBuilder) buildInbounds() []Inbound {
 			Address:                  []string{"172.19.0.1/30", "fdfe:dcba:9876::1/126"},
 			AutoRoute:                true,
 			StrictRoute:              true,
-			Stack:                    "system",
+			Stack:                    "mixed",
 			Sniff:                    true,
 			SniffOverrideDestination: true,
 		})
@@ -670,10 +691,11 @@ func (b *ConfigBuilder) buildOutboundsWithMap() ([]Outbound, map[int]string) {
 				group["interval"] = filter.URLTestConfig.Interval
 				group["tolerance"] = filter.URLTestConfig.Tolerance
 			} else {
-				group["url"] = "https://www.youtube.com/generate_204"
-				group["interval"] = "5m"
-				group["tolerance"] = 50
+				group["url"] = "http://www.gstatic.com/generate_204"
+				group["interval"] = "3m"
+				group["tolerance"] = 150
 			}
+			group["idle_timeout"] = "30m"
 		}
 
 		outbounds = append(outbounds, group)
@@ -702,24 +724,26 @@ func (b *ConfigBuilder) buildOutboundsWithMap() ([]Outbound, map[int]string) {
 
 		// Create auto-select group
 		outbounds = append(outbounds, Outbound{
-			"tag":       groupTag,
-			"type":      "urltest",
-			"outbounds": nodes,
-			"url":       "https://www.youtube.com/generate_204",
-			"interval":  "5m",
-			"tolerance": 50,
+			"tag":          groupTag,
+			"type":         "urltest",
+			"outbounds":    nodes,
+			"url":          "http://www.gstatic.com/generate_204",
+			"interval":     "3m",
+			"tolerance":    150,
+			"idle_timeout": "30m",
 		})
 	}
 
 	// Create auto-select group (all nodes)
 	if len(allNodeTags) > 0 {
 		outbounds = append(outbounds, Outbound{
-			"tag":       "Auto",
-			"type":      "urltest",
-			"outbounds": allNodeTags,
-			"url":       "https://www.youtube.com/generate_204",
-			"interval":  "5m",
-			"tolerance": 50,
+			"tag":          "Auto",
+			"type":         "urltest",
+			"outbounds":    allNodeTags,
+			"url":          "http://www.gstatic.com/generate_204",
+			"interval":     "3m",
+			"tolerance":    150,
+			"idle_timeout": "30m",
 		})
 	}
 
@@ -800,6 +824,11 @@ func NodeToOutbound(node storage.Node) Outbound {
 	// Remove fields from transport that sing-box doesn't support
 	if transport, ok := outbound["transport"].(map[string]interface{}); ok {
 		delete(transport, "mode")
+	}
+
+	// Set dial timeout to avoid hanging on half-dead proxies
+	if _, exists := outbound["dial_timeout"]; !exists {
+		outbound["dial_timeout"] = "8s"
 	}
 
 	return outbound
@@ -883,7 +912,7 @@ func (b *ConfigBuilder) buildRoute() *RouteConfig {
 		// Default domain resolver: resolves all outbound server addresses to avoid DNS loops
 		DefaultDomainResolver: &DomainResolver{
 			Server:     "dns_direct_1",
-			RewriteTTL: 60,
+			RewriteTTL: 300,
 		},
 	}
 
