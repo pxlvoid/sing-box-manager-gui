@@ -18,17 +18,6 @@ type Store interface {
 	UpdateFilter(filter Filter) error
 	DeleteFilter(id string) error
 
-	// Rules
-	GetRules() []Rule
-	AddRule(rule Rule) error
-	UpdateRule(rule Rule) error
-	DeleteRule(id string) error
-	ReplaceRules(rules []Rule) error
-
-	// Rule Groups
-	GetRuleGroups() []RuleGroup
-	UpdateRuleGroup(ruleGroup RuleGroup) error
-
 	// Settings
 	GetSettings() *Settings
 	UpdateSettings(settings *Settings) error

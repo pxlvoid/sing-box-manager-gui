@@ -6,7 +6,6 @@ import { useEventStream } from './hooks/useEventStream';
 
 const Dashboard = lazy(() => import('./pages/Dashboard'));
 const Subscriptions = lazy(() => import('./pages/Subscriptions'));
-const Rules = lazy(() => import('./pages/Rules'));
 const Settings = lazy(() => import('./pages/Settings'));
 const Logs = lazy(() => import('./pages/Logs'));
 const Diagnostics = lazy(() => import('./pages/Diagnostics'));
@@ -22,7 +21,6 @@ function AppInner() {
         <Routes>
           <Route path="/" element={<Dashboard />} />
           <Route path="/subscriptions" element={<Subscriptions />} />
-          <Route path="/rules" element={<Rules />} />
           <Route path="/logs" element={<Logs />} />
           <Route path="/clients" element={<Clients />} />
           <Route path="/clients/:sourceIp" element={<ClientDetail />} />

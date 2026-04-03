@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { subscriptionApi, filterApi, ruleApi, ruleGroupApi, settingsApi, serviceApi, nodeApi, unifiedNodeApi, verificationApi, monitorApi, proxyApi, probeApi, measurementApi, pipelineApi, proxyModeApi } from '../api';
+import { subscriptionApi, filterApi, settingsApi, serviceApi, nodeApi, unifiedNodeApi, verificationApi, monitorApi, proxyApi, probeApi, measurementApi, pipelineApi, proxyModeApi } from '../api';
 import { toast } from '../components/Toast';
 
 export interface NodeHealthResult {
@@ -216,25 +216,6 @@ export interface Filter {
   enabled: boolean;
 }
 
-export interface Rule {
-  id: string;
-  name: string;
-  rule_type: string;
-  values: string[];
-  outbound: string;
-  enabled: boolean;
-  priority: number;
-}
-
-export interface RuleGroup {
-  id: string;
-  name: string;
-  site_rules: string[];
-  ip_rules: string[];
-  outbound: string;
-  enabled: boolean;
-}
-
 export interface HostEntry {
   id: string;
   domain: string;
@@ -353,9 +334,6 @@ interface AppState {
   nodeCounts: NodeCounts;
   countryGroups: CountryGroup[];
   filters: Filter[];
-  rules: Rule[];
-  ruleGroups: RuleGroup[];
-  defaultRuleGroups: RuleGroup[];
   settings: Settings | null;
   previousSettings: Settings | null;
   serviceStatus: ServiceStatus | null;
@@ -406,9 +384,6 @@ interface AppState {
   fetchNodeCounts: () => Promise<void>;
   fetchCountryGroups: () => Promise<void>;
   fetchFilters: () => Promise<void>;
-  fetchRules: () => Promise<void>;
-  fetchRuleGroups: () => Promise<void>;
-  fetchDefaultRuleGroups: () => Promise<void>;
   fetchSettings: () => Promise<void>;
   fetchServiceStatus: () => Promise<void>;
   fetchProbeStatus: () => Promise<void>;
@@ -445,17 +420,6 @@ interface AppState {
   stopVerificationScheduler: () => Promise<void>;
 
   updateSettings: (settings: Settings) => Promise<void>;
-
-  // Rule group operations
-  toggleRuleGroup: (id: string, enabled: boolean) => Promise<void>;
-  updateRuleGroupOutbound: (id: string, outbound: string) => Promise<void>;
-  updateRuleGroup: (id: string, data: Partial<RuleGroup>) => Promise<void>;
-  resetRuleGroup: (id: string) => Promise<void>;
-
-  // Custom rule operations
-  addRule: (rule: Omit<Rule, 'id'>) => Promise<void>;
-  updateRule: (id: string, rule: Partial<Rule>) => Promise<void>;
-  deleteRule: (id: string) => Promise<void>;
 
   // Filter operations
   addFilter: (filter: Omit<Filter, 'id'>) => Promise<void>;
@@ -529,9 +493,6 @@ export const useStore = create<AppState>((set, get) => ({
   nodeCounts: { pending: 0, verified: 0, archived: 0 },
   countryGroups: [],
   filters: [],
-  rules: [],
-  ruleGroups: [],
-  defaultRuleGroups: [],
   settings: null,
   previousSettings: null,
   serviceStatus: null,
@@ -620,33 +581,6 @@ export const useStore = create<AppState>((set, get) => ({
       set({ filters: res.data.data || [] });
     } catch (error) {
       console.error('Failed to fetch filters:', error);
-    }
-  },
-
-  fetchRules: async () => {
-    try {
-      const res = await ruleApi.getAll();
-      set({ rules: res.data.data || [] });
-    } catch (error) {
-      console.error('Failed to fetch rules:', error);
-    }
-  },
-
-  fetchRuleGroups: async () => {
-    try {
-      const res = await ruleGroupApi.getAll();
-      set({ ruleGroups: res.data.data || [] });
-    } catch (error) {
-      console.error('Failed to fetch rule groups:', error);
-    }
-  },
-
-  fetchDefaultRuleGroups: async () => {
-    try {
-      const res = await ruleGroupApi.getDefaults();
-      set({ defaultRuleGroups: res.data.data || [] });
-    } catch (error) {
-      console.error('Failed to fetch default rule groups:', error);
     }
   },
 
@@ -1065,118 +999,6 @@ export const useStore = create<AppState>((set, get) => ({
     } catch (error) {
       console.error('Failed to update settings:', error);
       throw error;
-    }
-  },
-
-  toggleRuleGroup: async (id: string, enabled: boolean) => {
-    const ruleGroup = get().ruleGroups.find(r => r.id === id);
-    if (ruleGroup) {
-      try {
-        const res = await ruleGroupApi.update(id, { ...ruleGroup, enabled });
-        await get().fetchRuleGroups();
-        if (res.data.warning) {
-          toast.info(res.data.warning);
-        } else {
-          toast.success(`Rule group ${enabled ? 'enabled' : 'disabled'}`);
-        }
-      } catch (error: any) {
-        console.error('Failed to update rule group:', error);
-        toast.error(error.response?.data?.error || 'Failed to update rule group');
-      }
-    }
-  },
-
-  updateRuleGroupOutbound: async (id: string, outbound: string) => {
-    const ruleGroup = get().ruleGroups.find(r => r.id === id);
-    if (ruleGroup) {
-      try {
-        const res = await ruleGroupApi.update(id, { ...ruleGroup, outbound });
-        await get().fetchRuleGroups();
-        if (res.data.warning) {
-          toast.info(res.data.warning);
-        } else {
-          toast.success('Rule group outbound updated');
-        }
-      } catch (error: any) {
-        console.error('Failed to update rule group outbound:', error);
-        toast.error(error.response?.data?.error || 'Failed to update rule group outbound');
-      }
-    }
-  },
-
-  updateRuleGroup: async (id: string, data: Partial<RuleGroup>) => {
-    const ruleGroup = get().ruleGroups.find(r => r.id === id);
-    if (ruleGroup) {
-      try {
-        const res = await ruleGroupApi.update(id, { ...ruleGroup, ...data });
-        await get().fetchRuleGroups();
-        if (res.data.warning) {
-          toast.info(res.data.warning);
-        } else {
-          toast.success('Rule group updated');
-        }
-      } catch (error: any) {
-        console.error('Failed to update rule group:', error);
-        toast.error(error.response?.data?.error || 'Failed to update rule group');
-      }
-    }
-  },
-
-  resetRuleGroup: async (id: string) => {
-    try {
-      await ruleGroupApi.reset(id);
-      await get().fetchRuleGroups();
-      toast.success('Rule group reset to default');
-    } catch (error: any) {
-      console.error('Failed to reset rule group:', error);
-      toast.error(error.response?.data?.error || 'Failed to reset rule group');
-    }
-  },
-
-  addRule: async (rule: Omit<Rule, 'id'>) => {
-    try {
-      const res = await ruleApi.add(rule);
-      await get().fetchRules();
-      if (res.data.warning) {
-        toast.info(res.data.warning);
-      } else {
-        toast.success('Rule added successfully');
-      }
-    } catch (error: any) {
-      console.error('Failed to add rule:', error);
-      toast.error(error.response?.data?.error || 'Failed to add rule');
-      throw error;
-    }
-  },
-
-  updateRule: async (id: string, rule: Partial<Rule>) => {
-    try {
-      const res = await ruleApi.update(id, rule);
-      await get().fetchRules();
-      if (res.data.warning) {
-        toast.info(res.data.warning);
-      } else {
-        toast.success('Rule updated successfully');
-      }
-    } catch (error: any) {
-      console.error('Failed to update rule:', error);
-      toast.error(error.response?.data?.error || 'Failed to update rule');
-      throw error;
-    }
-  },
-
-  deleteRule: async (id: string) => {
-    try {
-      const res = await ruleApi.delete(id);
-      await get().fetchRules();
-      if (res.data.warning) {
-        toast.info(res.data.warning);
-      } else {
-        toast.success('Rule deleted');
-      }
-    } catch (error: any) {
-      console.error('Failed to delete rule:', error);
-      toast.error(error.response?.data?.error || 'Failed to delete rule');
     }
   },
 

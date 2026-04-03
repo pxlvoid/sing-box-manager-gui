@@ -23,29 +23,6 @@ export const filterApi = {
   delete: (id: string) => api.delete(`/filters/${id}`),
 };
 
-// Rule API
-export const ruleApi = {
-  getAll: () => api.get('/rules'),
-  add: (data: any) => api.post('/rules', data),
-  replaceAll: (rules: any[]) => api.put('/rules/replace', { rules }),
-  update: (id: string, data: any) => api.put(`/rules/${id}`, data),
-  delete: (id: string) => api.delete(`/rules/${id}`),
-};
-
-// Rule group API
-export const ruleGroupApi = {
-  getAll: () => api.get('/rule-groups'),
-  getDefaults: () => api.get('/rule-groups/defaults'),
-  update: (id: string, data: any) => api.put(`/rule-groups/${id}`, data),
-  reset: (id: string) => api.post(`/rule-groups/${id}/reset`),
-};
-
-// Ruleset validation API
-export const ruleSetApi = {
-  validate: (type: 'geosite' | 'geoip', name: string) =>
-    api.get('/ruleset/validate', { params: { type, name } }),
-};
-
 // Settings API
 export const settingsApi = {
   get: () => api.get('/settings'),
