@@ -65,7 +65,7 @@ func NewSQLiteStore(dataDir string) (*SQLiteStore, error) {
 	return s, nil
 }
 
-// ensureDefaults inserts default settings and rule groups if they don't exist.
+// ensureDefaults inserts default settings if they don't exist.
 func (s *SQLiteStore) ensureDefaults() error {
 	// Check if settings row exists
 	var count int
@@ -76,24 +76,6 @@ func (s *SQLiteStore) ensureDefaults() error {
 		if err := s.UpdateSettings(DefaultSettings()); err != nil {
 			return err
 		}
-	}
-
-	// Check if rule groups exist
-	if err := s.db.QueryRow("SELECT COUNT(*) FROM rule_groups").Scan(&count); err != nil {
-		return err
-	}
-	if count == 0 {
-		tx, err := s.db.Begin()
-		if err != nil {
-			return err
-		}
-		defer tx.Rollback()
-		for _, rg := range DefaultRuleGroups() {
-			if err := insertRuleGroupTx(tx, rg); err != nil {
-				return err
-			}
-		}
-		return tx.Commit()
 	}
 
 	return nil

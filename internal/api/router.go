@@ -231,22 +231,6 @@ func (s *Server) setupRoutes() {
 		api.PUT("/filters/:id", s.updateFilter)
 		api.DELETE("/filters/:id", s.deleteFilter)
 
-		// Rule management
-		api.GET("/rules", s.getRules)
-		api.POST("/rules", s.addRule)
-		api.PUT("/rules/replace", s.replaceRules)
-		api.PUT("/rules/:id", s.updateRule)
-		api.DELETE("/rules/:id", s.deleteRule)
-
-		// Rule group management
-		api.GET("/rule-groups", s.getRuleGroups)
-		api.GET("/rule-groups/defaults", s.getDefaultRuleGroups)
-		api.PUT("/rule-groups/:id", s.updateRuleGroup)
-		api.POST("/rule-groups/:id/reset", s.resetRuleGroup)
-
-		// Rule set validation
-		api.GET("/ruleset/validate", s.validateRuleSet)
-
 		// Settings
 		api.GET("/settings", s.getSettings)
 		api.PUT("/settings", s.updateSettings)
@@ -300,6 +284,7 @@ func (s *Server) setupRoutes() {
 		api.POST("/nodes/health-check", s.healthCheckNodes)
 		api.POST("/nodes/health-check-single", s.healthCheckSingleNode)
 		api.POST("/nodes/site-check", s.siteCheckNodes)
+		api.POST("/nodes/speed-test", s.speedCheckNodes)
 		api.GET("/nodes/unsupported", s.getUnsupportedNodes)
 		api.POST("/nodes/unsupported/recheck", s.recheckUnsupportedNodes)
 		api.DELETE("/nodes/unsupported", s.clearUnsupportedNodes)
@@ -392,6 +377,7 @@ func (s *Server) setupRoutes() {
 		api.POST("/measurements/health", s.saveHealthMeasurements)
 		api.GET("/measurements/site", s.getSiteMeasurements)
 		api.POST("/measurements/site", s.saveSiteMeasurements)
+		api.GET("/measurements/speed/latest", s.getLatestSpeedMeasurements)
 	}
 
 	// Static file service (frontend, using embedded file system)
@@ -595,251 +581,6 @@ func (s *Server) deleteFilter(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{"message": "Deleted successfully"})
-}
-
-// ==================== Rule API ====================
-
-func (s *Server) getRules(c *gin.Context) {
-	rules := s.store.GetRules()
-	c.JSON(http.StatusOK, gin.H{"data": rules})
-}
-
-func (s *Server) addRule(c *gin.Context) {
-	var rule storage.Rule
-	if err := c.ShouldBindJSON(&rule); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-		return
-	}
-
-	// Generate ID
-	rule.ID = uuid.New().String()
-
-	if err := s.store.AddRule(rule); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-
-	// Auto-apply config
-	if err := s.autoApplyConfig(); err != nil {
-		c.JSON(http.StatusOK, gin.H{"data": rule, "warning": "Added successfully, but auto-apply config failed: " + err.Error()})
-		return
-	}
-
-	c.JSON(http.StatusOK, gin.H{"data": rule})
-}
-
-func (s *Server) replaceRules(c *gin.Context) {
-	var req struct {
-		Rules []storage.Rule `json:"rules"`
-	}
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-		return
-	}
-
-	// Ensure each rule has an ID
-	for i := range req.Rules {
-		if strings.TrimSpace(req.Rules[i].ID) == "" {
-			req.Rules[i].ID = uuid.New().String()
-		}
-	}
-
-	if err := s.store.ReplaceRules(req.Rules); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-
-	// Auto-apply config
-	if err := s.autoApplyConfig(); err != nil {
-		c.JSON(http.StatusOK, gin.H{"data": req.Rules, "warning": "Replaced successfully, but auto-apply config failed: " + err.Error()})
-		return
-	}
-
-	c.JSON(http.StatusOK, gin.H{"data": req.Rules, "message": "Replaced successfully"})
-}
-
-func (s *Server) updateRule(c *gin.Context) {
-	id := c.Param("id")
-
-	var rule storage.Rule
-	if err := c.ShouldBindJSON(&rule); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-		return
-	}
-
-	rule.ID = id
-	if err := s.store.UpdateRule(rule); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-
-	// Auto-apply config
-	if err := s.autoApplyConfig(); err != nil {
-		c.JSON(http.StatusOK, gin.H{"message": "Updated successfully, but auto-apply config failed: " + err.Error()})
-		return
-	}
-
-	c.JSON(http.StatusOK, gin.H{"message": "Updated successfully"})
-}
-
-func (s *Server) deleteRule(c *gin.Context) {
-	id := c.Param("id")
-
-	if err := s.store.DeleteRule(id); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-
-	// Auto-apply config
-	if err := s.autoApplyConfig(); err != nil {
-		c.JSON(http.StatusOK, gin.H{"message": "Deleted successfully, but auto-apply config failed: " + err.Error()})
-		return
-	}
-
-	c.JSON(http.StatusOK, gin.H{"message": "Deleted successfully"})
-}
-
-// ==================== Rule Group API ====================
-
-func (s *Server) getRuleGroups(c *gin.Context) {
-	ruleGroups := s.store.GetRuleGroups()
-	c.JSON(http.StatusOK, gin.H{"data": ruleGroups})
-}
-
-func (s *Server) updateRuleGroup(c *gin.Context) {
-	id := c.Param("id")
-
-	var ruleGroup storage.RuleGroup
-	if err := c.ShouldBindJSON(&ruleGroup); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-		return
-	}
-
-	ruleGroup.ID = id
-	if err := s.store.UpdateRuleGroup(ruleGroup); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-
-	// Auto-apply config
-	if err := s.autoApplyConfig(); err != nil {
-		c.JSON(http.StatusOK, gin.H{"message": "Updated successfully, but auto-apply config failed: " + err.Error()})
-		return
-	}
-
-	c.JSON(http.StatusOK, gin.H{"message": "Updated successfully"})
-}
-
-func (s *Server) getDefaultRuleGroups(c *gin.Context) {
-	c.JSON(http.StatusOK, gin.H{"data": storage.DefaultRuleGroups()})
-}
-
-func (s *Server) resetRuleGroup(c *gin.Context) {
-	id := c.Param("id")
-
-	// Find default rule group by ID
-	var defaultGroup *storage.RuleGroup
-	for _, dg := range storage.DefaultRuleGroups() {
-		if dg.ID == id {
-			defaultGroup = &dg
-			break
-		}
-	}
-
-	if defaultGroup == nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "No default rule group found for ID: " + id})
-		return
-	}
-
-	// Keep current enabled and outbound, reset name/site_rules/ip_rules
-	current := s.store.GetRuleGroups()
-	for _, rg := range current {
-		if rg.ID == id {
-			defaultGroup.Enabled = rg.Enabled
-			defaultGroup.Outbound = rg.Outbound
-			break
-		}
-	}
-
-	if err := s.store.UpdateRuleGroup(*defaultGroup); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-
-	if err := s.autoApplyConfig(); err != nil {
-		c.JSON(http.StatusOK, gin.H{"message": "Reset successfully, but auto-apply config failed: " + err.Error()})
-		return
-	}
-
-	c.JSON(http.StatusOK, gin.H{"message": "Reset successfully"})
-}
-
-// ==================== Rule Set Validation API ====================
-
-func (s *Server) validateRuleSet(c *gin.Context) {
-	ruleType := c.Query("type") // geosite or geoip
-	name := c.Query("name")     // Rule set name
-
-	if ruleType == "" || name == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "parameters type and name are required"})
-		return
-	}
-
-	if ruleType != "geosite" && ruleType != "geoip" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "type must be geosite or geoip"})
-		return
-	}
-
-	settings := s.store.GetSettings()
-	var url string
-	var tag string
-
-	if ruleType == "geosite" {
-		tag = "geosite-" + name
-		url = settings.RuleSetBaseURL + "/geosite-" + name + ".srs"
-	} else {
-		tag = "geoip-" + name
-		// geoip uses relative path
-		url = settings.RuleSetBaseURL + "/../rule-set-geoip/geoip-" + name + ".srs"
-	}
-
-	// If GitHub proxy is configured, add proxy prefix
-	if settings.GithubProxy != "" {
-		url = settings.GithubProxy + url
-	}
-
-	// Send HEAD request to check if file exists
-	client := &http.Client{
-		Timeout: 10 * time.Second,
-	}
-
-	resp, err := client.Head(url)
-	if err != nil {
-		c.JSON(http.StatusOK, gin.H{
-			"valid":   false,
-			"url":     url,
-			"tag":     tag,
-			"message": "Cannot access rule set: " + err.Error(),
-		})
-		return
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode == http.StatusOK {
-		c.JSON(http.StatusOK, gin.H{
-			"valid":   true,
-			"url":     url,
-			"tag":     tag,
-			"message": "Rule set exists",
-		})
-	} else {
-		c.JSON(http.StatusOK, gin.H{
-			"valid":   false,
-			"url":     url,
-			"tag":     tag,
-			"message": "Rule set not found (HTTP " + strconv.Itoa(resp.StatusCode) + ")",
-		})
-	}
 }
 
 // ==================== Settings API ====================
@@ -1094,8 +835,6 @@ func validateImportedDatabase(dbPath string) error {
 		"subscriptions",
 		"subscription_nodes",
 		"filters",
-		"rules",
-		"rule_groups",
 		"host_entries",
 	}
 	for _, table := range requiredTables {
@@ -1272,10 +1011,8 @@ func (s *Server) buildConfig() (string, error) {
 	settings := s.store.GetSettings()
 	nodes := s.store.GetAllNodes()
 	filters := s.store.GetFilters()
-	rules := s.store.GetRules()
-	ruleGroups := s.store.GetRuleGroups()
 
-	b := builder.NewConfigBuilder(settings, nodes, filters, rules, ruleGroups)
+	b := builder.NewConfigBuilder(settings, nodes, filters)
 	return b.BuildJSON()
 }
 
@@ -1285,8 +1022,6 @@ func (s *Server) buildAndValidateConfig() (string, []UnsupportedNodeInfo, error)
 	settings := s.store.GetSettings()
 	nodes := s.store.GetAllNodes()
 	filters := s.store.GetFilters()
-	rules := s.store.GetRules()
-	ruleGroups := s.store.GetRuleGroups()
 
 	excludeTags := make(map[string]bool)
 
@@ -1303,7 +1038,7 @@ func (s *Server) buildAndValidateConfig() (string, []UnsupportedNodeInfo, error)
 	singboxPath := s.processManager.GetSingBoxPath()
 
 	for i := 0; i < maxIterations; i++ {
-		b := builder.NewConfigBuilderWithExclusions(settings, nodes, filters, rules, ruleGroups, excludeTags)
+		b := builder.NewConfigBuilderWithExclusions(settings, nodes, filters, excludeTags)
 		configJSON, indexToTag, err := b.BuildJSONWithNodeMap()
 		if err != nil {
 			return "", nil, err
@@ -3792,8 +3527,6 @@ func (s *Server) debugDump(c *gin.Context) {
 	subscriptions := s.store.GetSubscriptions()
 	nodeCounts := s.store.GetNodeCounts()
 	filters := s.store.GetFilters()
-	rules := s.store.GetRules()
-	ruleGroups := s.store.GetRuleGroups()
 	countryGroups := s.store.GetCountryGroups()
 
 	// Unified nodes by status (only when ?nodes=true)
@@ -3865,8 +3598,6 @@ func (s *Server) debugDump(c *gin.Context) {
 		VerifiedNodes    []storage.UnifiedNode     `json:"verified_nodes"`
 		ArchivedNodes    []storage.UnifiedNode     `json:"archived_nodes"`
 		Filters          interface{}               `json:"filters"`
-		Rules            interface{}               `json:"rules"`
-		RuleGroups       interface{}               `json:"rule_groups"`
 		CountryGroups    interface{}               `json:"country_groups"`
 		UnsupportedNodes []UnsupportedNodeInfo     `json:"unsupported_nodes"`
 		VerificationLogs []storage.VerificationLog `json:"verification_logs"`
@@ -3906,8 +3637,6 @@ func (s *Server) debugDump(c *gin.Context) {
 			VerifiedNodes:    verifiedNodes,
 			ArchivedNodes:    archivedNodes,
 			Filters:          filters,
-			Rules:            rules,
-			RuleGroups:       ruleGroups,
 			CountryGroups:    countryGroups,
 			UnsupportedNodes: unsupported,
 			VerificationLogs: verificationLogs,

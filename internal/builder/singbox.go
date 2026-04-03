@@ -6,7 +6,6 @@ import (
 	"net/url"
 	"os"
 	"sort"
-	"strconv"
 	"strings"
 
 	"github.com/xiaobei/singbox-manager/internal/storage"
@@ -151,40 +150,26 @@ type ConfigBuilder struct {
 	settings    *storage.Settings
 	nodes       []storage.Node
 	filters     []storage.Filter
-	rules       []storage.Rule
-	ruleGroups  []storage.RuleGroup
 	excludeTags map[string]bool
 }
 
 // NewConfigBuilder creates a new configuration builder
-func NewConfigBuilder(settings *storage.Settings, nodes []storage.Node, filters []storage.Filter, rules []storage.Rule, ruleGroups []storage.RuleGroup) *ConfigBuilder {
+func NewConfigBuilder(settings *storage.Settings, nodes []storage.Node, filters []storage.Filter) *ConfigBuilder {
 	return &ConfigBuilder{
-		settings:   settings,
-		nodes:      nodes,
-		filters:    filters,
-		rules:      rules,
-		ruleGroups: ruleGroups,
+		settings: settings,
+		nodes:    nodes,
+		filters:  filters,
 	}
 }
 
 // NewConfigBuilderWithExclusions creates a new configuration builder that excludes specific nodes by tag
-func NewConfigBuilderWithExclusions(settings *storage.Settings, nodes []storage.Node, filters []storage.Filter, rules []storage.Rule, ruleGroups []storage.RuleGroup, excludeTags map[string]bool) *ConfigBuilder {
+func NewConfigBuilderWithExclusions(settings *storage.Settings, nodes []storage.Node, filters []storage.Filter, excludeTags map[string]bool) *ConfigBuilder {
 	return &ConfigBuilder{
 		settings:    settings,
 		nodes:       nodes,
 		filters:     filters,
-		rules:       rules,
-		ruleGroups:  ruleGroups,
 		excludeTags: excludeTags,
 	}
-}
-
-// buildRuleSetURL builds rule set URL (with GitHub proxy support)
-func (b *ConfigBuilder) buildRuleSetURL(originalURL string) string {
-	if b.settings.GithubProxy != "" {
-		return b.settings.GithubProxy + originalURL
-	}
-	return originalURL
 }
 
 // Build builds the sing-box configuration
@@ -410,7 +395,7 @@ func (b *ConfigBuilder) buildDNS() *DNSConfig {
 		Inet6Range: "fc00::/18",
 	})
 
-	// Base DNS rules
+	// All traffic goes through proxy — use FakeIP for all A/AAAA queries
 	rules := []DNSRule{
 		{
 			QueryType: []string{"A", "AAAA"},
@@ -568,7 +553,7 @@ func (b *ConfigBuilder) buildInbounds() []Inbound {
 			Address:                  []string{"172.19.0.1/30", "fdfe:dcba:9876::1/126"},
 			AutoRoute:                true,
 			StrictRoute:              true,
-			Stack:                    "system",
+			Stack:                    "mixed",
 			Sniff:                    true,
 			SniffOverrideDestination: true,
 		})
@@ -670,10 +655,11 @@ func (b *ConfigBuilder) buildOutboundsWithMap() ([]Outbound, map[int]string) {
 				group["interval"] = filter.URLTestConfig.Interval
 				group["tolerance"] = filter.URLTestConfig.Tolerance
 			} else {
-				group["url"] = "https://www.youtube.com/generate_204"
-				group["interval"] = "5m"
-				group["tolerance"] = 50
+				group["url"] = "http://www.gstatic.com/generate_204"
+				group["interval"] = "3m"
+				group["tolerance"] = 150
 			}
+			group["idle_timeout"] = "30m"
 		}
 
 		outbounds = append(outbounds, group)
@@ -702,24 +688,26 @@ func (b *ConfigBuilder) buildOutboundsWithMap() ([]Outbound, map[int]string) {
 
 		// Create auto-select group
 		outbounds = append(outbounds, Outbound{
-			"tag":       groupTag,
-			"type":      "urltest",
-			"outbounds": nodes,
-			"url":       "https://www.youtube.com/generate_204",
-			"interval":  "5m",
-			"tolerance": 50,
+			"tag":          groupTag,
+			"type":         "urltest",
+			"outbounds":    nodes,
+			"url":          "http://www.gstatic.com/generate_204",
+			"interval":     "3m",
+			"tolerance":    150,
+			"idle_timeout": "30m",
 		})
 	}
 
 	// Create auto-select group (all nodes)
 	if len(allNodeTags) > 0 {
 		outbounds = append(outbounds, Outbound{
-			"tag":       "Auto",
-			"type":      "urltest",
-			"outbounds": allNodeTags,
-			"url":       "https://www.youtube.com/generate_204",
-			"interval":  "5m",
-			"tolerance": 50,
+			"tag":          "Auto",
+			"type":         "urltest",
+			"outbounds":    allNodeTags,
+			"url":          "http://www.gstatic.com/generate_204",
+			"interval":     "3m",
+			"tolerance":    150,
+			"idle_timeout": "30m",
 		})
 	}
 
@@ -736,33 +724,6 @@ func (b *ConfigBuilder) buildOutboundsWithMap() ([]Outbound, map[int]string) {
 		"outbounds": proxyOutbounds,
 		"default":   "Auto",
 	})
-
-	// Create selectors for enabled rule groups
-	for _, rg := range b.ruleGroups {
-		if !rg.Enabled {
-			continue
-		}
-
-		var selectorOutbounds []string
-
-		// Determine options based on rule group's default outbound type
-		if rg.Outbound == "DIRECT" || rg.Outbound == "REJECT" {
-			// Direct/block rule groups: only provide basic options
-			selectorOutbounds = []string{"DIRECT", "REJECT", "Proxy"}
-		} else {
-			// Proxy rule groups: provide full options (without individual nodes)
-			selectorOutbounds = []string{"Proxy", "Auto", "DIRECT", "REJECT"}
-			selectorOutbounds = append(selectorOutbounds, countryGroupTags...) // Add country groups
-			selectorOutbounds = append(selectorOutbounds, filterGroupTags...)
-		}
-
-		outbounds = append(outbounds, Outbound{
-			"tag":       rg.Name,
-			"type":      "selector",
-			"outbounds": selectorOutbounds,
-			"default":   rg.Outbound,
-		})
-	}
 
 	// Create fallback rule selector
 	fallbackOutbounds := []string{"Proxy", "DIRECT"}
@@ -800,6 +761,11 @@ func NodeToOutbound(node storage.Node) Outbound {
 	// Remove fields from transport that sing-box doesn't support
 	if transport, ok := outbound["transport"].(map[string]interface{}); ok {
 		delete(transport, "mode")
+	}
+
+	// Set dial timeout to avoid hanging on half-dead proxies
+	if _, exists := outbound["dial_timeout"]; !exists {
+		outbound["dial_timeout"] = "8s"
 	}
 
 	return outbound
@@ -883,124 +849,29 @@ func (b *ConfigBuilder) buildRoute() *RouteConfig {
 		// Default domain resolver: resolves all outbound server addresses to avoid DNS loops
 		DefaultDomainResolver: &DomainResolver{
 			Server:     "dns_direct_1",
-			RewriteTTL: 60,
+			RewriteTTL: 300,
 		},
 	}
 
-	// Build rule sets
-	ruleSetMap := make(map[string]bool)
-	var ruleSets []RuleSet
+	// No rule sets — all traffic goes through proxy
 
-	// Use a stable order for default rule groups so specific groups
-	// (e.g. YouTube) can override broader groups (e.g. Google).
-	orderedRuleGroups := make([]storage.RuleGroup, len(b.ruleGroups))
-	copy(orderedRuleGroups, b.ruleGroups)
-	defaultRulePriority := map[string]int{
-		"youtube": 10,
-		"google":  20,
-	}
-	sort.SliceStable(orderedRuleGroups, func(i, j int) bool {
-		pi, okI := defaultRulePriority[orderedRuleGroups[i].ID]
-		pj, okJ := defaultRulePriority[orderedRuleGroups[j].ID]
-		if !okI {
-			pi = 1000
-		}
-		if !okJ {
-			pj = 1000
-		}
-		return pi < pj
-	})
-
-	// Collect required rule sets from rule groups
-	for _, rg := range orderedRuleGroups {
-		if !rg.Enabled {
-			continue
-		}
-		for _, sr := range rg.SiteRules {
-			tag := fmt.Sprintf("geosite-%s", sr)
-			if !ruleSetMap[tag] {
-				ruleSetMap[tag] = true
-				ruleSets = append(ruleSets, RuleSet{
-					Tag:            tag,
-					Type:           "remote",
-					Format:         "binary",
-					URL:            b.buildRuleSetURL(fmt.Sprintf("%s/geosite-%s.srs", b.settings.RuleSetBaseURL, sr)),
-					DownloadDetour: "DIRECT",
-				})
-			}
-		}
-		for _, ir := range rg.IPRules {
-			tag := fmt.Sprintf("geoip-%s", ir)
-			if !ruleSetMap[tag] {
-				ruleSetMap[tag] = true
-				ruleSets = append(ruleSets, RuleSet{
-					Tag:            tag,
-					Type:           "remote",
-					Format:         "binary",
-					URL:            b.buildRuleSetURL(fmt.Sprintf("%s/../rule-set-geoip/geoip-%s.srs", b.settings.RuleSetBaseURL, ir)),
-					DownloadDetour: "DIRECT",
-				})
-			}
-		}
-	}
-
-	// Collect required rule sets from custom rules
-	for _, rule := range b.rules {
-		if !rule.Enabled {
-			continue
-		}
-		if rule.RuleType == "geosite" {
-			for _, v := range rule.Values {
-				tag := fmt.Sprintf("geosite-%s", v)
-				if !ruleSetMap[tag] {
-					ruleSetMap[tag] = true
-					ruleSets = append(ruleSets, RuleSet{
-						Tag:            tag,
-						Type:           "remote",
-						Format:         "binary",
-						URL:            b.buildRuleSetURL(fmt.Sprintf("%s/geosite-%s.srs", b.settings.RuleSetBaseURL, v)),
-						DownloadDetour: "DIRECT",
-					})
-				}
-			}
-		} else if rule.RuleType == "geoip" {
-			for _, v := range rule.Values {
-				tag := fmt.Sprintf("geoip-%s", v)
-				if !ruleSetMap[tag] {
-					ruleSetMap[tag] = true
-					ruleSets = append(ruleSets, RuleSet{
-						Tag:            tag,
-						Type:           "remote",
-						Format:         "binary",
-						URL:            b.buildRuleSetURL(fmt.Sprintf("%s/../rule-set-geoip/geoip-%s.srs", b.settings.RuleSetBaseURL, v)),
-						DownloadDetour: "DIRECT",
-					})
-				}
-			}
-		}
-	}
-
-	route.RuleSet = ruleSets
-
-	// Build route rules
+	// Build route rules (minimal: sniff, dns hijack, hosts overrides)
 	var rules []RouteRule
 
-	// 1. Add sniff action (detect traffic type, used with FakeIP)
+	// 1. Sniff action (detect traffic type, used with FakeIP)
 	rules = append(rules, RouteRule{
 		"action":  "sniff",
 		"sniffer": []string{"dns", "http", "tls", "quic"},
 		"timeout": "500ms",
 	})
 
-	// 2. DNS hijack using action (replaces deprecated dns-out)
+	// 2. DNS hijack
 	rules = append(rules, RouteRule{
 		"protocol": "dns",
 		"action":   "hijack-dns",
 	})
 
-	// 3. Add hosts domain route rules (high priority, before other rules)
-	// Use override_address to directly specify target IP, avoiding DIRECT outbound re-resolving DNS
-	// This fixes the NXDOMAIN issue caused by sniff_override_destination
+	// 3. Hosts domain overrides (system + user-defined)
 	systemHosts := ParseSystemHosts()
 	for domain, ips := range systemHosts {
 		if len(ips) > 0 {
@@ -1017,93 +888,6 @@ func (b *ConfigBuilder) buildRoute() *RouteConfig {
 				"domain":           []string{host.Domain},
 				"outbound":         "DIRECT",
 				"override_address": host.IPs[0],
-			})
-		}
-	}
-
-	// Sort custom rules by priority
-	sortedRules := make([]storage.Rule, len(b.rules))
-	copy(sortedRules, b.rules)
-	sort.Slice(sortedRules, func(i, j int) bool {
-		return sortedRules[i].Priority < sortedRules[j].Priority
-	})
-
-	// Add custom rules
-	for _, rule := range sortedRules {
-		if !rule.Enabled {
-			continue
-		}
-
-		routeRule := RouteRule{
-			"outbound": rule.Outbound,
-		}
-
-		switch rule.RuleType {
-		case "domain_suffix":
-			routeRule["domain_suffix"] = rule.Values
-		case "domain_keyword":
-			routeRule["domain_keyword"] = rule.Values
-		case "domain":
-			routeRule["domain"] = rule.Values
-		case "ip_cidr":
-			routeRule["ip_cidr"] = rule.Values
-		case "port":
-			// Convert port strings to integers
-			var ports []uint16
-			for _, v := range rule.Values {
-				if port, err := strconv.ParseUint(v, 10, 16); err == nil {
-					ports = append(ports, uint16(port))
-				}
-			}
-			if len(ports) == 1 {
-				routeRule["port"] = ports[0]
-			} else if len(ports) > 1 {
-				routeRule["port"] = ports
-			}
-		case "geosite":
-			var tags []string
-			for _, v := range rule.Values {
-				tags = append(tags, fmt.Sprintf("geosite-%s", v))
-			}
-			routeRule["rule_set"] = tags
-		case "geoip":
-			var tags []string
-			for _, v := range rule.Values {
-				tags = append(tags, fmt.Sprintf("geoip-%s", v))
-			}
-			routeRule["rule_set"] = tags
-		}
-
-		rules = append(rules, routeRule)
-	}
-
-	// Add rule group route rules
-	for _, rg := range orderedRuleGroups {
-		if !rg.Enabled {
-			continue
-		}
-
-		// Site rules
-		if len(rg.SiteRules) > 0 {
-			var tags []string
-			for _, sr := range rg.SiteRules {
-				tags = append(tags, fmt.Sprintf("geosite-%s", sr))
-			}
-			rules = append(rules, RouteRule{
-				"rule_set": tags,
-				"outbound": rg.Name,
-			})
-		}
-
-		// IP rules
-		if len(rg.IPRules) > 0 {
-			var tags []string
-			for _, ir := range rg.IPRules {
-				tags = append(tags, fmt.Sprintf("geoip-%s", ir))
-			}
-			rules = append(rules, RouteRule{
-				"rule_set": tags,
-				"outbound": rg.Name,
 			})
 		}
 	}

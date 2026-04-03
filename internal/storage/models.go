@@ -224,6 +224,19 @@ type SiteMeasurement struct {
 	Mode       string    `json:"mode"`
 }
 
+// SpeedMeasurement represents a speed test result for a node
+type SpeedMeasurement struct {
+	ID            int64     `json:"id,omitempty"`
+	Server        string    `json:"server"`
+	ServerPort    int       `json:"server_port"`
+	NodeTag       string    `json:"node_tag"`
+	Timestamp     time.Time `json:"timestamp"`
+	DownloadBps   int64     `json:"download_bps"`   // bytes per second
+	DownloadBytes int64     `json:"download_bytes"`  // total bytes downloaded
+	DurationMs    int       `json:"duration_ms"`     // test duration in milliseconds
+	Error         string    `json:"error,omitempty"` // error message if failed
+}
+
 // TrafficSample represents an aggregated traffic point in time.
 type TrafficSample struct {
 	ID                int64     `json:"id,omitempty"`
@@ -385,27 +398,6 @@ type URLTestConfig struct {
 	Tolerance int    `json:"tolerance"`
 }
 
-// Rule represents a custom rule
-type Rule struct {
-	ID       string   `json:"id"`
-	Name     string   `json:"name"`
-	RuleType string   `json:"rule_type"` // domain_suffix/domain_keyword/ip_cidr/geosite/geoip/port
-	Values   []string `json:"values"`    // rule value list
-	Outbound string   `json:"outbound"`  // target outbound
-	Enabled  bool     `json:"enabled"`
-	Priority int      `json:"priority"` // priority (lower value = higher priority)
-}
-
-// RuleGroup represents a preset rule group
-type RuleGroup struct {
-	ID        string   `json:"id"`
-	Name      string   `json:"name"`
-	SiteRules []string `json:"site_rules"` // geosite rules
-	IPRules   []string `json:"ip_rules"`   // geoip rules
-	Outbound  string   `json:"outbound"`
-	Enabled   bool     `json:"enabled"`
-}
-
 // HostEntry represents a DNS hosts mapping entry
 type HostEntry struct {
 	ID      string   `json:"id"`
@@ -534,24 +526,6 @@ func NormalizeProxyMode(mode string) string {
 func IsValidProxyMode(mode string) bool {
 	m := strings.ToLower(strings.TrimSpace(mode))
 	return m == ProxyModeRule || m == ProxyModeGlobal || m == ProxyModeDirect
-}
-
-// DefaultRuleGroups returns default rule groups
-func DefaultRuleGroups() []RuleGroup {
-	return []RuleGroup{
-		{ID: "ad-block", Name: "Ad Block", SiteRules: []string{"category-ads-all"}, Outbound: "REJECT", Enabled: true},
-		{ID: "ai-services", Name: "AI Services", SiteRules: []string{"openai", "anthropic", "jetbrains-ai"}, Outbound: "Proxy", Enabled: true},
-		{ID: "google", Name: "Google", SiteRules: []string{"google"}, IPRules: []string{"google"}, Outbound: "Proxy", Enabled: true},
-		{ID: "youtube", Name: "YouTube", SiteRules: []string{"youtube"}, Outbound: "Proxy", Enabled: true},
-		{ID: "github", Name: "GitHub", SiteRules: []string{"github"}, Outbound: "Proxy", Enabled: true},
-		{ID: "telegram", Name: "Telegram", SiteRules: []string{"telegram"}, IPRules: []string{"telegram"}, Outbound: "Proxy", Enabled: true},
-		{ID: "twitter", Name: "Twitter/X", SiteRules: []string{"twitter"}, Outbound: "Proxy", Enabled: true},
-		{ID: "netflix", Name: "Netflix", SiteRules: []string{"netflix"}, Outbound: "Proxy", Enabled: false},
-		{ID: "spotify", Name: "Spotify", SiteRules: []string{"spotify"}, Outbound: "Proxy", Enabled: false},
-		{ID: "apple", Name: "Apple", SiteRules: []string{"apple"}, Outbound: "DIRECT", Enabled: true},
-		{ID: "microsoft", Name: "Microsoft", SiteRules: []string{"microsoft"}, Outbound: "DIRECT", Enabled: true},
-		{ID: "private", Name: "Private Network", SiteRules: []string{"private"}, IPRules: []string{"private"}, Outbound: "DIRECT", Enabled: true},
-	}
 }
 
 // CountryNames maps country codes to English names

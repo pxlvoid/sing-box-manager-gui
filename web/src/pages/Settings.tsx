@@ -869,7 +869,7 @@ export default function Settings() {
             <div className="space-y-3">
               <ToggleRow
                 label="Auto-apply after config changes"
-                description="Restart sing-box after subscription refresh or rule changes"
+                description="Restart sing-box after subscription refresh or config changes"
                 isSelected={f.auto_apply}
                 onChange={(v) => set({ auto_apply: v })}
               />

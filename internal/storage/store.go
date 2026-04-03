@@ -18,17 +18,6 @@ type Store interface {
 	UpdateFilter(filter Filter) error
 	DeleteFilter(id string) error
 
-	// Rules
-	GetRules() []Rule
-	AddRule(rule Rule) error
-	UpdateRule(rule Rule) error
-	DeleteRule(id string) error
-	ReplaceRules(rules []Rule) error
-
-	// Rule Groups
-	GetRuleGroups() []RuleGroup
-	UpdateRuleGroup(ruleGroup RuleGroup) error
-
 	// Settings
 	GetSettings() *Settings
 	UpdateSettings(settings *Settings) error
@@ -96,6 +85,11 @@ type Store interface {
 	GetClientResourcesHistory(sourceIP string, limit int) ([]ClientResourceHistory, error)
 	GetTrafficLifetimeStats() (*TrafficLifetimeStats, error)
 	GetTrafficChainStats(limit int, lookback time.Duration) ([]TrafficChainStats, error)
+
+	// Speed Measurements
+	AddSpeedMeasurements(measurements []SpeedMeasurement) error
+	GetLatestSpeedMeasurements() ([]SpeedMeasurement, error)
+	GetSpeedMeasurements(server string, port int, limit int) ([]SpeedMeasurement, error)
 
 	// GeoIP Data
 	UpsertGeoData(data GeoData) error

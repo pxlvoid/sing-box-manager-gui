@@ -69,6 +69,10 @@ export default function Subscriptions() {
     siteCheckResults,
     siteCheckingNodes,
     checkSingleNodeSites,
+    speedResults,
+    speedTesting,
+    runSpeedTest,
+    fetchLatestSpeedMeasurements,
     unsupportedNodes,
     fetchUnsupportedNodes,
     recheckUnsupportedNodes,
@@ -117,6 +121,7 @@ export default function Subscriptions() {
     fetchProbeStatus();
     fetchVerificationStatus();
     fetchLatestMeasurements();
+    fetchLatestSpeedMeasurements();
     fetchGeoData();
     fetchNodeTraffic();
 
@@ -229,6 +234,7 @@ export default function Subscriptions() {
             healthCheckingNodes={healthCheckingNodes}
             siteCheckResults={siteCheckResults}
             siteCheckingNodes={siteCheckingNodes}
+            speedResults={speedResults}
             geoData={geoData}
             nodeTrafficMap={nodeTrafficMap}
             checkSingleNodeHealth={checkSingleNodeHealth}
@@ -251,6 +257,9 @@ export default function Subscriptions() {
             healthCheckingNodes={healthCheckingNodes}
             siteCheckResults={siteCheckResults}
             siteCheckingNodes={siteCheckingNodes}
+            speedResults={speedResults}
+            speedTesting={speedTesting}
+            runSpeedTest={runSpeedTest}
             geoData={geoData}
             nodeTrafficMap={nodeTrafficMap}
             checkSingleNodeHealth={checkSingleNodeHealth}

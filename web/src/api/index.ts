@@ -23,29 +23,6 @@ export const filterApi = {
   delete: (id: string) => api.delete(`/filters/${id}`),
 };
 
-// Rule API
-export const ruleApi = {
-  getAll: () => api.get('/rules'),
-  add: (data: any) => api.post('/rules', data),
-  replaceAll: (rules: any[]) => api.put('/rules/replace', { rules }),
-  update: (id: string, data: any) => api.put(`/rules/${id}`, data),
-  delete: (id: string) => api.delete(`/rules/${id}`),
-};
-
-// Rule group API
-export const ruleGroupApi = {
-  getAll: () => api.get('/rule-groups'),
-  getDefaults: () => api.get('/rule-groups/defaults'),
-  update: (id: string, data: any) => api.put(`/rule-groups/${id}`, data),
-  reset: (id: string) => api.post(`/rule-groups/${id}/reset`),
-};
-
-// Ruleset validation API
-export const ruleSetApi = {
-  validate: (type: 'geosite' | 'geoip', name: string) =>
-    api.get('/ruleset/validate', { params: { type, name } }),
-};
-
 // Settings API
 export const settingsApi = {
   get: () => api.get('/settings'),
@@ -108,6 +85,8 @@ export const nodeApi = {
     api.post('/nodes/health-check-single', { tag, internal_tag: tag }, { timeout: 15000 }),
   siteCheck: (tags?: string[], sites?: string[]) =>
     api.post('/nodes/site-check', { tags, sites }, { timeout: 180000 }),
+  speedTest: (tags?: string[]) =>
+    api.post('/nodes/speed-test', { tags }, { timeout: 600000 }),
   getGeoData: () => api.get('/nodes/geo'),
   getNodeGeo: (server: string, port: number) =>
     api.get(`/nodes/geo/${encodeURIComponent(server)}/${port}`),
@@ -242,6 +221,7 @@ export const measurementApi = {
     api.get('/measurements/health/stats/bulk', { params: { days: days || 7 } }),
   getSite: (server: string, port: number, limit?: number) =>
     api.get('/measurements/site', { params: { server, port, limit } }),
+  getLatestSpeed: () => api.get('/measurements/speed/latest'),
 };
 
 // Diagnostic API
