@@ -417,6 +417,13 @@ func (b *ConfigBuilder) buildDNS() *DNSConfig {
 		Inet4Range: "198.18.0.0/15",
 		Inet6Range: "fc00::/18",
 	})
+	// Bootstrap resolver: plain IP-based UDP server used by DefaultDomainResolver
+	// to resolve domain-based DNS server addresses (avoids circular dependency)
+	servers = append(servers, DNSServer{
+		Tag:    "dns_resolver",
+		Type:   "udp",
+		Server: "1.1.1.1",
+	})
 
 	// All traffic goes through proxy — use FakeIP for all A/AAAA queries
 	rules := []DNSRule{
@@ -871,7 +878,7 @@ func (b *ConfigBuilder) buildRoute() *RouteConfig {
 		Final:               "Final",
 		// Default domain resolver: resolves all outbound server addresses to avoid DNS loops
 		DefaultDomainResolver: &DomainResolver{
-			Server:     "dns_direct_1",
+			Server:     "dns_resolver",
 			RewriteTTL: 300,
 		},
 	}
