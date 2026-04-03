@@ -41,12 +41,14 @@ type DNSConfig struct {
 // DNSServer represents a DNS server (new format, supports FakeIP and hosts)
 type DNSServer struct {
 	Tag        string         `json:"tag"`
-	Type       string         `json:"type"`                  // udp, tcp, https, tls, quic, h3, fakeip, rcode, hosts
-	Server     string         `json:"server,omitempty"`      // Server address
-	Detour     string         `json:"detour,omitempty"`      // Outbound proxy
-	Inet4Range string         `json:"inet4_range,omitempty"` // FakeIP IPv4 address pool
-	Inet6Range string         `json:"inet6_range,omitempty"` // FakeIP IPv6 address pool
-	Predefined map[string]any `json:"predefined,omitempty"`  // hosts type only: predefined domain mappings
+	Type       string         `json:"type"`                    // udp, tcp, https, tls, quic, h3, fakeip, rcode, hosts
+	Server     string         `json:"server,omitempty"`        // Server address (hostname or IP, not URL)
+	ServerPort int            `json:"server_port,omitempty"`   // Server port (0 = default for type)
+	Path       string         `json:"path,omitempty"`          // HTTP path for https/h3 types
+	Detour     string         `json:"detour,omitempty"`        // Outbound proxy
+	Inet4Range string         `json:"inet4_range,omitempty"`   // FakeIP IPv4 address pool
+	Inet6Range string         `json:"inet6_range,omitempty"`   // FakeIP IPv6 address pool
+	Predefined map[string]any `json:"predefined,omitempty"`    // hosts type only: predefined domain mappings
 }
 
 // DNSRule represents a DNS rule
@@ -142,7 +144,9 @@ type CacheFileConfig struct {
 
 type dnsServerSpec struct {
 	Type   string
-	Server string
+	Server string // hostname or IP (not URL)
+	Port   int    // 0 means default for the type
+	Path   string // for https/h3 types (e.g. "/dns-query")
 }
 
 // ConfigBuilder builds sing-box configuration
@@ -333,10 +337,21 @@ func parseDNSServerSpec(raw string) (dnsServerSpec, bool) {
 		}
 		return dnsServerSpec{Type: serverType, Server: host}, true
 	case "https", "h3", "quic":
-		if strings.TrimSpace(u.Host) == "" {
+		// sing-box expects server=hostname, not full URL
+		hostname := u.Hostname()
+		if hostname == "" {
 			return dnsServerSpec{}, false
 		}
-		return dnsServerSpec{Type: serverType, Server: raw}, true
+		spec := dnsServerSpec{Type: serverType, Server: hostname}
+		if u.Port() != "" {
+			if p, err := strconv.Atoi(u.Port()); err == nil {
+				spec.Port = p
+			}
+		}
+		if u.Path != "" && u.Path != "/" {
+			spec.Path = u.Path
+		}
+		return spec, true
 	default:
 		return dnsServerSpec{}, false
 	}
@@ -357,12 +372,19 @@ func buildDNSServerChain(prefix, raw string, defaults []string, detour string) [
 			continue
 		}
 		seen[key] = true
-		servers = append(servers, DNSServer{
+		srv := DNSServer{
 			Tag:    fmt.Sprintf("%s_%d", prefix, len(servers)+1),
 			Type:   spec.Type,
 			Server: spec.Server,
 			Detour: detour,
-		})
+		}
+		if spec.Port > 0 {
+			srv.ServerPort = spec.Port
+		}
+		if spec.Path != "" {
+			srv.Path = spec.Path
+		}
+		servers = append(servers, srv)
 	}
 
 	return servers
