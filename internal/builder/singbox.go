@@ -6,7 +6,6 @@ import (
 	"net/url"
 	"os"
 	"sort"
-	"strconv"
 	"strings"
 
 	"github.com/xiaobei/singbox-manager/internal/storage"
@@ -344,8 +343,9 @@ func parseDNSServerSpec(raw string) (dnsServerSpec, bool) {
 			return dnsServerSpec{}, false
 		}
 		spec := dnsServerSpec{Type: serverType, Server: hostname}
-		if u.Port() != "" {
-			if p, err := strconv.Atoi(u.Port()); err == nil {
+		if portStr := u.Port(); portStr != "" {
+			var p int
+			if _, err := fmt.Sscan(portStr, &p); err == nil {
 				spec.Port = p
 			}
 		}
