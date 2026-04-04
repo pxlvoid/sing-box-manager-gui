@@ -290,6 +290,7 @@ func (s *Server) setupRoutes() {
 		api.POST("/nodes/unsupported/recheck", s.recheckUnsupportedNodes)
 		api.DELETE("/nodes/unsupported", s.clearUnsupportedNodes)
 		api.POST("/nodes/unsupported/delete", s.deleteUnsupportedNodes)
+		api.POST("/nodes/unsupported/clear", s.clearUnsupportedNodes)
 
 		// Unified nodes
 		api.GET("/nodes/unified", s.getUnifiedNodes)
