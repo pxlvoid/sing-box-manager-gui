@@ -50,7 +50,7 @@ export function useEventStream() {
         const data = JSON.parse(e.data);
         useStore.getState().setVerificationProgress({
           phase: 'validation',
-          current: data.excluded_nodes,
+          current: data.processed,
           total: data.total_nodes,
         });
       });

@@ -37,7 +37,8 @@ type ProbeStatus struct {
 }
 
 // ValidationProgressFunc is called during probe config validation to report progress.
-type ValidationProgressFunc func(iteration, totalNodes, excludedNodes int)
+// processedNodes = how many nodes have been checked so far, totalNodes = total input, excludedNodes = broken so far.
+type ValidationProgressFunc func(processedNodes, totalNodes, excludedNodes int)
 
 // ProbeManager manages a separate sing-box process used exclusively for
 // health-check and site-check probes, keeping the main sing-box untouched.
@@ -407,9 +408,9 @@ func (pm *ProbeManager) validateProbeConfig(nodes []storage.Node, port int, geoP
 		}
 		batch := filteredNodes[batchStart:batchEnd]
 
-		// Report progress
+		// Report progress: how many nodes checked so far
 		if pm.validationProgress != nil {
-			pm.validationProgress(batchStart/batchSize, len(nodes), len(allBroken))
+			pm.validationProgress(batchStart+len(preFilterBroken), len(nodes), len(allBroken))
 		}
 
 		validBatch, brokenBatch, err := pm.validateBatch(batch, port, geoPort)
