@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"net/http"
@@ -30,7 +31,7 @@ type SpeedTestResult struct {
 }
 
 // performSpeedTest runs speed tests for the given nodes by downloading a test file through each.
-func (s *Server) performSpeedTest(nodes []storage.Node) (map[string]*SpeedTestResult, error) {
+func (s *Server) performSpeedTest(ctx context.Context, nodes []storage.Node) (map[string]*SpeedTestResult, error) {
 	if len(nodes) == 0 {
 		return map[string]*SpeedTestResult{}, nil
 	}
@@ -63,6 +64,11 @@ func (s *Server) performSpeedTest(nodes []storage.Node) (map[string]*SpeedTestRe
 	total := int32(len(uniqueNodes))
 
 	for _, node := range uniqueNodes {
+		// Check for cancellation
+		if ctx.Err() != nil {
+			break
+		}
+
 		key := fmt.Sprintf("%s:%d", node.Server, node.ServerPort)
 
 		probeTag := nodeRoutingTag(node)
@@ -91,7 +97,7 @@ func (s *Server) performSpeedTest(nodes []storage.Node) (map[string]*SpeedTestRe
 		time.Sleep(100 * time.Millisecond) // let selector switch take effect
 
 		nodeTag := nodeDisplayName(node)
-		result := s.downloadSpeedTest(proxyURL, func(downloaded, total int64) {
+		result := s.downloadSpeedTest(ctx, proxyURL, func(downloaded, total int64) {
 			s.eventBus.Publish("speed:download_progress", map[string]interface{}{
 				"tag":        nodeTag,
 				"downloaded": downloaded,
@@ -163,7 +169,7 @@ func (pw *progressWriter) Write(p []byte) (int, error) {
 }
 
 // downloadSpeedTest downloads a test file through the given SOCKS5 proxy and measures throughput.
-func (s *Server) downloadSpeedTest(proxyURL string, onProgress func(downloaded, total int64)) *SpeedTestResult {
+func (s *Server) downloadSpeedTest(ctx context.Context, proxyURL string, onProgress func(downloaded, total int64)) *SpeedTestResult {
 	proxy, err := neturl.Parse(proxyURL)
 	if err != nil {
 		return &SpeedTestResult{Error: "bad_proxy: " + err.Error()}
@@ -177,8 +183,13 @@ func (s *Server) downloadSpeedTest(proxyURL string, onProgress func(downloaded, 
 		Timeout:   speedTestTimeout,
 	}
 
+	req, err := http.NewRequestWithContext(ctx, "GET", speedTestURL, nil)
+	if err != nil {
+		return &SpeedTestResult{Error: "request: " + err.Error()}
+	}
+
 	start := time.Now()
-	resp, err := client.Get(speedTestURL)
+	resp, err := client.Do(req)
 	if err != nil {
 		return &SpeedTestResult{Error: "download: " + err.Error()}
 	}
@@ -247,7 +258,7 @@ func (s *Server) speedCheckNodes(c *gin.Context) {
 		"total": len(nodes),
 	})
 
-	results, err := s.performSpeedTest(nodes)
+	results, err := s.performSpeedTest(c.Request.Context(), nodes)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return

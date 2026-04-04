@@ -14,7 +14,7 @@ import {
   Button,
   Tooltip,
 } from '@nextui-org/react';
-import { Search, Activity, Trash2, ArrowDownCircle, Pencil, Star, Copy, Gauge } from 'lucide-react';
+import { Search, Activity, Trash2, ArrowDownCircle, Pencil, Star, Copy, Gauge, X } from 'lucide-react';
 // Activity is used for empty state icon
 import type { UnifiedNode, GeoData } from '../../../store';
 import type { NodeHealthResult, HealthCheckMode, NodeSiteCheckResult, SpeedTestResult } from '../../../store';
@@ -42,6 +42,7 @@ interface VerifiedNodesTabProps {
   speedTestingNodes?: string[];
   speedDownloadProgress?: Record<string, { downloaded: number; total: number }>;
   runSpeedTest?: (tags?: string[]) => Promise<void>;
+  cancelSpeedTest?: (tags?: string[]) => void;
   geoData: Record<string, GeoData>;
   checkSingleNodeHealth: (tag: string) => void;
   checkSingleNodeSites: (tag: string, targets: string[]) => void;
@@ -64,6 +65,7 @@ export default function VerifiedNodesTab({
   speedTestingNodes,
   speedDownloadProgress,
   runSpeedTest,
+  cancelSpeedTest,
   geoData,
   checkSingleNodeHealth,
   checkSingleNodeSites: _checkSingleNodeSites,
@@ -403,18 +405,31 @@ export default function VerifiedNodesTab({
                   <TableCell>
                     <div className="flex items-center gap-1">
                       {runSpeedTest && (
-                        <Tooltip content="Speed test">
-                          <Button
-                            isIconOnly
-                            size="sm"
-                            variant="light"
-                            color="secondary"
-                            isLoading={speedTestingNodes?.includes(nodeInternalTag(node))}
-                            onPress={() => runSpeedTest([nodeInternalTag(node)])}
-                          >
-                            <Gauge className="w-4 h-4" />
-                          </Button>
-                        </Tooltip>
+                        speedTestingNodes?.includes(nodeInternalTag(node)) ? (
+                          <Tooltip content="Cancel speed test">
+                            <Button
+                              isIconOnly
+                              size="sm"
+                              variant="light"
+                              color="danger"
+                              onPress={() => cancelSpeedTest?.([nodeInternalTag(node)])}
+                            >
+                              <X className="w-4 h-4" />
+                            </Button>
+                          </Tooltip>
+                        ) : (
+                          <Tooltip content="Speed test">
+                            <Button
+                              isIconOnly
+                              size="sm"
+                              variant="light"
+                              color="secondary"
+                              onPress={() => runSpeedTest([nodeInternalTag(node)])}
+                            >
+                              <Gauge className="w-4 h-4" />
+                            </Button>
+                          </Tooltip>
+                        )
                       )}
                       <Tooltip content={node.is_favorite ? "Remove from favorites" : "Add to favorites"}>
                         <Button

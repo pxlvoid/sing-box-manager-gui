@@ -387,6 +387,7 @@ interface AppState {
   speedTestingNodes: string[];
   speedTestQueue: string[];
   speedDownloadProgress: Record<string, { downloaded: number; total: number }>;
+  _speedAbort: AbortController | null;
 
   // Proxy groups (from Clash API)
   proxyGroups: ProxyGroup[];
@@ -461,6 +462,7 @@ interface AppState {
   checkNodesSites: (tags?: string[], sites?: string[]) => Promise<void>;
   checkSingleNodeSites: (tag: string, sites?: string[]) => Promise<void>;
   runSpeedTest: (tags?: string[]) => Promise<void>;
+  cancelSpeedTest: (tags?: string[]) => void;
   setSpeedDownloadProgress: (tag: string, downloaded: number, total: number) => void;
   fetchLatestSpeedMeasurements: () => Promise<void>;
 
@@ -546,6 +548,7 @@ export const useStore = create<AppState>((set, get) => ({
   speedTestingNodes: [],
   speedTestQueue: [],
   speedDownloadProgress: {},
+  _speedAbort: null,
   siteCheckMode: null,
   siteChecking: false,
   siteCheckingNodes: [],
@@ -1220,18 +1223,23 @@ export const useStore = create<AppState>((set, get) => ({
       return;
     }
 
+    const abortController = new AbortController();
     if (tags && tags.length > 0) {
-      set({ speedTestingNodes: [...get().speedTestingNodes, ...tags] });
+      set({ speedTestingNodes: [...get().speedTestingNodes, ...tags], _speedAbort: abortController });
     } else {
-      set({ speedTesting: true });
+      set({ speedTesting: true, _speedAbort: abortController });
     }
     try {
-      const res = await nodeApi.speedTest(tags);
+      const res = await nodeApi.speedTest(tags, abortController.signal);
       const updates = (res.data.data || {}) as Record<string, SpeedTestResult>;
       set({ speedResults: { ...get().speedResults, ...updates } });
     } catch (error: any) {
-      console.error('Failed to run speed test:', error);
-      toast.error(error.response?.data?.error || 'Speed test failed');
+      if (abortController.signal.aborted) {
+        // Cancelled by user — not an error
+      } else {
+        console.error('Failed to run speed test:', error);
+        toast.error(error.response?.data?.error || 'Speed test failed');
+      }
     } finally {
       // Clear download progress for completed tags
       if (tags && tags.length > 0) {
@@ -1240,9 +1248,10 @@ export const useStore = create<AppState>((set, get) => ({
         set({
           speedTestingNodes: get().speedTestingNodes.filter(t => !tags.includes(t)),
           speedDownloadProgress: prog,
+          _speedAbort: null,
         });
       } else {
-        set({ speedTesting: false, speedDownloadProgress: {} });
+        set({ speedTesting: false, speedDownloadProgress: {}, _speedAbort: null });
       }
 
       // Process queued speed tests
@@ -1251,6 +1260,40 @@ export const useStore = create<AppState>((set, get) => ({
         set({ speedTestQueue: [] });
         get().runSpeedTest(queue);
       }
+    }
+  },
+
+  cancelSpeedTest: (tags?: string[]) => {
+    if (tags && tags.length > 0) {
+      // Remove from queue if queued
+      const queue = get().speedTestQueue;
+      const remaining = queue.filter(t => !tags.includes(t));
+      const prog = { ...get().speedDownloadProgress };
+      for (const t of tags) delete prog[t];
+
+      set({
+        speedTestQueue: remaining,
+        speedTestingNodes: get().speedTestingNodes.filter(t => !tags.includes(t)),
+        speedDownloadProgress: prog,
+      });
+
+      // If no more testing nodes remain, abort the request too
+      if (get().speedTestingNodes.length === 0) {
+        const abort = get()._speedAbort;
+        if (abort) abort.abort();
+        set({ speedTesting: false, _speedAbort: null });
+      }
+    } else {
+      // Cancel everything
+      const abort = get()._speedAbort;
+      if (abort) abort.abort();
+      set({
+        speedTesting: false,
+        speedTestingNodes: [],
+        speedTestQueue: [],
+        speedDownloadProgress: {},
+        _speedAbort: null,
+      });
     }
   },
 

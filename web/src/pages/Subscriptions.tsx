@@ -75,6 +75,7 @@ export default function Subscriptions() {
     speedTestingNodes,
     speedDownloadProgress,
     runSpeedTest,
+    cancelSpeedTest,
     fetchLatestSpeedMeasurements,
     unsupportedNodes,
     fetchUnsupportedNodes,
@@ -265,6 +266,7 @@ export default function Subscriptions() {
             speedTestingNodes={speedTestingNodes}
             speedDownloadProgress={speedDownloadProgress}
             runSpeedTest={runSpeedTest}
+            cancelSpeedTest={cancelSpeedTest}
             geoData={geoData}
             nodeTrafficMap={nodeTrafficMap}
             checkSingleNodeHealth={checkSingleNodeHealth}

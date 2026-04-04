@@ -85,8 +85,8 @@ export const nodeApi = {
     api.post('/nodes/health-check-single', { tag, internal_tag: tag }, { timeout: 15000 }),
   siteCheck: (tags?: string[], sites?: string[]) =>
     api.post('/nodes/site-check', { tags, sites }, { timeout: 180000 }),
-  speedTest: (tags?: string[]) =>
-    api.post('/nodes/speed-test', { tags }, { timeout: 600000 }),
+  speedTest: (tags?: string[], signal?: AbortSignal) =>
+    api.post('/nodes/speed-test', { tags }, { timeout: 600000, signal }),
   getGeoData: () => api.get('/nodes/geo'),
   getNodeGeo: (server: string, port: number) =>
     api.get(`/nodes/geo/${encodeURIComponent(server)}/${port}`),
