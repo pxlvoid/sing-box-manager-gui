@@ -1206,8 +1206,7 @@ export default function Dashboard() {
                 value={verificationProgress.current}
                 maxValue={verificationProgress.total || 1}
                 color={
-                  verificationProgress.phase === 'validation' ? 'warning'
-                  : verificationProgress.phase === 'pending' ? 'warning'
+                  (verificationProgress.phase === 'validation' || verificationProgress.phase === 'pending') ? 'warning'
                   : verificationProgress.phase === 'health_check' ? 'primary'
                   : verificationProgress.phase === 'site_check' ? 'secondary'
                   : verificationProgress.phase === 'geo' ? 'success'

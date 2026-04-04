@@ -290,7 +290,6 @@ func (s *Server) setupRoutes() {
 		api.POST("/nodes/unsupported/recheck", s.recheckUnsupportedNodes)
 		api.DELETE("/nodes/unsupported", s.clearUnsupportedNodes)
 		api.POST("/nodes/unsupported/delete", s.deleteUnsupportedNodes)
-		api.POST("/nodes/unsupported/clear", s.clearUnsupportedNodes)
 
 		// Unified nodes
 		api.GET("/nodes/unified", s.getUnifiedNodes)
@@ -991,7 +990,6 @@ func (s *Server) savedConfig(c *gin.Context) {
 }
 
 func (s *Server) applyConfig(c *gin.Context) {
-	logger.Printf("[config] applyConfig called, verified nodes: %d", len(s.store.GetAllNodes()))
 	newUnsupported, err := s.regenerateAndSaveConfig()
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
@@ -1086,7 +1084,6 @@ func (s *Server) buildAndValidateConfig() (string, []UnsupportedNodeInfo, error)
 		os.Remove(tmpPath)
 
 		if checkErr == nil {
-			logger.Printf("[config] Config validated OK (iteration %d, %d nodes, %d excluded)", i, len(nodes), len(excludeTags))
 			// Config is valid — store new unsupported nodes
 			if len(newUnsupported) > 0 {
 				s.unsupportedNodesMu.Lock()
@@ -1126,7 +1123,6 @@ func (s *Server) buildAndValidateConfig() (string, []UnsupportedNodeInfo, error)
 		}
 
 		// Parse errors
-		logger.Printf("[config] sing-box check failed (iteration %d): %s", i, string(output))
 		checkErrors := builder.ParseCheckErrors(string(output))
 		if !checkErrors.HasErrors() {
 			// Unrecognized error, cannot auto-fix
@@ -1206,24 +1202,7 @@ func (s *Server) buildAndValidateConfig() (string, []UnsupportedNodeInfo, error)
 }
 
 func (s *Server) saveConfigFile(path, content string) error {
-	logger.Printf("[config] saveConfigFile called: path=%s, size=%d, outbounds=%d, caller=%s", path, len(content), strings.Count(content, "\"tag\""), callerName(3))
 	return os.WriteFile(path, []byte(content), 0644)
-}
-
-func callerName(skip int) string {
-	pc, _, _, ok := runtime.Caller(skip)
-	if !ok {
-		return "unknown"
-	}
-	fn := runtime.FuncForPC(pc)
-	if fn == nil {
-		return "unknown"
-	}
-	name := fn.Name()
-	if idx := strings.LastIndex(name, "."); idx >= 0 {
-		name = name[idx+1:]
-	}
-	return name
 }
 
 // regenerateAndSaveConfig builds a validated config, persists it to the configured file,
@@ -1234,18 +1213,8 @@ func (s *Server) regenerateAndSaveConfig() ([]UnsupportedNodeInfo, error) {
 		return nil, err
 	}
 	settings := s.store.GetSettings()
-	path := s.resolvePath(settings.ConfigPath)
-	logger.Printf("[config] Saving config to %s (%d bytes, outbounds count: %d)", path, len(configJSON), strings.Count(configJSON, "\"tag\""))
-	if err := s.saveConfigFile(path, configJSON); err != nil {
-		logger.Printf("[config] Failed to save config: %v", err)
+	if err := s.saveConfigFile(s.resolvePath(settings.ConfigPath), configJSON); err != nil {
 		return nil, err
-	}
-	// Verify write
-	saved, readErr := os.ReadFile(path)
-	if readErr != nil {
-		logger.Printf("[config] Failed to re-read saved config: %v", readErr)
-	} else {
-		logger.Printf("[config] Verified saved config: %d bytes, outbounds count: %d", len(saved), strings.Count(string(saved), "\"tag\""))
 	}
 	return newUnsupported, nil
 }
@@ -3361,11 +3330,12 @@ func (s *Server) switchProxyGroup(c *gin.Context) {
 
 	// Close all existing connections so traffic immediately goes through the new node
 	closeURL := fmt.Sprintf("http://127.0.0.1:%d/connections", settings.ClashAPIPort)
-	closeReq, _ := http.NewRequest("DELETE", closeURL, nil)
-	if settings.ClashAPISecret != "" {
-		closeReq.Header.Set("Authorization", "Bearer "+settings.ClashAPISecret)
+	if closeReq, err := http.NewRequest("DELETE", closeURL, nil); err == nil {
+		if settings.ClashAPISecret != "" {
+			closeReq.Header.Set("Authorization", "Bearer "+settings.ClashAPISecret)
+		}
+		client.Do(closeReq) // best-effort
 	}
-	client.Do(closeReq) // best-effort, ignore errors
 
 	c.JSON(http.StatusOK, gin.H{"message": "Proxy switched"})
 }

@@ -440,6 +440,7 @@ func (pm *ProbeManager) validateBatch(nodes []storage.Node, port int, geoPort in
 	maxIterations := len(nodes) + 2
 
 	outboundRe := regexp.MustCompile(`outbounds?\[(\d+)\]\.?([^:]*?):\s*(.+)`)
+	dupRe := regexp.MustCompile(`duplicate outbound/endpoint tag:\s*(.+)`)
 
 	for iter := 0; iter < maxIterations; iter++ {
 		var validNodes []storage.Node
@@ -507,7 +508,6 @@ func (pm *ProbeManager) validateBatch(nodes []storage.Node, port int, geoPort in
 
 		// Parse duplicate tag errors
 		if !foundNew {
-			dupRe := regexp.MustCompile(`duplicate outbound/endpoint tag:\s*(.+)`)
 			for _, match := range dupRe.FindAllStringSubmatch(outputStr, -1) {
 				if len(match) >= 2 {
 					dupTag := strings.TrimSpace(match[1])

@@ -1,14 +1,6 @@
 import { Chip, Tooltip } from '@nextui-org/react';
 import type { NodeHealthResult, HealthCheckMode, NodeSiteCheckResult, SpeedTestResult } from '../../../store';
-import { shortSiteLabel, siteErrorLabel } from '../types';
-
-function formatSpeed(bps: number): string {
-  if (bps <= 0) return '0';
-  const mbps = (bps * 8) / 1_000_000;
-  if (mbps >= 1) return `${mbps.toFixed(1)} Mbps`;
-  const kbps = (bps * 8) / 1000;
-  return `${kbps.toFixed(0)} Kbps`;
-}
+import { shortSiteLabel, siteErrorLabel, formatSpeed } from '../types';
 
 interface NodeHealthChipsProps {
   tag: string;
