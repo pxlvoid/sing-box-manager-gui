@@ -242,6 +242,7 @@ func (s *Server) setupRoutes() {
 		api.POST("/config/generate", s.generateConfig)
 		api.POST("/config/apply", s.applyConfig)
 		api.GET("/config/preview", s.previewConfig)
+		api.GET("/config/saved", s.savedConfig)
 
 		// Service management
 		api.GET("/service/status", s.getServiceStatus)
@@ -975,6 +976,17 @@ func (s *Server) previewConfig(c *gin.Context) {
 	}
 
 	c.String(http.StatusOK, configJSON)
+}
+
+func (s *Server) savedConfig(c *gin.Context) {
+	settings := s.store.GetSettings()
+	path := s.resolvePath(settings.ConfigPath)
+	data, err := os.ReadFile(path)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.Data(http.StatusOK, "application/json", data)
 }
 
 func (s *Server) applyConfig(c *gin.Context) {
