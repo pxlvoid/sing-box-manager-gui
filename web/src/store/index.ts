@@ -332,7 +332,7 @@ export interface PipelineEvent {
 }
 
 export interface VerificationProgress {
-  phase: 'pending' | 'verified' | 'health_check' | 'site_check' | 'geo';
+  phase: 'pending' | 'verified' | 'health_check' | 'site_check' | 'geo' | 'validation';
   current: number;
   total: number;
 }
