@@ -166,6 +166,7 @@ export interface VerificationStatus {
   next_run_at?: string;
   node_counts: NodeCounts;
   scheduler_running: boolean;
+  verification_in_progress?: boolean;
   sub_update_enabled: boolean;
   sub_update_interval_min: number;
   sub_next_update_at?: string;
@@ -437,6 +438,7 @@ interface AppState {
   // Verification operations
   runVerification: () => Promise<void>;
   runVerificationForTags: (tags: string[]) => Promise<void>;
+  runVerificationSample: (sampleSize: number) => Promise<void>;
   fetchVerificationStatus: () => Promise<void>;
   fetchVerificationLogs: (limit?: number) => Promise<void>;
   fetchPipelineEvents: (limit?: number) => Promise<void>;
@@ -967,6 +969,17 @@ export const useStore = create<AppState>((set, get) => ({
     } catch (error: any) {
       set({ verificationRunning: false });
       toast.error(error.response?.data?.error || 'Failed to start tag verification');
+    }
+  },
+
+  runVerificationSample: async (sampleSize: number) => {
+    set({ verificationRunning: true });
+    try {
+      await verificationApi.runSample(sampleSize);
+      toast.success(`Sample verification started (${sampleSize} nodes)`);
+    } catch (error: any) {
+      set({ verificationRunning: false });
+      toast.error(error.response?.data?.error || 'Failed to start sample verification');
     }
   },
 

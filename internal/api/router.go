@@ -80,6 +80,8 @@ type Server struct {
 	storeSwapMu        sync.RWMutex
 	importMu           sync.Mutex
 
+	verifyInProgress atomic.Bool
+
 	monitoringMu           sync.Mutex
 	lastTrafficSampleAt    time.Time
 	lastTrafficUploadTotal int64
@@ -311,6 +313,7 @@ func (s *Server) setupRoutes() {
 		// Verification
 		api.POST("/verification/run", s.runVerification)
 		api.POST("/verification/run-tags", s.runVerificationByTags)
+		api.POST("/verification/run-sample", s.runVerificationSample)
 		api.GET("/verification/logs", s.getVerificationLogs)
 		api.GET("/verification/status", s.getVerificationStatus)
 		api.POST("/verification/start", s.startVerificationScheduler)
@@ -3025,9 +3028,23 @@ func (s *Server) exportNodeLinks(c *gin.Context) {
 
 // ==================== Verification API ====================
 
+// acquireVerifyLock attempts to acquire the verification lock.
+// Returns false and sends 409 Conflict if verification is already in progress.
+func (s *Server) acquireVerifyLock(c *gin.Context) bool {
+	if !s.verifyInProgress.CompareAndSwap(false, true) {
+		c.JSON(http.StatusConflict, gin.H{"error": "Verification is already in progress"})
+		return false
+	}
+	return true
+}
+
 func (s *Server) runVerification(c *gin.Context) {
+	if !s.acquireVerifyLock(c) {
+		return
+	}
 	go func() {
-		s.RunVerification()
+		defer s.verifyInProgress.Store(false)
+		s.runVerificationCore(nil, 0)
 		s.scheduler.MarkManualVerificationRun()
 	}()
 	c.JSON(http.StatusOK, gin.H{"message": "Verification started"})
@@ -3065,19 +3082,53 @@ func (s *Server) runVerificationByTags(c *gin.Context) {
 		return
 	}
 
+	if !s.acquireVerifyLock(c) {
+		return
+	}
+
 	tags := make([]string, 0, len(tagSet))
 	for tag := range tagSet {
 		tags = append(tags, tag)
 	}
 
 	go func(tags []string) {
-		s.RunVerificationForTags(tags)
+		defer s.verifyInProgress.Store(false)
+		s.runVerificationCore(parseTagSet(tags), 0)
 		s.scheduler.MarkManualVerificationRun()
 	}(tags)
 	c.JSON(http.StatusOK, gin.H{
 		"message":        "Verification started for selected tags",
 		"matched_nodes":  matched,
 		"requested_tags": len(tags),
+	})
+}
+
+func (s *Server) runVerificationSample(c *gin.Context) {
+	var req struct {
+		SampleSize int `json:"sample_size" binding:"required"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	if req.SampleSize != 1000 && req.SampleSize != 5000 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "sample_size must be 1000 or 5000"})
+		return
+	}
+
+	if !s.acquireVerifyLock(c) {
+		return
+	}
+
+	go func(size int) {
+		defer s.verifyInProgress.Store(false)
+		s.runVerificationCore(nil, size)
+		s.scheduler.MarkManualVerificationRun()
+	}(req.SampleSize)
+
+	c.JSON(http.StatusOK, gin.H{
+		"message":     "Sample verification started",
+		"sample_size": req.SampleSize,
 	})
 }
 
@@ -3091,16 +3142,17 @@ func (s *Server) getVerificationStatus(c *gin.Context) {
 		}
 	}
 	result := gin.H{
-		"enabled":                 settings.VerificationInterval > 0,
-		"interval_min":            settings.VerificationInterval,
-		"last_run_at":             lastRunAt,
-		"next_run_at":             s.scheduler.GetNextVerifyTime(),
-		"node_counts":             s.store.GetNodeCounts(),
-		"scheduler_running":       s.scheduler.IsRunning(),
-		"sub_update_enabled":      settings.SubscriptionInterval > 0,
-		"sub_update_interval_min": settings.SubscriptionInterval,
-		"sub_next_update_at":      s.scheduler.GetNextUpdateTime(),
-		"auto_apply":              settings.AutoApply,
+		"enabled":                   settings.VerificationInterval > 0,
+		"interval_min":              settings.VerificationInterval,
+		"last_run_at":               lastRunAt,
+		"next_run_at":               s.scheduler.GetNextVerifyTime(),
+		"node_counts":               s.store.GetNodeCounts(),
+		"scheduler_running":         s.scheduler.IsRunning(),
+		"verification_in_progress":  s.verifyInProgress.Load(),
+		"sub_update_enabled":        settings.SubscriptionInterval > 0,
+		"sub_update_interval_min":   settings.SubscriptionInterval,
+		"sub_next_update_at":        s.scheduler.GetNextUpdateTime(),
+		"auto_apply":                settings.AutoApply,
 	}
 	if logs := s.store.GetVerificationLogs(1); len(logs) > 0 {
 		log := logs[0]

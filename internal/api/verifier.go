@@ -2,6 +2,7 @@ package api
 
 import (
 	"fmt"
+	mrand "math/rand"
 	"time"
 
 	"github.com/xiaobei/singbox-manager/internal/logger"
@@ -11,8 +12,14 @@ import (
 const verifiedNodeDemotionThreshold = 3
 
 // RunVerification performs a full verification cycle for all pending and verified nodes.
+// Used by the scheduler — acquires the in-progress lock internally.
 func (s *Server) RunVerification() {
-	s.runVerificationWithTagFilter(nil)
+	if !s.verifyInProgress.CompareAndSwap(false, true) {
+		logger.Printf("[verifier] Skipping: verification already in progress")
+		return
+	}
+	defer s.verifyInProgress.Store(false)
+	s.runVerificationCore(nil, 0)
 }
 
 // RunVerificationForTags performs a verification cycle only for selected tags.
@@ -21,10 +28,27 @@ func (s *Server) RunVerificationForTags(tags []string) {
 	if len(tagSet) == 0 {
 		return
 	}
-	s.runVerificationWithTagFilter(tagSet)
+	if !s.verifyInProgress.CompareAndSwap(false, true) {
+		logger.Printf("[verifier] Skipping: verification already in progress")
+		return
+	}
+	defer s.verifyInProgress.Store(false)
+	s.runVerificationCore(tagSet, 0)
 }
 
-func (s *Server) runVerificationWithTagFilter(tagSet map[string]struct{}) {
+// RunVerificationSample performs a verification cycle on a random sample of nodes.
+func (s *Server) RunVerificationSample(sampleSize int) {
+	if !s.verifyInProgress.CompareAndSwap(false, true) {
+		logger.Printf("[verifier] Skipping: verification already in progress")
+		return
+	}
+	defer s.verifyInProgress.Store(false)
+	s.runVerificationCore(nil, sampleSize)
+}
+
+// runVerificationCore performs the actual verification work.
+// Caller must hold verifyInProgress.
+func (s *Server) runVerificationCore(tagSet map[string]struct{}, sampleSize int) {
 	start := time.Now()
 	settings := s.store.GetSettings()
 	archiveThreshold := settings.ArchiveThreshold
@@ -56,6 +80,10 @@ func (s *Server) runVerificationWithTagFilter(tagSet map[string]struct{}) {
 
 	configChanged := false
 	pendingNodes, verifiedNodes := s.collectVerificationNodes(tagSet)
+
+	if sampleSize > 0 {
+		pendingNodes, verifiedNodes = sampleNodes(pendingNodes, verifiedNodes, sampleSize)
+	}
 
 	// Archive pending nodes that already exceeded threshold before any probe checks.
 	pendingNodes = s.archiveThresholdExceededPendingNodes(pendingNodes, archiveThreshold, &vlog, &configChanged)
@@ -103,6 +131,9 @@ func (s *Server) runVerificationWithTagFilter(tagSet map[string]struct{}) {
 
 	// Re-fetch nodes after archiving broken ones (they may have changed status)
 	pendingNodes, verifiedNodes = s.collectVerificationNodes(tagSet)
+	if sampleSize > 0 {
+		pendingNodes, verifiedNodes = sampleNodes(pendingNodes, verifiedNodes, sampleSize)
+	}
 
 	allCheckNodes = allCheckNodes[:0]
 
@@ -468,4 +499,33 @@ func (s *Server) archiveBrokenNodes(
 			logger.Printf("[verifier] Failed to persist unsupported node %s: %v", bn.Tag, err)
 		}
 	}
+}
+
+// sampleNodes randomly samples up to size nodes from combined pending+verified lists,
+// preserving the status split. Uses partial Fisher-Yates for O(size) swaps.
+func sampleNodes(pending, verified []storage.UnifiedNode, size int) ([]storage.UnifiedNode, []storage.UnifiedNode) {
+	total := len(pending) + len(verified)
+	if total <= size {
+		return pending, verified
+	}
+
+	combined := make([]storage.UnifiedNode, 0, total)
+	combined = append(combined, pending...)
+	combined = append(combined, verified...)
+
+	for i := 0; i < size; i++ {
+		j := i + mrand.Intn(len(combined)-i)
+		combined[i], combined[j] = combined[j], combined[i]
+	}
+	combined = combined[:size]
+
+	var sp, sv []storage.UnifiedNode
+	for _, n := range combined {
+		if n.Status == storage.NodeStatusPending {
+			sp = append(sp, n)
+		} else {
+			sv = append(sv, n)
+		}
+	}
+	return sp, sv
 }

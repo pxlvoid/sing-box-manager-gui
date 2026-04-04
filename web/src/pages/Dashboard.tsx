@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Card, CardBody, CardHeader, Button, ButtonGroup, Chip, Modal, ModalContent, ModalHeader, ModalBody, ModalFooter, Tooltip, Spinner, Progress } from '@nextui-org/react';
+import { Card, CardBody, CardHeader, Button, ButtonGroup, Chip, Modal, ModalContent, ModalHeader, ModalBody, ModalFooter, Tooltip, Spinner, Progress, Dropdown, DropdownTrigger, DropdownMenu, DropdownItem } from '@nextui-org/react';
 import { Play, Square, RefreshCw, Cpu, HardDrive, Wifi, Activity, Copy, ClipboardCheck, Link, QrCode, Stethoscope, ShieldCheck, Network, ArrowUp, ArrowDown, Users, Cable, ChevronDown, ChevronRight } from 'lucide-react';
 import { Area, AreaChart, CartesianGrid, Legend, ResponsiveContainer, Tooltip as RechartsTooltip, XAxis, YAxis } from 'recharts';
 import { timeSecond, timeMinute } from 'd3-time';
@@ -88,7 +88,7 @@ export default function Dashboard() {
     pipelineEvents, verificationProgress, runCounters,
     fetchServiceStatus, fetchProbeStatus, stopProbe, fetchSubscriptions,
     fetchNodeCounts, fetchSystemInfo, fetchSettings, fetchUnsupportedNodes, fetchNodes, fetchCountryGroups,
-    fetchProxyGroups, switchProxy, runVerification, runVerificationForTags, fetchVerificationStatus,
+    fetchProxyGroups, switchProxy, runVerification, runVerificationForTags, runVerificationSample, fetchVerificationStatus,
     startVerificationScheduler, stopVerificationScheduler,
     fetchLatestMeasurements, fetchPipelineEvents,
     toggleFavorite,
@@ -614,6 +614,7 @@ export default function Dashboard() {
   const isAutoMode = (selectedMainProxyGroup?.type || '').toLowerCase() === 'urltest'
     || (mainProxyGroup?.now || '').toLowerCase() === 'auto';
   const activeProxyRefreshing = verificationRunning;
+  const isVerifyDisabled = verificationRunning || !!verificationStatus?.verification_in_progress;
   const qrImageUrl = qrLink ? `https://quickchart.io/qr?text=${encodeURIComponent(qrLink)}&size=260` : '';
 
   const isProxyFavorite = useCallback((tag: string): boolean => {
@@ -1162,16 +1163,37 @@ export default function Dashboard() {
                 Start
               </Button>
             )}
-            <Button
-              size="sm"
-              color="primary"
-              variant="flat"
-              startContent={verificationRunning ? <Spinner size="sm" /> : <ShieldCheck className="w-4 h-4" />}
-              onPress={() => runVerification()}
-              isDisabled={verificationRunning}
-            >
-              Verify Now
-            </Button>
+            <ButtonGroup size="sm" variant="flat">
+              <Button
+                color="primary"
+                startContent={verificationRunning ? <Spinner size="sm" /> : <ShieldCheck className="w-4 h-4" />}
+                onPress={() => runVerification()}
+                isDisabled={isVerifyDisabled}
+              >
+                Verify Now
+              </Button>
+              <Dropdown>
+                <DropdownTrigger>
+                  <Button
+                    color="primary"
+                    isIconOnly
+                    isDisabled={isVerifyDisabled}
+                  >
+                    <ChevronDown className="w-4 h-4" />
+                  </Button>
+                </DropdownTrigger>
+                <DropdownMenu
+                  aria-label="Verification options"
+                  onAction={(key) => {
+                    if (key === 'mini-1000') runVerificationSample(1000);
+                    if (key === 'mini-5000') runVerificationSample(5000);
+                  }}
+                >
+                  <DropdownItem key="mini-1000">Mini Verify (1 000)</DropdownItem>
+                  <DropdownItem key="mini-5000">Mini Verify (5 000)</DropdownItem>
+                </DropdownMenu>
+              </Dropdown>
+            </ButtonGroup>
             {probeStatus?.running && (
               <Button size="sm" color="danger" variant="flat" startContent={<Square className="w-4 h-4" />} onPress={stopProbe}>
                 Stop Probe
