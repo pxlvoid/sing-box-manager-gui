@@ -340,30 +340,107 @@ func (pm *ProbeManager) monitor(cmd *exec.Cmd, pid int) {
 	}
 }
 
+// unsupportedTransportTypes lists transport types not supported by sing-box.
+// Nodes with these types are pre-filtered before running sing-box check.
+var unsupportedTransportTypes = map[string]bool{
+	"xhttp":     true,
+	"splithttp": true,
+	"raw":       true,
+	"kcp":       true,
+	"auto":      true,
+	"tc":        true,
+}
+
+// preFilterBrokenNodes removes nodes with known-unsupported transport types
+// without running sing-box check. This is O(n) and handles thousands of nodes instantly.
+func preFilterBrokenNodes(nodes []storage.Node) (valid []storage.Node, broken []BrokenNode) {
+	for i, n := range nodes {
+		transportType := ""
+		if extra := n.Extra; extra != nil {
+			if transport, ok := extra["transport"].(map[string]interface{}); ok {
+				if t, ok := transport["type"].(string); ok {
+					transportType = t
+				}
+			}
+		}
+		if unsupportedTransportTypes[transportType] {
+			broken = append(broken, BrokenNode{
+				Index: i,
+				Tag:   n.DisplayOrTag(),
+				Error: fmt.Sprintf("unknown transport type: %s", transportType),
+			})
+		} else {
+			valid = append(valid, n)
+		}
+	}
+	return
+}
+
 // validateProbeConfig runs `sing-box check` iteratively, removing broken nodes
-// until the config validates. Returns the list of valid nodes and broken nodes.
+// until the config validates. Pre-filters known bad transport types first.
 func (pm *ProbeManager) validateProbeConfig(nodes []storage.Node, port int, geoPort int) ([]storage.Node, []BrokenNode, error) {
-	excluded := make(map[int]bool) // indices of broken nodes
-	var brokenNodes []BrokenNode
-	// Validation removes at least one broken node per successful iteration.
-	// With large subscriptions, a fixed cap (50) can stop early and abort health checks.
-	// Scale the cap with node count, while keeping a sane minimum.
-	maxIterations := len(nodes) + 2 // +1 for final successful pass, +1 safety margin
-	if maxIterations < 50 {
-		maxIterations = 50
+	// Phase 1: Pre-filter nodes with known unsupported transport types (instant, no sing-box check)
+	filteredNodes, preFilterBroken := preFilterBrokenNodes(nodes)
+	if len(preFilterBroken) > 0 {
+		logger.Printf("[probe] Pre-filtered %d node(s) with unsupported transport types", len(preFilterBroken))
 	}
 
-	// Regex for parsing probe outbound errors: outbound[N] or outbounds[N]
-	outboundRe := regexp.MustCompile(`outbounds?\[(\d+)\]\.?([^:]*?):\s*(.+)`)
-	unknownTransportRe := regexp.MustCompile(`unknown transport type:\s*(.+)`)
+	// Report pre-filter progress
+	if pm.validationProgress != nil {
+		pm.validationProgress(0, len(nodes), len(preFilterBroken))
+	}
 
-	for iter := 0; iter < maxIterations; iter++ {
+	if len(filteredNodes) == 0 {
+		return nil, preFilterBroken, fmt.Errorf("all nodes are broken")
+	}
+
+	// Phase 2: Batch validation with sing-box check for remaining nodes
+	const batchSize = 500
+	var allValid []storage.Node
+	var allBroken []BrokenNode
+	allBroken = append(allBroken, preFilterBroken...)
+
+	for batchStart := 0; batchStart < len(filteredNodes); batchStart += batchSize {
+		batchEnd := batchStart + batchSize
+		if batchEnd > len(filteredNodes) {
+			batchEnd = len(filteredNodes)
+		}
+		batch := filteredNodes[batchStart:batchEnd]
+
 		// Report progress
 		if pm.validationProgress != nil {
-			pm.validationProgress(iter, len(nodes), len(excluded))
+			pm.validationProgress(batchStart/batchSize, len(nodes), len(allBroken))
 		}
 
-		// Build filtered node list
+		validBatch, brokenBatch, err := pm.validateBatch(batch, port, geoPort)
+		if err != nil && len(validBatch) == 0 && len(brokenBatch) == 0 {
+			logger.Printf("[probe] Batch validation failed (nodes %d-%d): %v", batchStart, batchEnd, err)
+			continue
+		}
+		allValid = append(allValid, validBatch...)
+		allBroken = append(allBroken, brokenBatch...)
+	}
+
+	if len(allBroken) > 0 {
+		logger.Printf("[probe] Total: %d valid, %d broken", len(allValid), len(allBroken))
+	}
+
+	if len(allValid) == 0 {
+		return nil, allBroken, fmt.Errorf("no valid nodes remaining")
+	}
+
+	return allValid, allBroken, nil
+}
+
+// validateBatch validates a small batch of nodes with sing-box check iteratively.
+func (pm *ProbeManager) validateBatch(nodes []storage.Node, port int, geoPort int) ([]storage.Node, []BrokenNode, error) {
+	excluded := make(map[int]bool)
+	var brokenNodes []BrokenNode
+	maxIterations := len(nodes) + 2
+
+	outboundRe := regexp.MustCompile(`outbounds?\[(\d+)\]\.?([^:]*?):\s*(.+)`)
+
+	for iter := 0; iter < maxIterations; iter++ {
 		var validNodes []storage.Node
 		for i, n := range nodes {
 			if !excluded[i] {
@@ -372,7 +449,7 @@ func (pm *ProbeManager) validateProbeConfig(nodes []storage.Node, port int, geoP
 		}
 
 		if len(validNodes) == 0 {
-			return nil, brokenNodes, fmt.Errorf("all nodes are broken")
+			return nil, brokenNodes, fmt.Errorf("all nodes in batch are broken")
 		}
 
 		cfg, _ := buildProbeConfig(validNodes, port, geoPort)
@@ -394,22 +471,12 @@ func (pm *ProbeManager) validateProbeConfig(nodes []storage.Node, port int, geoP
 		os.Remove(tmpPath)
 
 		if checkErr == nil {
-			// Config is valid
-			if len(brokenNodes) > 0 {
-				tags := make([]string, len(brokenNodes))
-				for i, bn := range brokenNodes {
-					tags[i] = bn.Tag
-				}
-				logger.Printf("[probe] Excluded %d broken node(s): %s", len(brokenNodes), strings.Join(tags, ", "))
-			}
 			return validNodes, brokenNodes, nil
 		}
 
-		// Parse errors and find broken node indices
 		outputStr := string(output)
 		foundNew := false
 
-		// Parse outbound index errors (e.g. outbounds[5].transport: unknown transport type: xhttp)
 		for _, match := range outboundRe.FindAllStringSubmatch(outputStr, -1) {
 			if len(match) < 4 {
 				continue
@@ -423,7 +490,6 @@ func (pm *ProbeManager) validateProbeConfig(nodes []storage.Node, port int, geoP
 			if nodeIdx < 0 || nodeIdx >= len(validNodes) {
 				continue
 			}
-			// Map back to original index
 			origIdx := pm.findOriginalIndex(nodes, validNodes[nodeIdx], excluded)
 			if origIdx >= 0 && !excluded[origIdx] {
 				errMsg := strings.TrimSpace(match[3])
@@ -438,47 +504,38 @@ func (pm *ProbeManager) validateProbeConfig(nodes []storage.Node, port int, geoP
 			}
 		}
 
-		// Parse unknown transport type (general, not index-based)
+		// Parse duplicate tag errors
 		if !foundNew {
-			for _, match := range unknownTransportRe.FindAllStringSubmatch(outputStr, -1) {
+			dupRe := regexp.MustCompile(`duplicate outbound/endpoint tag:\s*(.+)`)
+			for _, match := range dupRe.FindAllStringSubmatch(outputStr, -1) {
 				if len(match) >= 2 {
-					logger.Printf("[probe] Unknown transport type in config: %s", match[1])
-				}
-			}
-		}
-
-		// Parse duplicate tag errors (shouldn't happen with probe_ prefix, but just in case)
-		dupRe := regexp.MustCompile(`duplicate outbound/endpoint tag:\s*(.+)`)
-		for _, match := range dupRe.FindAllStringSubmatch(outputStr, -1) {
-			if len(match) >= 2 {
-				dupTag := strings.TrimSpace(match[1])
-				// Find the node with this probe tag
-				for vi, vn := range validNodes {
-					probeTag := fmt.Sprintf("probe_%d", vi)
-					if probeTag == dupTag {
-						origIdx := pm.findOriginalIndex(nodes, vn, excluded)
-						if origIdx >= 0 && !excluded[origIdx] {
-							excluded[origIdx] = true
-							brokenNodes = append(brokenNodes, BrokenNode{
-								Index: origIdx,
-								Tag:   nodes[origIdx].DisplayOrTag(),
-								Error: fmt.Sprintf("duplicate tag: %s", dupTag),
-							})
-							foundNew = true
+					dupTag := strings.TrimSpace(match[1])
+					for vi, vn := range validNodes {
+						probeTag := fmt.Sprintf("probe_%d", vi)
+						if probeTag == dupTag {
+							origIdx := pm.findOriginalIndex(nodes, vn, excluded)
+							if origIdx >= 0 && !excluded[origIdx] {
+								excluded[origIdx] = true
+								brokenNodes = append(brokenNodes, BrokenNode{
+									Index: origIdx,
+									Tag:   nodes[origIdx].DisplayOrTag(),
+									Error: fmt.Sprintf("duplicate tag: %s", dupTag),
+								})
+								foundNew = true
+							}
+							break
 						}
-						break
 					}
 				}
 			}
 		}
 
 		if !foundNew {
-			// Cannot auto-fix — return what we have with the error
 			return nil, brokenNodes, fmt.Errorf("probe config check failed: %s", outputStr)
 		}
 	}
 
-	return nil, brokenNodes, fmt.Errorf("probe config validation exceeded max iterations (%d)", maxIterations)
+	return nil, brokenNodes, fmt.Errorf("batch validation exceeded max iterations")
 }
 
 // findOriginalIndex finds the index of a node in the original slice, skipping excluded indices.
