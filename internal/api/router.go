@@ -1072,6 +1072,7 @@ func (s *Server) buildAndValidateConfig() (string, []UnsupportedNodeInfo, error)
 		os.Remove(tmpPath)
 
 		if checkErr == nil {
+			logger.Printf("[config] Config validated OK (iteration %d, %d nodes, %d excluded)", i, len(nodes), len(excludeTags))
 			// Config is valid — store new unsupported nodes
 			if len(newUnsupported) > 0 {
 				s.unsupportedNodesMu.Lock()
@@ -1111,6 +1112,7 @@ func (s *Server) buildAndValidateConfig() (string, []UnsupportedNodeInfo, error)
 		}
 
 		// Parse errors
+		logger.Printf("[config] sing-box check failed (iteration %d): %s", i, string(output))
 		checkErrors := builder.ParseCheckErrors(string(output))
 		if !checkErrors.HasErrors() {
 			// Unrecognized error, cannot auto-fix
