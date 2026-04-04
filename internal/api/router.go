@@ -303,6 +303,7 @@ func (s *Server) setupRoutes() {
 		api.POST("/nodes/unified/:id/favorite", s.toggleNodeFavorite)
 		api.POST("/nodes/unified/bulk-promote", s.bulkPromoteNodes)
 		api.POST("/nodes/unified/bulk-archive", s.bulkArchiveNodes)
+		api.POST("/nodes/unified/bulk-unarchive", s.bulkUnarchiveNodes)
 		api.POST("/nodes/unified/export-links", s.exportNodeLinks)
 		api.GET("/nodes/unified/counts", s.getNodeCounts)
 
@@ -2949,6 +2950,16 @@ func (s *Server) bulkArchiveNodes(c *gin.Context) {
 		}
 	}
 	c.JSON(http.StatusOK, gin.H{"archived": archived, "message": fmt.Sprintf("Archived %d nodes", archived)})
+}
+
+func (s *Server) bulkUnarchiveNodes(c *gin.Context) {
+	// Unarchive all archived nodes back to pending
+	count, err := s.store.UnarchiveAllNodes()
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"unarchived": count, "message": fmt.Sprintf("Unarchived %d nodes", count)})
 }
 
 func (s *Server) getNodeCounts(c *gin.Context) {

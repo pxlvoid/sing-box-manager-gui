@@ -263,6 +263,14 @@ func (s *SQLiteStore) UnarchiveNode(id int64) error {
 	return nil
 }
 
+func (s *SQLiteStore) UnarchiveAllNodes() (int64, error) {
+	res, err := s.db.Exec(`UPDATE nodes SET status = 'pending', archived_at = NULL, consecutive_failures = 0 WHERE status = 'archived'`)
+	if err != nil {
+		return 0, err
+	}
+	return res.RowsAffected()
+}
+
 func (s *SQLiteStore) IncrementConsecutiveFailures(id int64) (int, error) {
 	now := time.Now()
 	_, err := s.db.Exec(`UPDATE nodes SET consecutive_failures = consecutive_failures + 1, last_checked_at = ? WHERE id = ?`, now, id)

@@ -36,6 +36,7 @@ type Store interface {
 	DemoteNode(id int64) error
 	ArchiveNode(id int64) error
 	UnarchiveNode(id int64) error
+	UnarchiveAllNodes() (int64, error)
 	IncrementConsecutiveFailures(id int64) (int, error)
 	ResetConsecutiveFailures(id int64) error
 	SetNodeFavorite(id int64, favorite bool) error
