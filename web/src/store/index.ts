@@ -383,6 +383,7 @@ interface AppState {
   // Speed test state
   speedResults: Record<string, SpeedTestResult>;
   speedTesting: boolean;
+  speedTestingNodes: string[];
 
   // Proxy groups (from Clash API)
   proxyGroups: ProxyGroup[];
@@ -536,6 +537,7 @@ export const useStore = create<AppState>((set, get) => ({
   siteCheckResults: {},
   speedResults: {},
   speedTesting: false,
+  speedTestingNodes: [],
   siteCheckMode: null,
   siteChecking: false,
   siteCheckingNodes: [],
@@ -1176,7 +1178,11 @@ export const useStore = create<AppState>((set, get) => ({
   },
 
   runSpeedTest: async (tags?: string[]) => {
-    set({ speedTesting: true });
+    if (tags && tags.length > 0) {
+      set({ speedTestingNodes: [...get().speedTestingNodes, ...tags] });
+    } else {
+      set({ speedTesting: true });
+    }
     try {
       const res = await nodeApi.speedTest(tags);
       const updates = (res.data.data || {}) as Record<string, SpeedTestResult>;
@@ -1186,7 +1192,11 @@ export const useStore = create<AppState>((set, get) => ({
       console.error('Failed to run speed test:', error);
       toast.error(error.response?.data?.error || 'Speed test failed');
     } finally {
-      set({ speedTesting: false });
+      if (tags && tags.length > 0) {
+        set({ speedTestingNodes: get().speedTestingNodes.filter(t => !tags.includes(t)) });
+      } else {
+        set({ speedTesting: false });
+      }
     }
   },
 

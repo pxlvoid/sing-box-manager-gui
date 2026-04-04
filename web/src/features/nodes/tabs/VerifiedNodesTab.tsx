@@ -21,7 +21,7 @@ import type { NodeHealthResult, HealthCheckMode, NodeSiteCheckResult, SpeedTestR
 import { nodeDisplayTag, nodeInternalTag, nodeSourceTag } from '../../../store';
 import { unifiedNodeApi } from '../../../api';
 import { toast } from '../../../components/Toast';
-import { SITE_CHECK_TARGETS, formatBytes } from '../types';
+import { SITE_CHECK_TARGETS, formatBytes, formatSpeed } from '../types';
 import type { NodeTrafficRow } from '../types';
 import NodeHealthChips from '../components/NodeHealthChips';
 import GeoChip from '../components/GeoChip';
@@ -39,6 +39,7 @@ interface VerifiedNodesTabProps {
   siteCheckingNodes: string[];
   speedResults?: Record<string, SpeedTestResult>;
   speedTesting?: boolean;
+  speedTestingNodes?: string[];
   runSpeedTest?: (tags?: string[]) => Promise<void>;
   geoData: Record<string, GeoData>;
   checkSingleNodeHealth: (tag: string) => void;
@@ -59,6 +60,7 @@ export default function VerifiedNodesTab({
   siteCheckingNodes: _siteCheckingNodes,
   speedResults,
   speedTesting,
+  speedTestingNodes,
   runSpeedTest,
   geoData,
   checkSingleNodeHealth,
@@ -140,6 +142,10 @@ export default function VerifiedNodesTab({
         case 'download': return traffic?.download_bytes ?? 0;
         case 'total': return traffic?.total_bytes ?? 0;
         case 'lastChecked': return node.last_checked_at ? new Date(node.last_checked_at).getTime() : 0;
+        case 'speed': {
+          const sr = speedResults?.[key];
+          return sr?.download_bps ?? 0;
+        }
         case 'health': {
           const hr = healthResults[key];
           if (!hr) return null;
@@ -310,6 +316,7 @@ export default function VerifiedNodesTab({
             <TableColumn key="total" width={80} className="hidden xl:table-cell" allowsSorting>Total</TableColumn>
             <TableColumn key="lastChecked" width={180} allowsSorting>Last Checked</TableColumn>
             <TableColumn key="health" width={140} allowsSorting>Health</TableColumn>
+            <TableColumn key="speed" width={110} allowsSorting>Speed</TableColumn>
             <TableColumn width={140}>Actions</TableColumn>
           </TableHeader>
           <TableBody>
@@ -366,7 +373,36 @@ export default function VerifiedNodesTab({
                     />
                   </TableCell>
                   <TableCell>
+                    {(() => {
+                      const sr = speedResults?.[key];
+                      const isNodeTesting = speedTestingNodes?.includes(nodeInternalTag(node));
+                      if (isNodeTesting) return <Chip size="sm" variant="flat" color="primary">Testing...</Chip>;
+                      if (!sr) return <span className="text-xs text-gray-400">-</span>;
+                      if (sr.error && sr.download_bps <= 0) return <Chip size="sm" variant="flat" color="danger">Fail</Chip>;
+                      const mbps = (sr.download_bps * 8) / 1_000_000;
+                      return (
+                        <Chip size="sm" variant="flat" color={mbps >= 10 ? 'success' : mbps >= 2 ? 'warning' : 'danger'}>
+                          {formatSpeed(sr.download_bps)}
+                        </Chip>
+                      );
+                    })()}
+                  </TableCell>
+                  <TableCell>
                     <div className="flex items-center gap-1">
+                      {runSpeedTest && (
+                        <Tooltip content="Speed test">
+                          <Button
+                            isIconOnly
+                            size="sm"
+                            variant="light"
+                            color="secondary"
+                            isLoading={speedTestingNodes?.includes(nodeInternalTag(node))}
+                            onPress={() => runSpeedTest([nodeInternalTag(node)])}
+                          >
+                            <Gauge className="w-4 h-4" />
+                          </Button>
+                        </Tooltip>
+                      )}
                       <Tooltip content={node.is_favorite ? "Remove from favorites" : "Add to favorites"}>
                         <Button
                           isIconOnly

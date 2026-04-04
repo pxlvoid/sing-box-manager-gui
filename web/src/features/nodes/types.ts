@@ -1,5 +1,13 @@
 import type { NodeHealthResult, HealthCheckMode } from '../../store';
 
+export function formatSpeed(bps: number): string {
+  if (bps <= 0) return '-';
+  const mbps = (bps * 8) / 1_000_000;
+  if (mbps >= 1) return `${mbps.toFixed(1)} Mbps`;
+  const kbps = (bps * 8) / 1000;
+  return `${kbps.toFixed(0)} Kbps`;
+}
+
 export function formatBytes(bytes: number): string {
   if (bytes === 0) return '0 B';
   const k = 1024;
