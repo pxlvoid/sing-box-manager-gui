@@ -990,6 +990,7 @@ func (s *Server) savedConfig(c *gin.Context) {
 }
 
 func (s *Server) applyConfig(c *gin.Context) {
+	logger.Printf("[config] applyConfig called, verified nodes: %d", len(s.store.GetAllNodes()))
 	newUnsupported, err := s.regenerateAndSaveConfig()
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
