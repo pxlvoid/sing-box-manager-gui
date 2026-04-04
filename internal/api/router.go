@@ -1216,8 +1216,18 @@ func (s *Server) regenerateAndSaveConfig() ([]UnsupportedNodeInfo, error) {
 		return nil, err
 	}
 	settings := s.store.GetSettings()
-	if err := s.saveConfigFile(s.resolvePath(settings.ConfigPath), configJSON); err != nil {
+	path := s.resolvePath(settings.ConfigPath)
+	logger.Printf("[config] Saving config to %s (%d bytes, outbounds count: %d)", path, len(configJSON), strings.Count(configJSON, "\"tag\""))
+	if err := s.saveConfigFile(path, configJSON); err != nil {
+		logger.Printf("[config] Failed to save config: %v", err)
 		return nil, err
+	}
+	// Verify write
+	saved, readErr := os.ReadFile(path)
+	if readErr != nil {
+		logger.Printf("[config] Failed to re-read saved config: %v", readErr)
+	} else {
+		logger.Printf("[config] Verified saved config: %d bytes, outbounds count: %d", len(saved), strings.Count(string(saved), "\"tag\""))
 	}
 	return newUnsupported, nil
 }
