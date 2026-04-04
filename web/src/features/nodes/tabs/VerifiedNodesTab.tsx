@@ -40,6 +40,7 @@ interface VerifiedNodesTabProps {
   speedResults?: Record<string, SpeedTestResult>;
   speedTesting?: boolean;
   speedTestingNodes?: string[];
+  speedDownloadProgress?: Record<string, { downloaded: number; total: number }>;
   runSpeedTest?: (tags?: string[]) => Promise<void>;
   geoData: Record<string, GeoData>;
   checkSingleNodeHealth: (tag: string) => void;
@@ -61,6 +62,7 @@ export default function VerifiedNodesTab({
   speedResults,
   speedTesting,
   speedTestingNodes,
+  speedDownloadProgress,
   runSpeedTest,
   geoData,
   checkSingleNodeHealth,
@@ -376,7 +378,15 @@ export default function VerifiedNodesTab({
                     {(() => {
                       const sr = speedResults?.[key];
                       const isNodeTesting = speedTestingNodes?.includes(nodeInternalTag(node));
-                      if (isNodeTesting) return <Chip size="sm" variant="flat" color="primary">Testing...</Chip>;
+                      if (isNodeTesting) {
+                        const prog = speedDownloadProgress?.[nodeDisplayTag(node)];
+                        if (prog && prog.total > 0) {
+                          const pct = Math.round((prog.downloaded / prog.total) * 100);
+                          const dlMB = (prog.downloaded / 1_000_000).toFixed(1);
+                          return <Chip size="sm" variant="flat" color="primary">{dlMB}MB ({pct}%)</Chip>;
+                        }
+                        return <Chip size="sm" variant="flat" color="primary">Testing...</Chip>;
+                      }
                       if (!sr) return <span className="text-xs text-gray-400">-</span>;
                       if (sr.error && sr.download_bps <= 0) return <Chip size="sm" variant="flat" color="danger">Fail</Chip>;
                       const mbps = (sr.download_bps * 8) / 1_000_000;

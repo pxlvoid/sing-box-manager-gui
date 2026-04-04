@@ -166,6 +166,15 @@ export function useEventStream() {
         useStore.getState().addPipelineEvent('probe:stopped', 'Probe stopped');
       });
 
+      es.addEventListener('speed:download_progress', (e) => {
+        const data = JSON.parse(e.data);
+        const tag = typeof data.tag === 'string' ? data.tag : '';
+        if (tag) {
+          const s = useStore.getState();
+          s.setSpeedDownloadProgress(tag, data.downloaded, data.total);
+        }
+      });
+
       es.onerror = () => {
         es.close();
         esRef.current = null;

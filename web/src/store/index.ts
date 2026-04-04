@@ -386,6 +386,7 @@ interface AppState {
   speedTesting: boolean;
   speedTestingNodes: string[];
   speedTestQueue: string[];
+  speedDownloadProgress: Record<string, { downloaded: number; total: number }>;
 
   // Proxy groups (from Clash API)
   proxyGroups: ProxyGroup[];
@@ -460,6 +461,7 @@ interface AppState {
   checkNodesSites: (tags?: string[], sites?: string[]) => Promise<void>;
   checkSingleNodeSites: (tag: string, sites?: string[]) => Promise<void>;
   runSpeedTest: (tags?: string[]) => Promise<void>;
+  setSpeedDownloadProgress: (tag: string, downloaded: number, total: number) => void;
   fetchLatestSpeedMeasurements: () => Promise<void>;
 
   // Latest measurements from backend
@@ -543,6 +545,7 @@ export const useStore = create<AppState>((set, get) => ({
   speedTesting: false,
   speedTestingNodes: [],
   speedTestQueue: [],
+  speedDownloadProgress: {},
   siteCheckMode: null,
   siteChecking: false,
   siteCheckingNodes: [],
@@ -1230,10 +1233,16 @@ export const useStore = create<AppState>((set, get) => ({
       console.error('Failed to run speed test:', error);
       toast.error(error.response?.data?.error || 'Speed test failed');
     } finally {
+      // Clear download progress for completed tags
       if (tags && tags.length > 0) {
-        set({ speedTestingNodes: get().speedTestingNodes.filter(t => !tags.includes(t)) });
+        const prog = { ...get().speedDownloadProgress };
+        for (const t of tags) delete prog[t];
+        set({
+          speedTestingNodes: get().speedTestingNodes.filter(t => !tags.includes(t)),
+          speedDownloadProgress: prog,
+        });
       } else {
-        set({ speedTesting: false });
+        set({ speedTesting: false, speedDownloadProgress: {} });
       }
 
       // Process queued speed tests
@@ -1243,6 +1252,15 @@ export const useStore = create<AppState>((set, get) => ({
         get().runSpeedTest(queue);
       }
     }
+  },
+
+  setSpeedDownloadProgress: (tag: string, downloaded: number, total: number) => {
+    set({
+      speedDownloadProgress: {
+        ...get().speedDownloadProgress,
+        [tag]: { downloaded, total },
+      },
+    });
   },
 
   fetchLatestSpeedMeasurements: async () => {
