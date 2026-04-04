@@ -91,7 +91,15 @@ func (s *Server) runVerificationWithTagFilter(tagSet map[string]struct{}) {
 
 	// 0. Pre-validate: run probe config validation to detect broken nodes
 	//    and archive them immediately before health checks.
+	s.probeManager.SetValidationProgressCallback(func(iteration, totalNodes, excludedNodes int) {
+		s.eventBus.Publish("verify:validation_progress", map[string]interface{}{
+			"iteration":      iteration,
+			"total_nodes":    totalNodes,
+			"excluded_nodes": excludedNodes,
+		})
+	})
 	s.archiveBrokenNodes(allCheckNodes, tagToUnified, &vlog, &configChanged)
+	s.probeManager.SetValidationProgressCallback(nil)
 
 	// Re-fetch nodes after archiving broken ones (they may have changed status)
 	pendingNodes, verifiedNodes = s.collectVerificationNodes(tagSet)

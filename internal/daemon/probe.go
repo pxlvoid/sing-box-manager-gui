@@ -36,21 +36,25 @@ type ProbeStatus struct {
 	StartedAt *time.Time `json:"started_at,omitempty"`
 }
 
+// ValidationProgressFunc is called during probe config validation to report progress.
+type ValidationProgressFunc func(iteration, totalNodes, excludedNodes int)
+
 // ProbeManager manages a separate sing-box process used exclusively for
 // health-check and site-check probes, keeping the main sing-box untouched.
 type ProbeManager struct {
-	singboxPath  string
-	dataDir      string
-	cmd          *exec.Cmd
-	port         int
-	geoProxyPort int // mixed inbound port for GeoIP lookups
-	pid          int
-	mu           sync.Mutex
-	running      bool
-	nodeTags     []string     // sorted tags of nodes currently loaded
-	tagMap       *ProbeTagMap // probe tag ↔ original tag mapping
-	startedAt    time.Time
-	configPath   string // path to the current temp config file
+	singboxPath        string
+	dataDir            string
+	cmd                *exec.Cmd
+	port               int
+	geoProxyPort       int // mixed inbound port for GeoIP lookups
+	pid                int
+	mu                 sync.Mutex
+	running            bool
+	nodeTags           []string     // sorted tags of nodes currently loaded
+	tagMap             *ProbeTagMap // probe tag ↔ original tag mapping
+	startedAt          time.Time
+	configPath         string // path to the current temp config file
+	validationProgress ValidationProgressFunc
 }
 
 // NewProbeManager creates a new ProbeManager.
@@ -59,6 +63,11 @@ func NewProbeManager(singboxPath, dataDir string) *ProbeManager {
 		singboxPath: singboxPath,
 		dataDir:     dataDir,
 	}
+}
+
+// SetValidationProgressCallback sets a callback for reporting validation progress.
+func (pm *ProbeManager) SetValidationProgressCallback(fn ValidationProgressFunc) {
+	pm.validationProgress = fn
 }
 
 // SetSingBoxPath updates the sing-box binary path (e.g. after kernel download).
@@ -349,6 +358,11 @@ func (pm *ProbeManager) validateProbeConfig(nodes []storage.Node, port int, geoP
 	unknownTransportRe := regexp.MustCompile(`unknown transport type:\s*(.+)`)
 
 	for iter := 0; iter < maxIterations; iter++ {
+		// Report progress
+		if pm.validationProgress != nil {
+			pm.validationProgress(iter, len(nodes), len(excluded))
+		}
+
 		// Build filtered node list
 		var validNodes []storage.Node
 		for i, n := range nodes {

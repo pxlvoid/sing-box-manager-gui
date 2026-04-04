@@ -1185,7 +1185,9 @@ export default function Dashboard() {
             <div className="space-y-1">
               <div className="flex justify-between text-sm">
                 <span className="text-gray-600 dark:text-gray-400">
-                  {verificationProgress.phase === 'health_check'
+                  {verificationProgress.phase === 'validation'
+                    ? 'Validating nodes'
+                    : verificationProgress.phase === 'health_check'
                     ? 'Health check'
                     : verificationProgress.phase === 'site_check'
                     ? 'Site check'
@@ -1204,7 +1206,8 @@ export default function Dashboard() {
                 value={verificationProgress.current}
                 maxValue={verificationProgress.total || 1}
                 color={
-                  verificationProgress.phase === 'pending' ? 'warning'
+                  verificationProgress.phase === 'validation' ? 'warning'
+                  : verificationProgress.phase === 'pending' ? 'warning'
                   : verificationProgress.phase === 'health_check' ? 'primary'
                   : verificationProgress.phase === 'site_check' ? 'secondary'
                   : verificationProgress.phase === 'geo' ? 'success'

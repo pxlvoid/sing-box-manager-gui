@@ -46,6 +46,15 @@ export function useEventStream() {
         s.setVerificationProgress({ phase: 'pending', current: 0, total: data.pending_count });
       });
 
+      es.addEventListener('verify:validation_progress', (e) => {
+        const data = JSON.parse(e.data);
+        useStore.getState().setVerificationProgress({
+          phase: 'validation',
+          current: data.excluded_nodes,
+          total: data.total_nodes,
+        });
+      });
+
       es.addEventListener('verify:health_start', (e) => {
         const data = JSON.parse(e.data);
         const s = useStore.getState();
