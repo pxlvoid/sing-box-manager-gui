@@ -622,6 +622,7 @@ func (b *ConfigBuilder) buildOutboundsWithMap() ([]Outbound, map[int]string) {
 	for _, node := range b.nodes {
 		routingTag := node.RoutingTag()
 		if shouldExcludeNode(node, b.excludeTags) {
+			fmt.Printf("[config-debug] Node excluded: routing=%s display=%s source=%s country=%s\n", routingTag, node.DisplayOrTag(), node.SourceOrTag(), node.Country)
 			continue
 		}
 		// Skip nodes from blocked countries
