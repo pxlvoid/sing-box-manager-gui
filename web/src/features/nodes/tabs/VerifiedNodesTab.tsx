@@ -380,10 +380,13 @@ export default function VerifiedNodesTab({
                       const isNodeTesting = speedTestingNodes?.includes(nodeInternalTag(node));
                       if (isNodeTesting) {
                         const prog = speedDownloadProgress?.[nodeDisplayTag(node)];
-                        if (prog && prog.total > 0) {
-                          const pct = Math.round((prog.downloaded / prog.total) * 100);
+                        if (prog && prog.downloaded > 0) {
                           const dlMB = (prog.downloaded / 1_000_000).toFixed(1);
-                          return <Chip size="sm" variant="flat" color="primary">{dlMB}MB ({pct}%)</Chip>;
+                          if (prog.total > 0) {
+                            const pct = Math.round((prog.downloaded / prog.total) * 100);
+                            return <Chip size="sm" variant="flat" color="primary">{dlMB}MB ({pct}%)</Chip>;
+                          }
+                          return <Chip size="sm" variant="flat" color="primary">{dlMB}MB</Chip>;
                         }
                         return <Chip size="sm" variant="flat" color="primary">Testing...</Chip>;
                       }

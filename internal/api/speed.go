@@ -16,6 +16,7 @@ import (
 
 const (
 	// Test file URL (~10MB, hosted on Cloudflare CDN — fast and reliable)
+	speedTestBytes   = 10_000_000
 	speedTestURL     = "http://speed.cloudflare.com/__down?bytes=10000000"
 	speedTestTimeout = 30 * time.Second
 )
@@ -187,8 +188,12 @@ func (s *Server) downloadSpeedTest(proxyURL string, onProgress func(downloaded, 
 		return &SpeedTestResult{Error: fmt.Sprintf("http_%d", resp.StatusCode)}
 	}
 
+	contentLength := resp.ContentLength
+	if contentLength <= 0 {
+		contentLength = speedTestBytes
+	}
 	pw := &progressWriter{
-		total:      resp.ContentLength,
+		total:      contentLength,
 		onProgress: onProgress,
 	}
 	n, err := io.Copy(pw, resp.Body)
