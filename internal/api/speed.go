@@ -89,7 +89,14 @@ func (s *Server) performSpeedTest(nodes []storage.Node) (map[string]*SpeedTestRe
 
 		time.Sleep(100 * time.Millisecond) // let selector switch take effect
 
-		result := s.downloadSpeedTest(proxyURL)
+		nodeTag := nodeDisplayName(node)
+		result := s.downloadSpeedTest(proxyURL, func(downloaded, total int64) {
+			s.eventBus.Publish("speed:download_progress", map[string]interface{}{
+				"tag":        nodeTag,
+				"downloaded": downloaded,
+				"total":      total,
+			})
+		})
 
 		mu.Lock()
 		results[key] = result
@@ -136,8 +143,26 @@ func (s *Server) performSpeedTest(nodes []storage.Node) (map[string]*SpeedTestRe
 	return results, nil
 }
 
+// progressWriter wraps io.Discard and reports download progress via a callback.
+type progressWriter struct {
+	downloaded int64
+	total      int64
+	onProgress func(downloaded, total int64)
+	lastReport time.Time
+}
+
+func (pw *progressWriter) Write(p []byte) (int, error) {
+	n := len(p)
+	pw.downloaded += int64(n)
+	if pw.onProgress != nil && time.Since(pw.lastReport) >= 250*time.Millisecond {
+		pw.lastReport = time.Now()
+		pw.onProgress(pw.downloaded, pw.total)
+	}
+	return n, nil
+}
+
 // downloadSpeedTest downloads a test file through the given SOCKS5 proxy and measures throughput.
-func (s *Server) downloadSpeedTest(proxyURL string) *SpeedTestResult {
+func (s *Server) downloadSpeedTest(proxyURL string, onProgress func(downloaded, total int64)) *SpeedTestResult {
 	proxy, err := neturl.Parse(proxyURL)
 	if err != nil {
 		return &SpeedTestResult{Error: "bad_proxy: " + err.Error()}
@@ -162,8 +187,11 @@ func (s *Server) downloadSpeedTest(proxyURL string) *SpeedTestResult {
 		return &SpeedTestResult{Error: fmt.Sprintf("http_%d", resp.StatusCode)}
 	}
 
-	// Read and discard body, counting bytes
-	n, err := io.Copy(io.Discard, resp.Body)
+	pw := &progressWriter{
+		total:      resp.ContentLength,
+		onProgress: onProgress,
+	}
+	n, err := io.Copy(pw, resp.Body)
 	duration := time.Since(start)
 
 	durationMs := int(duration.Milliseconds())
