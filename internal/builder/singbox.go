@@ -750,17 +750,23 @@ func (b *ConfigBuilder) buildOutboundsWithMap() ([]Outbound, map[int]string) {
 
 	// Create main selector:
 	// include individual nodes so dashboard can switch to a specific node directly.
-	proxyOutbounds := []string{"Auto"}
+	var proxyOutbounds []string
+	if len(allNodeTags) > 0 {
+		proxyOutbounds = append(proxyOutbounds, "Auto")
+	}
 	proxyOutbounds = append(proxyOutbounds, allNodeTags...)
 	proxyOutbounds = append(proxyOutbounds, countryGroupTags...) // Add country groups
 	proxyOutbounds = append(proxyOutbounds, filterGroupTags...)
 
-	outbounds = append(outbounds, Outbound{
+	proxySelector := Outbound{
 		"tag":       "Proxy",
 		"type":      "selector",
 		"outbounds": proxyOutbounds,
-		"default":   "Auto",
-	})
+	}
+	if len(allNodeTags) > 0 {
+		proxySelector["default"] = "Auto"
+	}
+	outbounds = append(outbounds, proxySelector)
 
 	// Create fallback rule selector
 	fallbackOutbounds := []string{"Proxy", "DIRECT"}
@@ -800,10 +806,12 @@ func NodeToOutbound(node storage.Node) Outbound {
 		delete(transport, "mode")
 	}
 
-	// Set dial timeout to avoid hanging on half-dead proxies
-	if _, exists := outbound["dial_timeout"]; !exists {
-		outbound["dial_timeout"] = "8s"
+	// Set connect timeout to avoid hanging on half-dead proxies
+	if _, exists := outbound["connect_timeout"]; !exists {
+		outbound["connect_timeout"] = "8s"
 	}
+	// Remove legacy dial_timeout if present in node Extra
+	delete(outbound, "dial_timeout")
 
 	return outbound
 }
