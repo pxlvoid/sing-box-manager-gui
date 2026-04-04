@@ -3359,6 +3359,14 @@ func (s *Server) switchProxyGroup(c *gin.Context) {
 		return
 	}
 
+	// Close all existing connections so traffic immediately goes through the new node
+	closeURL := fmt.Sprintf("http://127.0.0.1:%d/connections", settings.ClashAPIPort)
+	closeReq, _ := http.NewRequest("DELETE", closeURL, nil)
+	if settings.ClashAPISecret != "" {
+		closeReq.Header.Set("Authorization", "Bearer "+settings.ClashAPISecret)
+	}
+	client.Do(closeReq) // best-effort, ignore errors
+
 	c.JSON(http.StatusOK, gin.H{"message": "Proxy switched"})
 }
 
