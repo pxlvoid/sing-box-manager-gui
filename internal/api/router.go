@@ -1205,7 +1205,24 @@ func (s *Server) buildAndValidateConfig() (string, []UnsupportedNodeInfo, error)
 }
 
 func (s *Server) saveConfigFile(path, content string) error {
+	logger.Printf("[config] saveConfigFile called: path=%s, size=%d, outbounds=%d, caller=%s", path, len(content), strings.Count(content, "\"tag\""), callerName(3))
 	return os.WriteFile(path, []byte(content), 0644)
+}
+
+func callerName(skip int) string {
+	pc, _, _, ok := runtime.Caller(skip)
+	if !ok {
+		return "unknown"
+	}
+	fn := runtime.FuncForPC(pc)
+	if fn == nil {
+		return "unknown"
+	}
+	name := fn.Name()
+	if idx := strings.LastIndex(name, "."); idx >= 0 {
+		name = name[idx+1:]
+	}
+	return name
 }
 
 // regenerateAndSaveConfig builds a validated config, persists it to the configured file,
