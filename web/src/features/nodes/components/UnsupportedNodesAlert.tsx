@@ -3,7 +3,7 @@ import {
   CardBody,
   Button,
 } from '@nextui-org/react';
-import { AlertTriangle, Trash2 } from 'lucide-react';
+import { AlertTriangle, Trash2, RefreshCw } from 'lucide-react';
 import type { UnsupportedNodeInfo } from '../../../store';
 
 interface UnsupportedNodesAlertProps {
@@ -15,6 +15,7 @@ interface UnsupportedNodesAlertProps {
 
 export default function UnsupportedNodesAlert({
   unsupportedNodes,
+  onRecheck,
   onDeleteAll,
 }: UnsupportedNodesAlertProps) {
   if (unsupportedNodes.length === 0) return null;
@@ -29,16 +30,26 @@ export default function UnsupportedNodesAlert({
               {unsupportedNodes.length} unsupported node(s) excluded — these nodes cause sing-box config errors and have been automatically disabled.
             </p>
           </div>
-          <Button
-            size="sm"
-            variant="flat"
-            color="danger"
-            startContent={<Trash2 className="w-3 h-3" />}
-            className="shrink-0"
-            onPress={onDeleteAll}
-          >
-            Delete All
-          </Button>
+          <div className="flex gap-2 shrink-0">
+            <Button
+              size="sm"
+              variant="flat"
+              color="warning"
+              startContent={<RefreshCw className="w-3 h-3" />}
+              onPress={onRecheck}
+            >
+              Recheck
+            </Button>
+            <Button
+              size="sm"
+              variant="flat"
+              color="danger"
+              startContent={<Trash2 className="w-3 h-3" />}
+              onPress={onDeleteAll}
+            >
+              Delete All
+            </Button>
+          </div>
         </div>
       </CardBody>
     </Card>
