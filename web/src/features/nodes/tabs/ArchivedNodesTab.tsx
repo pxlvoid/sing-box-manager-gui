@@ -29,13 +29,14 @@ interface ArchivedNodesTabProps {
   geoData: Record<string, GeoData>;
   nodeTrafficMap?: Map<string, NodeTrafficRow>;
   onUnarchive: (id: number) => void;
+  onUnarchiveAll?: () => void;
   onDelete: (id: number) => void;
   onToggleFavorite: (id: number) => void;
 }
 
 const PAGE_SIZE = 50;
 
-export default function ArchivedNodesTab({ nodes, geoData, nodeTrafficMap, onUnarchive, onDelete, onToggleFavorite }: ArchivedNodesTabProps) {
+export default function ArchivedNodesTab({ nodes, geoData, nodeTrafficMap, onUnarchive, onUnarchiveAll, onDelete, onToggleFavorite }: ArchivedNodesTabProps) {
   const isMobile = useIsMobile();
   const [searchQuery, setSearchQuery] = useState('');
   const [page, setPage] = useState(1);
@@ -133,6 +134,21 @@ export default function ArchivedNodesTab({ nodes, geoData, nodeTrafficMap, onUna
             <Star className={`w-4 h-4 ${showFavoritesOnly ? 'fill-current' : ''}`} />
           </Button>
         </Tooltip>
+        {onUnarchiveAll && nodes.length > 0 && (
+          <Button
+            size="sm"
+            variant="flat"
+            color="primary"
+            startContent={<RotateCcw className="w-3 h-3" />}
+            onPress={() => {
+              if (confirm(`Unarchive all ${nodes.length} node(s) back to pending?`)) {
+                onUnarchiveAll();
+              }
+            }}
+          >
+            Unarchive All
+          </Button>
+        )}
         <span className="text-xs text-gray-400 ml-auto">
           {filteredNodes.length === nodes.length
             ? `${nodes.length} archived nodes`

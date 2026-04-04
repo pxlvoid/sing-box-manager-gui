@@ -59,6 +59,7 @@ export default function Subscriptions() {
     unarchiveNode,
     bulkPromoteNodes,
     bulkArchiveNodes,
+    bulkUnarchiveNodes,
     toggleFavorite,
     deleteFilter,
     toggleFilter,
@@ -279,6 +280,7 @@ export default function Subscriptions() {
             geoData={geoData}
             nodeTrafficMap={nodeTrafficMap}
             onUnarchive={unarchiveNode}
+            onUnarchiveAll={bulkUnarchiveNodes}
             onDelete={(id) => { if (confirm('Delete this node?')) deleteNode(id); }}
             onToggleFavorite={toggleFavorite}
           />

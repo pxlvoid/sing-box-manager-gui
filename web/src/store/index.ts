@@ -432,6 +432,7 @@ interface AppState {
   toggleFavorite: (id: number) => Promise<void>;
   bulkPromoteNodes: (ids: number[]) => Promise<void>;
   bulkArchiveNodes: (ids: number[]) => Promise<void>;
+  bulkUnarchiveNodes: () => Promise<void>;
 
   // Verification operations
   runVerification: () => Promise<void>;
@@ -924,6 +925,17 @@ export const useStore = create<AppState>((set, get) => ({
       toast.success(`${ids.length} nodes archived`);
     } catch (error: any) {
       toast.error(error.response?.data?.error || 'Failed to archive nodes');
+    }
+  },
+
+  bulkUnarchiveNodes: async () => {
+    try {
+      const res = await unifiedNodeApi.bulkUnarchive();
+      await get().fetchNodes();
+      await get().fetchNodeCounts();
+      toast.success(res.data.message || 'All nodes unarchived');
+    } catch (error: any) {
+      toast.error(error.response?.data?.error || 'Failed to unarchive nodes');
     }
   },
 

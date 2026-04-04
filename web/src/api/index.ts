@@ -112,6 +112,7 @@ export const unifiedNodeApi = {
   unarchive: (id: number) => api.post(`/nodes/unified/${id}/unarchive`),
   bulkPromote: (ids: number[]) => api.post('/nodes/unified/bulk-promote', { ids }),
   bulkArchive: (ids: number[]) => api.post('/nodes/unified/bulk-archive', { ids }),
+  bulkUnarchive: () => api.post('/nodes/unified/bulk-unarchive'),
   getCounts: () => api.get('/nodes/unified/counts'),
   exportLinks: (ids?: number[], status?: string) =>
     api.post('/nodes/unified/export-links', { ids, status }),
