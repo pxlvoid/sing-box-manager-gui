@@ -191,7 +191,7 @@ func (s *Server) speedCheckNodes(c *gin.Context) {
 	}
 	c.ShouldBindJSON(&req)
 
-	allNodes := s.store.GetAllNodesIncludeDisabled()
+	allNodes := s.store.GetAllNodes()
 
 	var nodes []storage.Node
 	if len(req.Tags) > 0 {

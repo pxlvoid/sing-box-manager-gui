@@ -385,6 +385,7 @@ interface AppState {
   speedResults: Record<string, SpeedTestResult>;
   speedTesting: boolean;
   speedTestingNodes: string[];
+  speedTestQueue: string[];
 
   // Proxy groups (from Clash API)
   proxyGroups: ProxyGroup[];
@@ -541,6 +542,7 @@ export const useStore = create<AppState>((set, get) => ({
   speedResults: {},
   speedTesting: false,
   speedTestingNodes: [],
+  speedTestQueue: [],
   siteCheckMode: null,
   siteChecking: false,
   siteCheckingNodes: [],
@@ -1203,6 +1205,18 @@ export const useStore = create<AppState>((set, get) => ({
   },
 
   runSpeedTest: async (tags?: string[]) => {
+    const { speedTesting, speedTestingNodes, speedTestQueue } = get();
+    const isRunning = speedTesting || speedTestingNodes.length > 0;
+
+    // If a speed test is already running, queue the new tags
+    if (isRunning && tags && tags.length > 0) {
+      set({
+        speedTestQueue: [...speedTestQueue, ...tags],
+        speedTestingNodes: [...speedTestingNodes, ...tags],
+      });
+      return;
+    }
+
     if (tags && tags.length > 0) {
       set({ speedTestingNodes: [...get().speedTestingNodes, ...tags] });
     } else {
@@ -1212,7 +1226,6 @@ export const useStore = create<AppState>((set, get) => ({
       const res = await nodeApi.speedTest(tags);
       const updates = (res.data.data || {}) as Record<string, SpeedTestResult>;
       set({ speedResults: { ...get().speedResults, ...updates } });
-      toast.success('Speed test completed');
     } catch (error: any) {
       console.error('Failed to run speed test:', error);
       toast.error(error.response?.data?.error || 'Speed test failed');
@@ -1221,6 +1234,13 @@ export const useStore = create<AppState>((set, get) => ({
         set({ speedTestingNodes: get().speedTestingNodes.filter(t => !tags.includes(t)) });
       } else {
         set({ speedTesting: false });
+      }
+
+      // Process queued speed tests
+      const queue = get().speedTestQueue;
+      if (queue.length > 0) {
+        set({ speedTestQueue: [] });
+        get().runSpeedTest(queue);
       }
     }
   },
