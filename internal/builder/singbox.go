@@ -3,6 +3,7 @@ package builder
 import (
 	"encoding/json"
 	"fmt"
+	"net"
 	"net/url"
 	"os"
 	"sort"
@@ -40,15 +41,16 @@ type DNSConfig struct {
 
 // DNSServer represents a DNS server (new format, supports FakeIP and hosts)
 type DNSServer struct {
-	Tag        string         `json:"tag"`
-	Type       string         `json:"type"`                    // udp, tcp, https, tls, quic, h3, fakeip, rcode, hosts
-	Server     string         `json:"server,omitempty"`        // Server address (hostname or IP, not URL)
-	ServerPort int            `json:"server_port,omitempty"`   // Server port (0 = default for type)
-	Path       string         `json:"path,omitempty"`          // HTTP path for https/h3 types
-	Detour     string         `json:"detour,omitempty"`        // Outbound proxy
-	Inet4Range string         `json:"inet4_range,omitempty"`   // FakeIP IPv4 address pool
-	Inet6Range string         `json:"inet6_range,omitempty"`   // FakeIP IPv6 address pool
-	Predefined map[string]any `json:"predefined,omitempty"`    // hosts type only: predefined domain mappings
+	Tag             string         `json:"tag"`
+	Type            string         `json:"type"`                       // udp, tcp, https, tls, quic, h3, fakeip, rcode, hosts
+	Server          string         `json:"server,omitempty"`           // Server address (hostname or IP, not URL)
+	ServerPort      int            `json:"server_port,omitempty"`      // Server port (0 = default for type)
+	Path            string         `json:"path,omitempty"`             // HTTP path for https/h3 types
+	AddressResolver string         `json:"address_resolver,omitempty"` // DNS server to resolve domain-based server addresses
+	Detour          string         `json:"detour,omitempty"`           // Outbound proxy
+	Inet4Range      string         `json:"inet4_range,omitempty"`      // FakeIP IPv4 address pool
+	Inet6Range      string         `json:"inet6_range,omitempty"`      // FakeIP IPv6 address pool
+	Predefined      map[string]any `json:"predefined,omitempty"`       // hosts type only: predefined domain mappings
 }
 
 // DNSRule represents a DNS rule
@@ -378,6 +380,11 @@ func buildDNSServerChain(prefix, raw string, defaults []string, detour string) [
 			Type:   spec.Type,
 			Server: spec.Server,
 			Detour: detour,
+		}
+		// If the server address is a domain name (not an IP), set address_resolver
+		// so sing-box knows how to resolve it without circular dependency
+		if net.ParseIP(spec.Server) == nil {
+			srv.AddressResolver = "dns_resolver"
 		}
 		if spec.Port > 0 {
 			srv.ServerPort = spec.Port
