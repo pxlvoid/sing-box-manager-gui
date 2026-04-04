@@ -46,7 +46,7 @@ type DNSServer struct {
 	Server          string         `json:"server,omitempty"`           // Server address (hostname or IP, not URL)
 	ServerPort      int            `json:"server_port,omitempty"`      // Server port (0 = default for type)
 	Path            string         `json:"path,omitempty"`             // HTTP path for https/h3 types
-	AddressResolver string         `json:"address_resolver,omitempty"` // DNS server to resolve domain-based server addresses
+	DomainResolver  string         `json:"domain_resolver,omitempty"`  // DNS server to resolve domain-based server addresses
 	Detour          string         `json:"detour,omitempty"`           // Outbound proxy
 	Inet4Range      string         `json:"inet4_range,omitempty"`      // FakeIP IPv4 address pool
 	Inet6Range      string         `json:"inet6_range,omitempty"`      // FakeIP IPv6 address pool
@@ -381,10 +381,10 @@ func buildDNSServerChain(prefix, raw string, defaults []string, detour string) [
 			Server: spec.Server,
 			Detour: detour,
 		}
-		// If the server address is a domain name (not an IP), set address_resolver
+		// If the server address is a domain name (not an IP), set domain_resolver
 		// so sing-box knows how to resolve it without circular dependency
 		if net.ParseIP(spec.Server) == nil {
-			srv.AddressResolver = "dns_resolver"
+			srv.DomainResolver = "dns_resolver"
 		}
 		if spec.Port > 0 {
 			srv.ServerPort = spec.Port
