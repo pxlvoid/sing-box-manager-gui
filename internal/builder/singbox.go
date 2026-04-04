@@ -604,8 +604,7 @@ func (b *ConfigBuilder) buildOutboundsWithMap() ([]Outbound, map[int]string) {
 	indexToTag := make(map[int]string)
 	outbounds := []Outbound{
 		{"type": "direct", "tag": "DIRECT"},
-		{"type": "block", "tag": "REJECT"},
-		// Removed dns-out, using route action: hijack-dns instead
+		// block outbound removed in sing-box 1.11+, using route action reject instead
 	}
 
 	// Collect all node tags and group by country
@@ -757,6 +756,10 @@ func (b *ConfigBuilder) buildOutboundsWithMap() ([]Outbound, map[int]string) {
 	proxyOutbounds = append(proxyOutbounds, allNodeTags...)
 	proxyOutbounds = append(proxyOutbounds, countryGroupTags...) // Add country groups
 	proxyOutbounds = append(proxyOutbounds, filterGroupTags...)
+	// Fallback: selector requires at least one outbound
+	if len(proxyOutbounds) == 0 {
+		proxyOutbounds = append(proxyOutbounds, "DIRECT")
+	}
 
 	proxySelector := Outbound{
 		"tag":       "Proxy",

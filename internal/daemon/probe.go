@@ -404,8 +404,8 @@ func (pm *ProbeManager) validateProbeConfig(nodes []storage.Node, port int, geoP
 			if err != nil {
 				continue
 			}
-			// Probe config has 2 system outbounds (DIRECT, REJECT) at the start
-			nodeIdx := idx - 2
+			// Probe config has 1 system outbound (DIRECT) at the start
+			nodeIdx := idx - 1
 			if nodeIdx < 0 || nodeIdx >= len(validNodes) {
 				continue
 			}
@@ -510,7 +510,6 @@ type ProbeTagMap struct {
 func buildProbeConfig(nodes []storage.Node, clashAPIPort int, geoProxyPort int) (*builder.SingBoxConfig, *ProbeTagMap) {
 	outbounds := []builder.Outbound{
 		{"type": "direct", "tag": "DIRECT"},
-		{"type": "block", "tag": "REJECT"},
 	}
 
 	tagMap := &ProbeTagMap{
