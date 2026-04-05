@@ -1,11 +1,11 @@
 import { useState, useRef, useEffect, useMemo } from 'react';
 import { Card, CardBody, Button, Chip, Tooltip, Popover, PopoverTrigger, PopoverContent, ScrollShadow, Modal, ModalContent, ModalHeader, ModalBody, ModalFooter, Checkbox, CheckboxGroup } from '@nextui-org/react';
-import { Globe, RefreshCw, Search, ChevronDown, Check, X, ArrowUp, ArrowDown, ShieldBan, Star } from 'lucide-react';
+import { Globe, RefreshCw, Search, ChevronDown, Check, X, ArrowUp, ArrowDown, ShieldBan, Star, Zap } from 'lucide-react';
 import type { ActiveProxyProps } from './ActiveProxyTypes';
-import { siteErrorLabel, countryOptions } from '../features/nodes/types';
+import { siteErrorLabel, countryOptions, formatSpeed } from '../features/nodes/types';
 import { useStore } from '../store';
 
-type SortField = 'delay' | 'site';
+type SortField = 'delay' | 'site' | 'speed';
 type SortDir = 'asc' | 'desc';
 type SortState = { field: SortField; dir: SortDir } | null;
 
@@ -28,6 +28,15 @@ export default function ActiveProxyBlock({
   const [blockedDraft, setBlockedDraft] = useState<string[]>([]);
   const countryGroups = useStore((s) => s.countryGroups);
   const fetchCountryGroups = useStore((s) => s.fetchCountryGroups);
+  const speedResults = useStore((s) => s.speedResults);
+
+  const getSpeedForTag = (tag: string): number | null => {
+    const spKey = getServerPortLabel(tag);
+    if (!spKey) return null;
+    const sr = speedResults[spKey];
+    if (!sr || sr.download_bps <= 0) return null;
+    return sr.download_bps;
+  };
 
   useEffect(() => {
     if (isOpen) {
@@ -60,6 +69,11 @@ export default function ActiveProxyBlock({
           const vb = db !== null && db > 0 ? db : Infinity;
           return sort.dir === 'asc' ? va - vb : vb - va;
         }
+        if (sort.field === 'speed') {
+          const sa = getSpeedForTag(a) ?? 0;
+          const sb = getSpeedForTag(b) ?? 0;
+          return sort.dir === 'asc' ? sa - sb : sb - sa;
+        }
         const sa = getSiteCheckSummary(a);
         const sb = getSiteCheckSummary(b);
         const va = sa ? (sa.failed > 0 ? Infinity : sa.avg) : Infinity;
@@ -68,7 +82,7 @@ export default function ActiveProxyBlock({
       });
     }
     return list;
-  }, [filteredMainProxyOptions, sort, showFavOnly, isFavorite, getLatestMeasuredDelay, getSiteCheckSummary]);
+  }, [filteredMainProxyOptions, sort, showFavOnly, isFavorite, getLatestMeasuredDelay, getSiteCheckSummary, speedResults, getServerPortLabel]);
 
   const blockedCount = settings?.blocked_countries?.length ?? 0;
 
@@ -110,6 +124,7 @@ export default function ActiveProxyBlock({
   const source = getProxySourceTag(tag);
   const serverPort = getServerPortLabel(tag);
   const delay = getLatestMeasuredDelay(tag);
+  const speed = getSpeedForTag(tag);
   const summary = getSiteCheckSummary(tag);
   const geo = getGeoLabel(tag);
 
@@ -176,6 +191,12 @@ export default function ActiveProxyBlock({
             )}
             {delay !== null && (
               <span>TCP <span className={`font-semibold ${delay <= 0 ? 'text-danger' : delay < 300 ? 'text-success' : delay < 800 ? 'text-warning' : 'text-danger'}`}>{formatDelayLabel(delay)}</span></span>
+            )}
+            {speed !== null && (
+              <span className="inline-flex items-center gap-0.5">
+                <Zap className="w-3 h-3 text-gray-400" />
+                <span className={`font-semibold ${(speed * 8 / 1_000_000) >= 10 ? 'text-success' : (speed * 8 / 1_000_000) >= 2 ? 'text-warning' : 'text-danger'}`}>{formatSpeed(speed)}</span>
+              </span>
             )}
             {summary && (
               <Tooltip placement="top" showArrow delay={100} content={renderSiteTooltipContent(summary)}>
@@ -251,6 +272,11 @@ export default function ActiveProxyBlock({
                     {formatDelayLabel(delay)}
                   </Chip>
                 )}
+                {speed !== null && (
+                  <Chip size="sm" variant="flat" color={(speed * 8 / 1_000_000) >= 10 ? 'success' : (speed * 8 / 1_000_000) >= 2 ? 'warning' : 'danger'} className="h-5 text-[10px]">
+                    {formatSpeed(speed)}
+                  </Chip>
+                )}
                 <ChevronDown className={`w-4 h-4 text-default-400 transition-transform ${isOpen ? 'rotate-180' : ''}`} />
               </div>
             </button>
@@ -289,6 +315,7 @@ export default function ActiveProxyBlock({
                     Fav
                   </button>
                   <SortChip field="delay" label="TCP" />
+                  <SortChip field="speed" label="Speed" />
                   <SortChip field="site" label="Sites" />
                 </div>
               </div>
@@ -307,6 +334,7 @@ export default function ActiveProxyBlock({
                       const d = getProxyDisplayTag(item);
                       const src = getProxySourceTag(item);
                       const itemDelay = getLatestMeasuredDelay(item);
+                      const itemSpeed = getSpeedForTag(item);
                       const isSelected = item === mainProxyGroup.now;
 
                       return (
@@ -359,6 +387,15 @@ export default function ActiveProxyBlock({
                                 <div>
                                   <Chip size="sm" variant="flat" color={delayChipColor(itemDelay)} className="h-5 text-[10px] cursor-help">
                                     {formatDelayLabel(itemDelay)}
+                                  </Chip>
+                                </div>
+                              </Tooltip>
+                            )}
+                            {itemSpeed !== null && (
+                              <Tooltip content={`Speed: ${formatSpeed(itemSpeed)}`} placement="left" delay={200}>
+                                <div>
+                                  <Chip size="sm" variant="flat" color={(itemSpeed * 8 / 1_000_000) >= 10 ? 'success' : (itemSpeed * 8 / 1_000_000) >= 2 ? 'warning' : 'danger'} className="h-5 text-[10px] cursor-help">
+                                    {formatSpeed(itemSpeed)}
                                   </Chip>
                                 </div>
                               </Tooltip>
